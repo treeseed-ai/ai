@@ -17,6 +17,9 @@
     "node": ">=22"
   },
   "types": "./dist/index.d.ts",
+  "bin": {
+    "treeseed-ai": "./dist/cli/main.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -25,18 +28,26 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "build:deb": "npm run build && node --import tsx ./scripts/package-deb.ts",
     "check:file-lengths": "node --import tsx ./scripts/support/check-source-shape.ts",
     "check:file-architecture": "node --import tsx ./scripts/support/check-source-shape.ts",
+    "start": "node ./dist/cli/main.js serve",
     "test": "vitest run",
+    "test:integration": "vitest run tests/integration",
     "verify": "npm run check:file-lengths && npm run build && npm run test",
     "verify:local": "npm run verify",
     "verify:direct": "npm run verify"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.9",
+    "@treeseed/sdk": "github:treeseed-ai/sdk#925ff8a531ab4880670cb6e5645a3ec744a87c4a",
+    "hono": "^4.11.4",
+    "yaml": "^2.8.1"
   },
   "devDependencies": {
     "@types/node": "^24.6.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.2",
-    "yaml": "^2.8.1"
+    "vitest": "^4.1.2"
   }
 }

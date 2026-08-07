@@ -1,0 +1,93 @@
+schemaVersion: 2
+providerClass: agent
+ownership: { type: external }
+configuration: { generation: ai-appliance-v1 }
+identity:
+  privateKeyRef: file:///var/lib/treeseed-ai/providers/agent/identity.json
+  displayName: TreeSeed AI agent capacity provider
+supplyCeilings:
+  maxConcurrentAssignments: 4
+  maxActiveSeconds: 28800
+  maxInputTokens: 4000000
+  maxOutputTokens: 1000000
+  maxCost: 100
+  currency: USD
+  maxAttempts: 3
+credentialBindings:
+  - { id: codex-auth, source: process-environment, reference: TREESEED_CODEX_AUTH_FILE, required: false }
+  - { id: openai-api, source: process-environment, reference: TREESEED_CODEX_API_KEY, required: false }
+  - { id: copilot-token, source: process-environment, reference: TREESEED_GITHUB_COPILOT_TOKEN, required: false }
+  - { id: opencode-auth, source: process-environment, reference: TREESEED_OPENCODE_AUTH_FILE, required: false }
+  - { id: openrouter-api, source: process-environment, reference: TREESEED_OPENROUTER_API_KEY, required: false }
+  - { id: appliance-inference, source: process-environment, reference: TREESEED_AI_GATEWAY_TOKEN, required: true }
+executionProviders:
+  - id: codex-sub
+    adapter: codex
+    profile: subscription
+    module: builtin:codex
+    protocol: responses
+    credentialBindings: [codex-auth]
+    nativeLimits: { maxConcurrentRunners: 2, availableAgentSeconds: 28800 }
+    capabilities: &capabilities [engineering, research, planning, acting, verification, agent_mode_run, repo_read, repo_write, repository_work]
+  - id: codex-key
+    adapter: codex
+    profile: key
+    module: builtin:codex
+    protocol: responses
+    model: { baseUrl: "https://api.openai.com/v1" }
+    credentialBindings: [openai-api]
+    nativeLimits: { maxConcurrentRunners: 2, availableInputTokens: 4000000, availableOutputTokens: 1000000 }
+    capabilities: *capabilities
+  - id: codex-treeseed
+    adapter: codex
+    profile: treeseed
+    module: builtin:codex
+    protocol: responses
+    model: { endpointRef: inference-gateway, baseUrl: "http://host.docker.internal:4771/v1", model: treeseed-qwen3.5-4b }
+    credentialBindings: [appliance-inference]
+    nativeLimits: { maxConcurrentRunners: 1, availableInputTokens: 1000000, availableOutputTokens: 250000 }
+    capabilities: *capabilities
+  - id: ghcopilot-key
+    adapter: copilot
+    profile: key
+    module: builtin:copilot
+    protocol: responses
+    credentialBindings: [copilot-token]
+    nativeLimits: { maxConcurrentRunners: 2, availableAgentSeconds: 28800 }
+    capabilities: *capabilities
+  - id: ghcopilot-treeseed
+    adapter: copilot
+    profile: treeseed
+    module: builtin:copilot
+    protocol: responses
+    model: { endpointRef: inference-gateway, baseUrl: "http://host.docker.internal:4771/v1", model: treeseed-qwen3.5-4b }
+    credentialBindings: [appliance-inference]
+    nativeLimits: { maxConcurrentRunners: 1, availableInputTokens: 1000000, availableOutputTokens: 250000 }
+    capabilities: *capabilities
+  - id: opencode-sub
+    adapter: opencode
+    profile: subscription
+    module: builtin:opencode
+    protocol: chat-completions
+    credentialBindings: [opencode-auth]
+    nativeLimits: { maxConcurrentRunners: 2, availableAgentSeconds: 28800 }
+    capabilities: *capabilities
+  - id: opencode-key
+    adapter: opencode
+    profile: key
+    module: builtin:opencode
+    protocol: chat-completions
+    model: { baseUrl: "https://openrouter.ai/api/v1" }
+    credentialBindings: [openrouter-api]
+    nativeLimits: { maxConcurrentRunners: 2, availableInputTokens: 4000000, availableOutputTokens: 1000000 }
+    capabilities: *capabilities
+  - id: opencode-treeseed
+    adapter: opencode
+    profile: treeseed
+    module: builtin:opencode
+    protocol: chat-completions
+    model: { endpointRef: inference-gateway, baseUrl: "http://host.docker.internal:4771/v1", model: treeseed-qwen3.5-4b }
+    credentialBindings: [appliance-inference]
+    nativeLimits: { maxConcurrentRunners: 1, availableInputTokens: 1000000, availableOutputTokens: 250000 }
+    capabilities: *capabilities
+connections: []

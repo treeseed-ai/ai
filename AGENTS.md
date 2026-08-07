@@ -3,6 +3,8 @@
 - Follow the Market workspace capacity and reconciliation architecture.
 - Do not introduce a second project scheduler or task queue.
 - Do not expose vLLM management endpoints.
+- Keep raw vLLM on loopback or a private Compose network; public clients use the authenticated gateway.
+- The appliance supervisor reconciles machine services but never schedules assignments or training jobs.
 - Do not write directly to project repositories; use assignment-scoped TreeDX operations.
 - Route provider work through assignments, leases, usage, and settlement.
 - Keep raw experience outside Git; Git receives curated manifests and content only.

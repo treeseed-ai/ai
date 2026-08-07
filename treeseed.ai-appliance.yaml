@@ -1,0 +1,25 @@
+schemaVersion: treeseed.ai-appliance/v1
+mode: joined
+management:
+  socket: /run/treeseed-ai/manager.sock
+  loopbackUrl: http://127.0.0.1:4770
+marketGateway:
+  enabled: true
+  url: https://api.treeseed.dev
+  audience: https://api.treeseed.dev
+inference:
+  publicAlias: treeseed-qwen3.5-4b
+  model: Qwen/Qwen3.5-4B
+  gatewayUrl: http://127.0.0.1:4771
+  rawVllmUrl: http://127.0.0.1:8000
+  maxModelLength: 16384
+  maxConcurrentSequences: 1
+  gpuMemoryUtilization: 0.85
+  apiKeyRef: file:///etc/treeseed/ai/secrets.d/inference-token
+providers:
+  agent:
+    enabled: true
+    manifest: /etc/treeseed/ai/providers/agent.yaml
+  platformOperation:
+    enabled: true
+    manifest: /etc/treeseed/ai/providers/platform-operation.yaml

@@ -1,0 +1,25 @@
+schemaVersion: 2
+providerClass: platform-operation
+ownership: { type: external }
+configuration: { generation: ai-appliance-v1 }
+identity:
+  privateKeyRef: file:///var/lib/treeseed-ai/providers/platform-operation/identity.json
+  displayName: TreeSeed AI platform operations capacity provider
+supplyCeilings:
+  maxConcurrentAssignments: 2
+  maxActiveSeconds: 14400
+  maxInputTokens: 100000
+  maxOutputTokens: 100000
+  maxCost: 25
+  currency: USD
+  maxAttempts: 3
+credentialBindings:
+  - { id: github-api, source: process-environment, reference: TREESEED_GITHUB_TOKEN, required: false }
+executionProviders:
+  - id: platform-operation
+    adapter: platform-operation
+    profile: key
+    module: builtin:platform-operation
+    nativeLimits: { maxConcurrentRunners: 2, availableAgentSeconds: 14400 }
+    capabilities: [platform_operation, infrastructure_reconciliation, repository_reconciliation, treedx_reconciliation, github_configuration, service_vault_validation]
+connections: []

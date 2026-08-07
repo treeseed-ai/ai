@@ -1,0 +1,11 @@
+schemaVersion: treeseed.execution-provider/v1
+id: fixture-echo
+package: "@treeseed/ai-fixture-echo"
+version: 1.0.0
+apiVersion: treeseed.execution-provider/v1
+entrypoint: dist/index.js
+adapters: [fixture-echo]
+permissions:
+  network: []
+  credentials: []
+digest: sha256:0000000000000000000000000000000000000000000000000000000000000000

@@ -1,10 +1,29 @@
 schemaVersion: treeseed.guarantee/v1
-id: initialize-ai-appliance-package
+id: guarantee.project.package.initialize-ai-appliance-package.750
+journeyIndex: 750
 title: Initialize the AI appliance package
 type: project
 subtype: package
-surface: ai-package
+journey: Install and verify the local AI inference appliance
+surface: agent-runtime
 ownerPackage: "@treeseed/ai"
-status: planned
+summary: The AI appliance remains independently verifiable, private from package publication, and explicit about implemented and planned runtime behavior.
+status: active
+actors: { allowed: [capacity_operator, team_owner], forbidden: [unauthorized_user] }
+devices: { required: [], optional: [] }
+gates: [core, release]
+preconditions: { fixtures: [], notes: [] }
+api: { required: false, verifierRefs: [] }
+content: { required: false, verifierRefs: [] }
+audit:
+  required: true
+  verifierRefs:
+    - ai.package.metadata-contract
+    - ai.package.verify
+negativeCases:
+  - id: publishing-or-deployment-remains-disabled
+    actor: unauthorized_user
+    verifierRefs: [ai.package.metadata-contract]
+evidence: { required: [guarantee_report, verifier_evidence] }
 notes:
-  - Activation requires an executable package-verification guarantee verifier.
+  - The metadata contract and full package verification are executable package-local verifiers.

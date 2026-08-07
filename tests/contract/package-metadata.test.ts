@@ -20,7 +20,8 @@ describe('AI package metadata', () => {
 		expect(workflow).not.toMatch(/deploy|publish|secret/i);
 	});
 
-	it('does not claim unfinished inference or training behavior', () => {
-		expect(readme).toContain('None of those runtime capabilities is implemented or claimed yet.');
+	it('claims only the implemented inference foundation and keeps training planned', () => {
+		expect(readme).toContain('authenticated OpenAI-compatible inference gateway');
+		expect(readme).toContain('Axolotl training remains planned');
 	});
 });
