@@ -1,0 +1,42 @@
+{
+  "name": "@treeseed/ai",
+  "version": "0.1.0",
+  "description": "Installable local AI inference, training, and appliance runtime for TreeSeed.",
+  "license": "Apache-2.0",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/treeseed-ai/ai.git"
+  },
+  "homepage": "https://treeseed.dev",
+  "bugs": {
+    "url": "https://github.com/treeseed-ai/ai/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check:file-lengths": "node --import tsx ./scripts/support/check-source-shape.ts",
+    "check:file-architecture": "node --import tsx ./scripts/support/check-source-shape.ts",
+    "test": "vitest run",
+    "verify": "npm run check:file-lengths && npm run build && npm run test",
+    "verify:local": "npm run verify",
+    "verify:direct": "npm run verify"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.2",
+    "yaml": "^2.8.1"
+  }
+}
