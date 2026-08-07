@@ -1,6 +1,7 @@
 dist/
 node_modules/
 coverage/
+.treeseed/
 *.log
 .env
 .env.*
