@@ -1,6 +1,6 @@
 schemaVersion: treeseed.guarantee/v1
-id: guarantee.project.package.initialize-ai-appliance-package.750
-journeyIndex: 750
+id: guarantee.project.package.initialize-ai-appliance-package.752
+journeyIndex: 752
 title: Initialize the AI appliance package
 type: project
 subtype: package
