@@ -28,7 +28,7 @@ executionProviders:
     protocol: responses
     credentialBindings: [codex-auth]
     nativeLimits: { maxConcurrentRunners: 2, availableAgentSeconds: 28800 }
-    capabilities: &capabilities [engineering, research, planning, acting, verification, agent_mode_run, repo_read, repo_write, repository_work]
+    capabilities: &capabilities [agent-execution, engineering, research, planning, acting, verification, agent_mode_run, repo_read, repo_write, repository_work]
   - id: codex-key
     adapter: codex
     profile: key

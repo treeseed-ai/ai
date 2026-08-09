@@ -15,6 +15,7 @@ describe('appliance manifests', () => {
 		const manifest = parse(readFileSync(new URL('../../config/providers/agent.yaml', import.meta.url), 'utf8'));
 		expect(validateCapacityProviderManifestV2(manifest)).toEqual({ ok: true, diagnostics: [] });
 		expect(manifest.executionProviders.map((entry: { id: string }) => entry.id)).toEqual(['codex-sub', 'codex-key', 'codex-treeseed', 'ghcopilot-key', 'ghcopilot-treeseed', 'opencode-sub', 'opencode-key', 'opencode-treeseed']);
+		expect(manifest.executionProviders.every((entry: { capabilities: string[] }) => entry.capabilities.includes('agent-execution'))).toBe(true);
 	});
 
 	it('configures OpenCode to use the authenticated appliance gateway by default', () => {
