@@ -20,6 +20,12 @@ describe('AI package metadata', () => {
 		expect(workflow).not.toMatch(/deploy|publish|secret/i);
 	});
 
+	it('builds the pinned SDK dependency during clean CI installation', () => {
+		expect(packageMetadata.dependencies['@treeseed/sdk']).toMatch(/^github:treeseed-ai\/sdk#/u);
+		expect(workflow).toContain('npm ci --no-audit --no-fund');
+		expect(workflow).not.toContain('--ignore-scripts');
+	});
+
 	it('claims only the implemented inference foundation and keeps training planned', () => {
 		expect(readme).toContain('authenticated OpenAI-compatible inference gateway');
 		expect(readme).toContain('Axolotl training remains planned');
