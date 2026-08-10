@@ -40,7 +40,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.19.9",
-    "@treeseed/sdk": "github:treeseed-ai/sdk#e8cfda0aac26c81c5d6965dc8c645165952d19ab",
+    "@treeseed/sdk": "github:treeseed-ai/sdk#1608089150841c29702b33b37f0fce931577b76d",
     "hono": "^4.11.4",
     "yaml": "^2.8.1"
   },
