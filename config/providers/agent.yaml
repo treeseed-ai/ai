@@ -27,6 +27,7 @@ executionProviders:
     module: builtin:codex
     protocol: responses
     credentialBindings: [codex-auth]
+    minimumAssignmentDuration: { amount: 600, unit: seconds }
     nativeLimits: { maxConcurrentRunners: 2, availableAgentSeconds: 28800 }
     capabilities: &capabilities [agent-execution, engineering, research, planning, acting, verification, agent_mode_run, repo_read, repo_write, repository_work]
   - id: codex-key
@@ -36,6 +37,7 @@ executionProviders:
     protocol: responses
     model: { baseUrl: "https://api.openai.com/v1" }
     credentialBindings: [openai-api]
+    minimumAssignmentDuration: { amount: 600, unit: seconds }
     nativeLimits: { maxConcurrentRunners: 2, availableInputTokens: 4000000, availableOutputTokens: 1000000 }
     capabilities: *capabilities
   - id: codex-treeseed
@@ -45,6 +47,7 @@ executionProviders:
     protocol: responses
     model: { endpointRef: inference-gateway, baseUrl: "http://host.docker.internal:4771/v1", model: treeseed-qwen3.5-4b }
     credentialBindings: [appliance-inference]
+    minimumAssignmentDuration: { amount: 600, unit: seconds }
     nativeLimits: { maxConcurrentRunners: 1, availableInputTokens: 1000000, availableOutputTokens: 250000 }
     capabilities: *capabilities
   - id: ghcopilot-key
