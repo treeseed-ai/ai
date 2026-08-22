@@ -20,5 +20,6 @@
     "signingIdentity": "TreeSeed AI Releases <releases@treeseed.ai>",
     "fingerprintFile": "release/apt/RELEASE_KEY_FINGERPRINT"
   },
-  "imageManifest": "image-manifest.json"
+  "imageManifest": "image-manifest.json",
+  "imageBuilds": "release/image-builds.json"
 }

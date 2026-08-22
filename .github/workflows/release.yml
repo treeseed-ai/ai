@@ -38,40 +38,76 @@ jobs:
     steps:
       - run: echo 'Protected release approval granted.'
 
-  build-digests:
+  resolve-images:
     needs: [validate, authorize]
+    runs-on: ubuntu-latest
+    environment: production
+    permissions: { contents: read }
+    outputs: { matrix: "${{ steps.plan.outputs.matrix }}" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10.15.1 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24.19.0, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with: { username: "${{ secrets.DOCKERHUB_USERNAME }}", password: "${{ secrets.DOCKERHUB_TOKEN }}" }
+      - uses: sigstore/cosign-installer@v3.9.2
+      - id: plan
+        name: Resolve verified prior image digests
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          mkdir -p previous-download previous-assets/sboms previous-assets/vulnerabilities release-plan
+          previous=$(gh release list --limit 100 --json tagName,isDraft,isPrerelease --jq '.[]|select(.isDraft==false and .isPrerelease==false)|.tagName' | grep -vFx "v${{ inputs.version }}" | head -1 || true)
+          if test -n "$previous"; then
+            gh release download "$previous" --dir previous-download
+            gpg --batch --import release/apt/treeseed-ai-archive-keyring.asc
+            gpg --batch --verify previous-download/SHA256SUMS.asc previous-download/SHA256SUMS
+            (cd previous-download && sha256sum -c SHA256SUMS)
+            cp previous-download/image-manifest.json previous-assets/image-manifest.json
+          fi
+          node --import tsx scripts/release/plan-image-builds.ts release-plan/image-plan.json previous-assets/image-manifest.json
+          jq -c '{include:[.images[]]}' release-plan/image-plan.json | sed 's/^/matrix=/' >> "$GITHUB_OUTPUT"
+          for role in $(jq -r '.images[]|select(.action=="reused")|.role' release-plan/image-plan.json); do
+            digest=$(jq -r --arg role "$role" '.images[$role].digest' release-plan/image-plan.json)
+            tag=$(jq -r --arg role "$role" '.images[$role].tag' release-plan/image-plan.json)
+            cp "previous-download/$role.json" "previous-assets/vulnerabilities/$role.json"
+            cp "previous-download/$role.spdx.json" "previous-assets/sboms/$role.spdx.json"
+            actual=$(docker buildx imagetools inspect "treeseed/$role:$tag" | awk '/^Digest:/{print $2;exit}')
+            test "$actual" = "$digest" || { echo "Prior tag moved for $role" >&2; exit 1; }
+            cosign verify --certificate-identity-regexp '^https://github.com/treeseed-ai/ai/.github/workflows/release.yml@refs/heads/main$' --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' "treeseed/$role@$digest" >/dev/null
+          done
+          node --import tsx scripts/release/check-vulnerabilities.ts previous-assets/vulnerabilities
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image-reuse-plan
+          path: |
+            release-plan
+            previous-assets
+          if-no-files-found: error
+
+  build-digests:
+    needs: [validate, resolve-images]
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 180
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - { role: inference-api, dockerfile: containers/inference/api.Dockerfile }
-          - { role: inference-manager, dockerfile: containers/inference/manager.Dockerfile }
-          - { role: inference-vllm, dockerfile: containers/inference/vllm.Dockerfile }
-          - { role: inference-evaluator, dockerfile: containers/inference/evaluator.Dockerfile }
-          - { role: inference-migrations, dockerfile: containers/inference/migrations.Dockerfile }
-          - { role: training-api, dockerfile: containers/training/api.Dockerfile }
-          - { role: training-manager, dockerfile: containers/training/manager.Dockerfile }
-          - { role: axolotl-worker, dockerfile: containers/training/axolotl.Dockerfile }
-          - { role: marker-worker, dockerfile: containers/training/marker.Dockerfile }
-          - { role: artifact-worker, dockerfile: containers/training/artifact.Dockerfile }
-          - { role: training-migrations, dockerfile: containers/training/migrations.Dockerfile }
-          - { role: lab-controller, dockerfile: containers/lab/service.Dockerfile, build_args: LAB_ENTRY=controller }
-          - { role: lab-experience-proxy, dockerfile: containers/lab/service.Dockerfile, build_args: LAB_ENTRY=proxy }
-          - { role: hermes-agent, dockerfile: containers/lab/hermes.Dockerfile }
+      matrix: "${{ fromJson(needs.resolve-images.outputs.matrix) }}"
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with: { username: "${{ secrets.DOCKERHUB_USERNAME }}", password: "${{ secrets.DOCKERHUB_TOKEN }}" }
       - id: build
+        if: matrix.action == 'built'
         uses: docker/build-push-action@v6
         with:
           context: .
           file: "${{ matrix.dockerfile }}"
-          build-args: "${{ matrix.build_args }}"
+          build-args: "${{ matrix.buildArgs }}"
           platforms: linux/amd64
           outputs: "type=image,name=treeseed/${{ matrix.role }},push-by-digest=true,name-canonical=true,push=true"
           provenance: mode=max
@@ -80,10 +116,12 @@ jobs:
             org.opencontainers.image.version=${{ inputs.version }}
             org.opencontainers.image.revision=${{ needs.validate.outputs.sha }}
             org.treeseed-ai.role=${{ matrix.role }}
+            org.treeseed-ai.build.identity=${{ matrix.buildIdentity }}
       - name: Record immutable digest
         run: |
           mkdir -p digest
-          echo '${{ steps.build.outputs.digest }}' > 'digest/${{ matrix.role }}.digest'
+          if test '${{ matrix.action }}' = built; then digest='${{ steps.build.outputs.digest }}'; else digest='${{ matrix.digest }}'; fi
+          echo "$digest" > 'digest/${{ matrix.role }}.digest'
       - uses: actions/upload-artifact@v4
         with: { name: "digest-${{ matrix.role }}", path: digest, if-no-files-found: error }
 
@@ -96,6 +134,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with: { pattern: digest-*, path: digests, merge-multiple: true }
+      - uses: actions/download-artifact@v4
+        with: { name: image-reuse-plan }
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with: { username: "${{ secrets.DOCKERHUB_USERNAME }}", password: "${{ secrets.DOCKERHUB_TOKEN }}" }
@@ -112,17 +152,28 @@ jobs:
           for file in digests/*.digest; do
             role=$(basename "$file" .digest)
             digest=$(cat "$file")
-            docker run --rm -v "$PWD/release-assets/vulnerabilities:/reports" -v "$PWD/.trivy-cache:/root/.cache/trivy" aquasec/trivy:0.74.0 image --scanners vuln --skip-version-check --exit-code 0 --severity CRITICAL --format json --output "/reports/$role.json" "treeseed/$role@$digest"
+            action=$(jq -r --arg role "$role" '.images[$role].action' release-plan/image-plan.json)
+            if test "$action" = built; then
+              docker run --rm -v "$PWD/release-assets/vulnerabilities:/reports" -v "$PWD/.trivy-cache:/root/.cache/trivy" aquasec/trivy:0.74.0 image --scanners vuln --skip-version-check --exit-code 0 --severity CRITICAL --format json --output "/reports/$role.json" "treeseed/$role@$digest"
+            else
+              cp "previous-assets/vulnerabilities/$role.json" "release-assets/vulnerabilities/$role.json"
+              cp "previous-assets/sboms/$role.spdx.json" "release-assets/sboms/$role.spdx.json"
+            fi
           done
           node --import tsx scripts/release/check-vulnerabilities.ts release-assets/vulnerabilities
           for file in digests/*.digest; do
             role=$(basename "$file" .digest)
             digest=$(cat "$file")
-            docker buildx imagetools create -t "treeseed/$role:${{ inputs.version }}" "treeseed/$role@$digest"
-            cosign sign --yes "treeseed/$role@$digest"
-            syft "treeseed/$role@$digest" -o spdx-json="release-assets/sboms/$role.spdx.json"
+            action=$(jq -r --arg role "$role" '.images[$role].action' release-plan/image-plan.json)
+            if test "$action" = built; then
+              docker buildx imagetools create -t "treeseed/$role:${{ inputs.version }}" "treeseed/$role@$digest"
+              cosign sign --yes "treeseed/$role@$digest"
+              syft "treeseed/$role@$digest" -o spdx-json="release-assets/sboms/$role.spdx.json"
+            else
+              cosign verify --certificate-identity-regexp '^https://github.com/treeseed-ai/ai/.github/workflows/release.yml@refs/heads/main$' --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' "treeseed/$role@$digest" >/dev/null
+            fi
           done
-      - run: node --import tsx scripts/release/collect-image-manifest.ts digests release-assets/image-manifest.json
+      - run: node --import tsx scripts/release/collect-image-manifest.ts digests release-assets/image-manifest.json release-plan/image-plan.json
       - run: cp release/manifest.json release-assets/compatibility-matrix.json && cp release/vulnerability-exceptions.json release-assets/vulnerability-exceptions.json
       - uses: actions/upload-artifact@v4
         with: { name: release-image-metadata, path: release-assets, if-no-files-found: error }

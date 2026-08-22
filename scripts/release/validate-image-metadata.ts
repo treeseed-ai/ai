@@ -6,15 +6,16 @@ function assert(value:unknown,message:string):asserts value{if(!value)throw new 
 
 const root=resolve(process.argv[2]??'release-assets');
 const release=read('release/manifest.json')as unknown as{version:string;dockerNamespace:string;images:string[]};
-const manifest=read(resolve(root,'image-manifest.json'))as unknown as{schemaVersion:string;version:string;namespace:string;images:Record<string,{repository:string;digest:string;tag:string}>};
-assert(manifest.schemaVersion==='treeai.images/v1','Invalid image metadata schema.');
+const manifest=read(resolve(root,'image-manifest.json'))as unknown as{schemaVersion:string;version:string;namespace:string;images:Record<string,{repository:string;digest:string;tag:string;buildIdentity?:string;disposition?:string;firstBuiltVersion?:string}>};
+assert(['treeai.images/v1','treeai.images/v2'].includes(manifest.schemaVersion),'Invalid image metadata schema.');
 assert(manifest.version===release.version,'Image metadata version does not match the release.');
 assert(manifest.namespace===release.dockerNamespace,'Image metadata namespace does not match the release.');
 assert(JSON.stringify(Object.keys(manifest.images).sort())===JSON.stringify([...release.images].sort()),'Image metadata roles are incomplete.');
 for(const role of release.images){
   const image=manifest.images[role];
   assert(image.repository===`${release.dockerNamespace}/${role}`,`Invalid repository for ${role}.`);
-  assert(image.tag===release.version,`Invalid tag for ${role}.`);
+  if(manifest.schemaVersion==='treeai.images/v1')assert(image.tag===release.version,`Invalid tag for ${role}.`);
+  else{assert(/^sha256:[a-f0-9]{64}$/u.test(image.buildIdentity??''),`Invalid build identity for ${role}.`);assert(['built','reused'].includes(image.disposition??''),`Invalid disposition for ${role}.`);assert(/^\d+\.\d+\.\d+$/u.test(image.firstBuiltVersion??''),`Invalid first-built version for ${role}.`);assert(image.tag===image.firstBuiltVersion,`Published tag must identify the first build of ${role}.`);if(image.disposition==='built')assert(image.tag===release.version,`New build tag differs for ${role}.`);}
   assert(/^sha256:[a-f0-9]{64}$/u.test(image.digest),`Invalid digest for ${role}.`);
   const sbom=read(resolve(root,'sboms',`${role}.spdx.json`));
   assert(typeof sbom.spdxVersion==='string'&&sbom.spdxVersion.startsWith('SPDX-'),'Invalid SPDX document.');
