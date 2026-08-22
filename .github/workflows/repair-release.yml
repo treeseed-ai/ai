@@ -1,0 +1,149 @@
+name: Repair coordinated TreeSeed AI release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version: { description: Exact release version, required: true, type: string }
+      source_run_id: { description: Release run with successful image metadata, required: true, type: string }
+
+permissions: { contents: read, actions: read }
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    environment: production
+    outputs: { sha: "${{ steps.commit.outputs.sha }}" }
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: pnpm/action-setup@v4
+        with: { version: 10.15.1 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24.19.0, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with: { username: "${{ secrets.DOCKERHUB_USERNAME }}", password: "${{ secrets.DOCKERHUB_TOKEN }}" }
+      - uses: sigstore/cosign-installer@v3.9.2
+      - name: Validate source run and download image evidence
+        env:
+          GH_TOKEN: "${{ github.token }}"
+          SOURCE_RUN_ID: "${{ inputs.source_run_id }}"
+        run: |
+          test '${{ github.ref }}' = 'refs/heads/main'
+          test '${{ inputs.version }}' = "$(node -p "require('./release/manifest.json').version")"
+          case "$SOURCE_RUN_ID" in (*[!0-9]*|'') echo 'source_run_id must be numeric' >&2; exit 1;; esac
+          node --import tsx scripts/release/validate.ts --release
+          test "$(git rev-parse HEAD)" = '${{ github.sha }}'
+          ! gh release view "v${{ inputs.version }}" >/dev/null 2>&1
+          source_sha=$(gh api "repos/${{ github.repository }}/actions/runs/$SOURCE_RUN_ID" --jq 'select(.event=="workflow_dispatch" and .head_branch=="main" and .name=="Publish coordinated TreeSeed AI release")|.head_sha')
+          test -n "$source_sha"
+          git merge-base --is-ancestor "$source_sha" HEAD
+          unexpected=$(git diff --name-only "$source_sha" HEAD | grep -Ev '^(\.github/workflows/(release|repair-release)\.yml|scripts/release/validate-image-metadata\.ts|tests/cli/cli\.test\.ts)$' || true)
+          test -z "$unexpected" || { printf 'Image-affecting changes since source run:\n%s\n' "$unexpected" >&2; exit 1; }
+          test "$(gh api "repos/${{ github.repository }}/actions/runs/$SOURCE_RUN_ID/jobs" --paginate --jq '[.jobs[]|select(.name=="publish-tags" and .conclusion=="success")]|length')" = 1
+          gh run download "$SOURCE_RUN_ID" --name release-image-metadata --dir release-assets
+          node --import tsx scripts/release/validate-image-metadata.ts release-assets
+          node --import tsx scripts/release/check-vulnerabilities.ts release-assets/vulnerabilities
+      - name: Verify exact tags and keyless signatures
+        run: |
+          jq -r '.images|to_entries[]|[.key,.value.repository,.value.digest]|@tsv' release-assets/image-manifest.json | while IFS=$'\t' read -r role repository digest; do
+            actual=$(docker buildx imagetools inspect "$repository:${{ inputs.version }}" | awk '/^Digest:/{print $2;exit}')
+            test "$actual" = "$digest" || { echo "Digest mismatch for $role" >&2; exit 1; }
+            cosign verify --certificate-identity-regexp '^https://github.com/treeseed-ai/ai/.github/workflows/release.yml@refs/heads/main$' --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' "$repository@$digest" >/dev/null
+          done
+      - run: pnpm verify
+      - id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with: { name: repair-image-metadata, path: release-assets, if-no-files-found: error }
+
+  packages:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: repair-image-metadata, path: release-assets }
+      - uses: pnpm/action-setup@v4
+        with: { version: 10.15.1 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24.19.0, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: TREEAI_IMAGE_MANIFEST="$PWD/release-assets/image-manifest.json" node --import tsx scripts/package-deb.ts all
+      - name: Co-install package contract
+        run: |
+          root=$(mktemp -d)
+          for deb in .artifacts/*.deb; do dpkg-deb --extract "$deb" "$root"; done
+          test -x "$root/usr/bin/treeai"
+          test ! -e "$root/usr/bin/ai-factory-dev"
+          test ! -e "$root/usr/bin/ai-factory-lab"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: debian-packages
+          path: .artifacts/*.deb
+          if-no-files-found: error
+          include-hidden-files: true
+
+  github-release:
+    needs: [validate, packages]
+    runs-on: ubuntu-latest
+    environment: production
+    permissions: { contents: write }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: debian-packages, path: assets }
+      - uses: actions/download-artifact@v4
+        with: { name: repair-image-metadata, path: assets }
+      - name: Import release signing key
+        env: { APT_GPG_PRIVATE_KEY: "${{ secrets.APT_GPG_PRIVATE_KEY }}" }
+        run: printf '%s' "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
+      - name: Sign checksums and publish release
+        env:
+          GH_TOKEN: "${{ github.token }}"
+          APT_GPG_PASSPHRASE: "${{ secrets.APT_GPG_PASSPHRASE }}"
+        run: |
+          export APT_RELEASE_FINGERPRINT="$(cat release/apt/RELEASE_KEY_FINGERPRINT)"
+          cd assets
+          sha256sum $(find . -type f -printf '%P\n' | sort) > SHA256SUMS
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$APT_GPG_PASSPHRASE" --local-user "$APT_RELEASE_FINGERPRINT" --detach-sign --armor SHA256SUMS
+          cd ..
+          gh release create "v${{ inputs.version }}" $(find assets -type f -print | sort) --target '${{ needs.validate.outputs.sha }}' --title "TreeSeed AI ${{ inputs.version }}" --notes-file docs/releases/0.5.0.md
+
+  apt-repository:
+    needs: github-release
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all released Debian packages
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          mkdir -p debs pages/apt
+          gh release list --limit 100 --json tagName,isDraft,isPrerelease --jq '.[] | select(.isDraft == false and .isPrerelease == false) | .tagName' | while read tag; do gh release download "$tag" --pattern '*.deb' --dir debs --skip-existing; done
+      - name: Import signing key and build deterministic repository
+        env:
+          APT_GPG_PRIVATE_KEY: "${{ secrets.APT_GPG_PRIVATE_KEY }}"
+          APT_GPG_PASSPHRASE: "${{ secrets.APT_GPG_PASSPHRASE }}"
+        run: |
+          printf '%s' "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
+          export APT_RELEASE_FINGERPRINT="$(cat release/apt/RELEASE_KEY_FINGERPRINT)"
+          sh scripts/release/build-apt-repository.sh debs pages/apt '${{ inputs.version }}'
+      - uses: actions/upload-artifact@v4
+        with: { name: apt-pages-site, path: pages, if-no-files-found: error }
+
+  apt-pages:
+    needs: apt-repository
+    runs-on: ubuntu-latest
+    permissions: { contents: read, pages: write, id-token: write }
+    environment: { name: github-pages, url: "${{ steps.deploy.outputs.page_url }}" }
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: apt-pages-site, path: pages }
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: pages }
+      - id: deploy
+        uses: actions/deploy-pages@v4

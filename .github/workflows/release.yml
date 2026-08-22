@@ -149,7 +149,11 @@ jobs:
           test ! -e "$root/usr/bin/ai-factory-dev"
           test ! -e "$root/usr/bin/ai-factory-lab"
       - uses: actions/upload-artifact@v4
-        with: { name: debian-packages, path: .artifacts/*.deb, if-no-files-found: error }
+        with:
+          name: debian-packages
+          path: .artifacts/*.deb
+          if-no-files-found: error
+          include-hidden-files: true
 
   github-release:
     needs: [validate, packages]
