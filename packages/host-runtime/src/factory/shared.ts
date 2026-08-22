@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync
 import { hostname, networkInterfaces } from 'node:os';
 import { join, resolve } from 'node:path';
 
-export const version = '0.6.0';
+export const version = '0.6.1';
 export const configRoot = '/etc/treeseed-ai/host-runtime/factory';
 export const stateRoot = '/var/lib/treeseed-ai/host-runtime/factory';
 export const publicCa = '/etc/ssl/certs/treeseed-ai-factory-development-ca.pem';

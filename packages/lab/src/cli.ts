@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import{execFileSync,spawn}from'node:child_process';import{chmodSync,copyFileSync,existsSync,mkdirSync,readFileSync,writeFileSync}from'node:fs';import{randomBytes,scryptSync}from'node:crypto';import{resolve}from'node:path';
-const command=process.argv[2],root='/etc/treeseed-ai/lab',envFile=`${root}/environment`,compose='/usr/lib/treeseed-ai/lab/compose.yml',json=process.argv.includes('--json'),version='0.6.0';
+const command=process.argv[2],root='/etc/treeseed-ai/lab',envFile=`${root}/environment`,compose='/usr/lib/treeseed-ai/lab/compose.yml',json=process.argv.includes('--json'),version='0.6.1';
 function run(file:string,args:string[],stdio:any='pipe',cwd?:string){const value=execFileSync(file,args,{encoding:'utf8',stdio,cwd});return typeof value==='string'?value.trim():'';}
 function output(value:unknown){process.stdout.write(`${JSON.stringify(value,null,2)}\n`);}function option(name:string){const index=process.argv.indexOf(name);return index>=0?process.argv[index+1]:undefined;}
 function operator(){return process.env.TREEAI_OPERATOR_KEY_VALUE??readFileSync('/etc/treeseed-ai/treeai/operator.key','utf8').trim();}

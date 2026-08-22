@@ -20,7 +20,7 @@ import {
 	setting,
 } from "../core/store.js";
 import { updateStatus } from "../lifecycle/update.js";
-const VERSION = "0.6.0";
+const VERSION = "0.6.1";
 function keys(): ApiKeyRecord[] {
 	try {
 		return JSON.parse(readFileSync(paths.apiKeys, "utf8")) as ApiKeyRecord[];

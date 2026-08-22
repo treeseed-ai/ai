@@ -2,7 +2,9 @@
 set -eu
 install -d -m 0700 /var/lib/treeseed-ai/bootstrap /var/lib/treeseed-ai/bootstrap/seed
 install -d -m 0750 /etc/treeseed-ai
-if [ -f /usr/share/treeseed-ai/bootstrap/platform.json ] && { [ ! -f /etc/treeseed-ai/platform.json ] || [ -f /usr/share/treeseed-ai/bootstrap/configured-seed ]; }; then
+legacy_04=false
+if /usr/lib/treeseed-ai/bootstrap/migrate-0.4.sh detect >/dev/null 2>&1; then legacy_04=true; fi
+if [ "$legacy_04" = false ] && [ -f /usr/share/treeseed-ai/bootstrap/platform.json ] && { [ ! -f /etc/treeseed-ai/platform.json ] || [ -f /usr/share/treeseed-ai/bootstrap/configured-seed ]; }; then
   install -m 0600 /usr/share/treeseed-ai/bootstrap/platform.json /var/lib/treeseed-ai/bootstrap/seed/platform.json.incoming
 fi
 if [ -f /usr/share/treeseed-ai/bootstrap/temporary-credentials.json ]; then
@@ -10,5 +12,13 @@ if [ -f /usr/share/treeseed-ai/bootstrap/temporary-credentials.json ]; then
 fi
 systemctl daemon-reload
 systemctl enable treeseed-ai-bootstrap.service >/dev/null
-if systemctl cat treeseed-ai-manager-reconcile.service >/dev/null 2>&1; then systemctl start --no-block treeseed-ai-manager-reconcile.service || true; else systemctl start --no-block treeseed-ai-bootstrap.service || true; fi
+if [ "$legacy_04" = true ]; then
+  printf '%s\n' 'TreeAI 0.4 factory detected. Review and approve migration:'
+  printf '%s\n' '  sudo /usr/lib/treeseed-ai/bootstrap/migrate-0.4.sh plan'
+  printf '%s\n' '  sudo /usr/lib/treeseed-ai/bootstrap/migrate-0.4.sh apply --confirm'
+elif systemctl cat treeseed-ai-manager-reconcile.service >/dev/null 2>&1; then
+  systemctl start --no-block treeseed-ai-manager-reconcile.service || true
+else
+  systemctl start --no-block treeseed-ai-bootstrap.service || true
+fi
 exit 0

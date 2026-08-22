@@ -22,6 +22,10 @@ import { setSetting } from "../core/store.js";
 import { applyUpdate } from "../lifecycle/update.js";
 import { ensureOperatorCredential } from "../lifecycle/credentials.js";
 import { reconcilePlatform } from "../lifecycle/platform.js";
+import {
+	assertLegacyServiceEnvironment,
+	legacyPlatformConfiguration,
+} from "../migration/legacy.js";
 const treeai = "/etc/treeseed-ai/treeai",
 	seed = "/var/lib/treeseed-ai/bootstrap/seed/platform.json";
 function atomic(path: string, value: string, mode = 0o600) {
@@ -33,44 +37,31 @@ function atomic(path: string, value: string, mode = 0o600) {
 }
 function migrate(): PlatformConfiguration | undefined {
 	const old = `${treeai}/config.json`;
-	if (!existsSync(old)) return;
-	const value = JSON.parse(readFileSync(old, "utf8")) as {
-		deploymentMode?: string;
-	};
-	return {
-		schemaVersion: "treeai.platform/v1",
-		configurationId: "migrated-local-factory",
-		generation: 1,
-		hostRole: "factory",
-		products: ["host-runtime", "inference", "training", "lab"],
-		imageSource:
-			value.deploymentMode === "published" ? "registry" : "local-build",
-		runtime: { management: "managed" },
-		state: { postgresql: "bundled", objectStorage: "bundled" },
-		network: {
-			bindings: { manager: "0.0.0.0:4790" },
-			hostnames: [],
-			sans: [],
-			trustedLanCidrs: [],
-		},
-		updates: {
-			channel: "stable",
-			policy: "manual",
-			pollSeconds: 86400,
-			maintenanceWindow: {
-				weekday: "sunday",
-				localTime: "03:00",
-				jitterMinutes: 30,
-			},
-			drain: { inferenceSeconds: 120, trainingSeconds: 300 },
-		},
-		secrets: {},
-		provenance: {
-			generator: "treeai-migrate-0.5/0.6.0",
-			generatedAt: new Date().toISOString(),
-			configurationDigest: "",
-		},
-	};
+	const legacy04 = existsSync(
+		"/var/lib/treeseed-ai/bootstrap/legacy-0.4.approved",
+	);
+	if (!existsSync(old) && !legacy04) return;
+	const value = existsSync(old)
+		? (JSON.parse(readFileSync(old, "utf8")) as {
+				deploymentMode?: string;
+			})
+		: {};
+	if (legacy04) {
+		for (const product of ["inference", "training"]) {
+			const environment = `/etc/treeseed-ai/${product}/environment`;
+			if (!existsSync(environment))
+				throw new Error(`Legacy ${product} environment is missing.`);
+			assertLegacyServiceEnvironment(
+				product,
+				readFileSync(environment, "utf8"),
+			);
+		}
+	}
+	return legacyPlatformConfiguration({
+		legacy04,
+		deploymentMode: value.deploymentMode,
+		hostname: hostname(),
+	});
 }
 function configuration() {
 	const active = existsSync(paths.configuration)
@@ -150,8 +141,20 @@ function safeSans(config: PlatformConfiguration) {
 function tls(config: PlatformConfiguration) {
 	const root = "/etc/treeseed-ai/manager/tls",
 		publicCa = "/etc/ssl/certs/treeseed-ai-ca.pem";
-	if (existsSync(`${root}/server.crt`) && existsSync(`${root}/ca.crt`))
+	if (existsSync(`${root}/server.crt`) && existsSync(`${root}/ca.crt`)) {
+		copyFileSync(`${root}/ca.crt`, publicCa);
+		chmodSync(publicCa, 0o644);
+		chmodSync(`${root}/ca.key`, 0o600);
+		chmodSync(`${root}/server.key`, 0o640);
+		try {
+			execFileSync("chown", [
+				"root:treeseed-ai-manager",
+				`${root}/server.key`,
+				`${root}/server.crt`,
+			]);
+		} catch {}
 		return publicCa;
+	}
 	mkdirSync(root, { recursive: true, mode: 0o750 });
 	execFileSync("openssl", [
 		"req",
@@ -227,7 +230,7 @@ function client(config: PlatformConfiguration, ca: string) {
 		JSON.stringify(
 			{
 				schemaVersion: "treeai.config/v1",
-				version: "0.6.0",
+				version: "0.6.1",
 				imageSource: config.imageSource,
 				ca,
 				endpoints: {
@@ -247,7 +250,9 @@ function client(config: PlatformConfiguration, ca: string) {
 }
 function migrateFactoryMaterial(config: PlatformConfiguration) {
 	if (config.configurationId !== "migrated-local-factory") return;
-	const old = "/etc/treeseed-ai/host-runtime/factory",
+	const original = "/etc/treeseed-ai/host-runtime/factory",
+		backup = "/var/lib/treeseed-ai/bootstrap/legacy/factory-config",
+		old = existsSync(original) ? original : backup,
 		factory = "/etc/treeseed-ai/manager/factory",
 		tlsRoot = "/etc/treeseed-ai/manager/tls";
 	mkdirSync(factory, { recursive: true, mode: 0o750 });
@@ -311,6 +316,26 @@ export async function converge() {
 	if (update.state === "postponed") return { status: "postponed", update };
 	const platform =
 		"platform" in update ? update.platform : await reconcilePlatform();
+	if (
+		platform &&
+		config.configurationId === "migrated-local-factory" &&
+		(existsSync("/var/lib/treeseed-ai/bootstrap/legacy-0.4.approved") ||
+			existsSync("/var/lib/treeseed-ai/bootstrap/legacy-0.4.consumed"))
+	)
+		atomic(
+			"/var/lib/treeseed-ai/manager/legacy-0.4-migration.json",
+			JSON.stringify({
+				schemaVersion: "treeai.legacy-migration-receipt/v1",
+				status: "succeeded",
+				completedAt: new Date().toISOString(),
+				configurationId: config.configurationId,
+				generation: config.generation,
+				configurationDigest: config.provenance.configurationDigest,
+				mode: platform.mode,
+				preservedHashes:
+					"/var/lib/treeseed-ai/bootstrap/legacy/preserved.sha256",
+			}),
+		);
 	return {
 		status: "ready",
 		configurationId: config.configurationId,
