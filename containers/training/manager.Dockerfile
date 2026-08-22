@@ -4,6 +4,6 @@ WORKDIR /app
 RUN corepack enable && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages ./packages
-RUN pnpm install --frozen-lockfile && pnpm --filter @ai-platform/common build && pnpm --filter @ai-platform/training-manager build
+RUN pnpm install --frozen-lockfile && pnpm --filter @ai-platform/common build && pnpm --filter @ai-platform/training-manager build && rm -rf /root/.cache/node/corepack /usr/local/bin/pnpm /usr/local/bin/pnpx
 USER node
 CMD ["node","packages/training-manager/dist/main.js","worker"]

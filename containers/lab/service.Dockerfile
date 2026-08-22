@@ -6,7 +6,7 @@ WORKDIR /app
 RUN corepack enable && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages ./packages
-RUN pnpm install --frozen-lockfile && pnpm --filter @ai-platform/common build && pnpm --filter @ai-platform/lab build
+RUN pnpm install --frozen-lockfile && pnpm --filter @ai-platform/common build && pnpm --filter @ai-platform/lab build && rm -rf /root/.cache/node/corepack /usr/local/bin/pnpm /usr/local/bin/pnpx
 RUN mkdir /state && chown node:node /state
 USER node
 CMD ["sh","-c","node packages/lab/dist/${LAB_ENTRY}.js"]
