@@ -13,4 +13,7 @@ if [ -f /etc/treeseed-ai/platform.json ]; then
 fi
 find /var/lib/treeseed-ai/manager -maxdepth 1 -type f -name 'lifecycle.db*' -exec chown root:treeseed-ai-manager {} + -exec chmod 0660 {} +
 systemctl daemon-reload
+if systemctl is-active --quiet treeseed-ai-manager-api.service || systemctl is-active --quiet treeseed-ai-manager-supervisor.service; then
+  systemctl start --no-block treeseed-ai-manager-update-helper.timer
+fi
 exit 0

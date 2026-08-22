@@ -63,6 +63,22 @@ describe("manager scheduling and privilege split", () => {
 		expect(store).toContain("if (!existed) chmodSync");
 	});
 
+	it("hands an active manager to newly installed code after dpkg exits", () => {
+		const postinst = readFileSync("debian/manager/postinst", "utf8");
+		const timer = readFileSync(
+			"systemd/treeseed-ai-manager-update-helper.timer",
+			"utf8",
+		);
+		expect(postinst).toContain(
+			"systemctl is-active --quiet treeseed-ai-manager-api.service",
+		);
+		expect(postinst).toContain(
+			"systemctl start --no-block treeseed-ai-manager-update-helper.timer",
+		);
+		expect(timer).toContain("OnActiveSec=30s");
+		expect(timer).toContain("treeseed-ai-manager-update-helper.service");
+	});
+
 	it("revokes configured-seed material before public reconciliation", () => {
 		const converge = readFileSync(
 			"packages/manager/src/bin/converge.ts",
