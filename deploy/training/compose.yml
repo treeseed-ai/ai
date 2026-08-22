@@ -1,0 +1,73 @@
+name: treeseed-ai-training
+x-s3-environment: &s3-environment
+  AWS_ENDPOINT_URL: "${S3_ENDPOINT:-}"
+  AWS_REGION: "${S3_REGION:-us-east-1}"
+  AWS_ACCESS_KEY_ID: "${S3_ACCESS_KEY:-}"
+  AWS_SECRET_ACCESS_KEY: "${S3_SECRET_KEY:-}"
+  S3_BUCKET: "${S3_BUCKET:-ai-training}"
+services:
+  migrations:
+    image: ${TRAINING_MIGRATIONS_IMAGE:?TRAINING_MIGRATIONS_IMAGE is required}
+    build: { context: ../.., dockerfile: containers/training/migrations.Dockerfile }
+    environment: { DATABASE_URL: "${DATABASE_URL:-postgresql://training:training@postgres:5432/training}" }
+    restart: "no"
+  api:
+    image: ${TRAINING_API_IMAGE:?TRAINING_API_IMAGE is required}
+    build: { context: ../.., dockerfile: containers/training/api.Dockerfile }
+    restart: unless-stopped
+    depends_on: { migrations: { condition: service_completed_successfully } }
+    environment: { DATABASE_URL: "${DATABASE_URL:-postgresql://training:training@postgres:5432/training}", AI_API_KEYS: "${AI_API_KEYS:?AI_API_KEYS is required}", CONTROL_HOST: 0.0.0.0 }
+    ports: ["${CONTROL_BIND:-127.0.0.1}:4780:4780"]
+  manager:
+    image: ${TRAINING_MANAGER_IMAGE:?TRAINING_MANAGER_IMAGE is required}
+    build: { context: ../.., dockerfile: containers/training/manager.Dockerfile }
+    restart: unless-stopped
+    depends_on: { migrations: { condition: service_completed_successfully }, marker: { condition: service_healthy }, artifact: { condition: service_healthy } }
+    environment: { DATABASE_URL: "${DATABASE_URL:-postgresql://training:training@postgres:5432/training}", MARKER_URL: "http://marker:8080", AXOLOTL_URL: "http://axolotl:8080", ARTIFACT_URL: "http://artifact:8080" }
+  marker:
+    image: ${MARKER_WORKER_IMAGE:?MARKER_WORKER_IMAGE is required}
+    build: { context: ../.., dockerfile: containers/training/marker.Dockerfile }
+    restart: unless-stopped
+    environment: *s3-environment
+    volumes: ["${DOCUMENT_INPUTS:-training-inputs}:/inputs:ro", "training-artifacts:/artifacts"]
+    deploy: { resources: { reservations: { devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }] } } }
+    healthcheck: &worker-health { test: ["CMD","python","-c","import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/healthz')"], interval: 10s, timeout: 3s, retries: 10 }
+  axolotl:
+    image: ${AXOLOTL_WORKER_IMAGE:?AXOLOTL_WORKER_IMAGE is required}
+    build: { context: ../.., dockerfile: containers/training/axolotl.Dockerfile }
+    restart: unless-stopped
+    volumes: ["training-artifacts:/artifacts", "training-models:/models"]
+    environment: { <<: *s3-environment, HF_HOME: /models }
+    deploy: { resources: { reservations: { devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }] } } }
+    healthcheck: *worker-health
+  artifact:
+    image: ${ARTIFACT_WORKER_IMAGE:?ARTIFACT_WORKER_IMAGE is required}
+    build: { context: ../.., dockerfile: containers/training/artifact.Dockerfile }
+    restart: unless-stopped
+    volumes: ["training-artifacts:/artifacts", "training-archive:/archive"]
+    secrets: [artifact-signing-key]
+    environment: { <<: *s3-environment, SIGNING_KEY: /run/secrets/artifact-signing-key, SIGNING_KEY_ID: "${SIGNING_KEY_ID:-default}" }
+    healthcheck: *worker-health
+  postgres:
+    image: postgres:17.6-alpine@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94
+    profiles: [state]
+    environment: { POSTGRES_DB: training, POSTGRES_USER: training, POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-training}" }
+    volumes: ["training-postgres:/var/lib/postgresql/data"]
+    healthcheck: { test: ["CMD-SHELL","pg_isready -U training"], interval: 5s, timeout: 3s, retries: 20 }
+  minio:
+    image: minio/minio:RELEASE.2025-07-23T15-54-02Z@sha256:d249d1fb6966de4d8ad26c04754b545205ff15a62e4fd19ebd0f26fa5baacbc0
+    profiles: [state]
+    command: server /data
+    environment: { MINIO_ROOT_USER: "${MINIO_ROOT_USER:-training-root}", MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-training-root-development}" }
+    volumes: ["training-objects:/data"]
+    healthcheck: { test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/minio/health/live"], interval: 5s, timeout: 3s, retries: 20 }
+  minio-init:
+    image: minio/mc:RELEASE.2025-07-21T05-28-08Z@sha256:fb8f773eac8ef9d6da0486d5dec2f42f219358bcb8de579d1623d518c9ebd4cc
+    profiles: [state]
+    depends_on: { minio: { condition: service_healthy } }
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD && mc mb --ignore-existing local/$$S3_BUCKET && printf '{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"s3:*\"],\"Resource\":[\"arn:aws:s3:::%s\",\"arn:aws:s3:::%s/*\"]}]}' $$S3_BUCKET $$S3_BUCKET > /tmp/product-policy.json && (mc admin user info local $$S3_ACCESS_KEY >/dev/null 2>&1 || mc admin user add local $$S3_ACCESS_KEY $$S3_SECRET_KEY) && (mc admin policy info local product-policy >/dev/null 2>&1 || mc admin policy create local product-policy /tmp/product-policy.json) && mc admin policy attach local product-policy --user $$S3_ACCESS_KEY"]
+    environment: { MINIO_ROOT_USER: "${MINIO_ROOT_USER:-training-root}", MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-training-root-development}", S3_ACCESS_KEY: "${S3_ACCESS_KEY:-training}", S3_SECRET_KEY: "${S3_SECRET_KEY:-training-development}", S3_BUCKET: "${S3_BUCKET:-ai-training}" }
+    restart: "no"
+secrets: { artifact-signing-key: { file: "${SIGNING_KEY_FILE:-./secrets/artifact-signing-key.pem}" } }
+volumes: { training-inputs: {}, training-artifacts: {}, training-archive: {}, training-models: {}, training-postgres: {}, training-objects: {} }

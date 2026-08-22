@@ -1,0 +1,22 @@
+[Unit]
+Description=Local AI factory GPU mode coordinator
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=/etc/treeseed-ai/host-runtime/factory/environment
+ExecStart=/usr/bin/node /usr/lib/treeseed-ai/host-runtime/dist/factory/server.js
+Restart=on-failure
+RestartSec=3
+RuntimeDirectory=treeseed-ai/inference treeseed-ai/training
+RuntimeDirectoryMode=0750
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/treeseed-ai/host-runtime/factory /run/treeseed-ai /var/lib/treeseed-ai
+
+[Install]
+WantedBy=multi-user.target

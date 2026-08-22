@@ -1,0 +1,215 @@
+name: Publish coordinated TreeSeed AI release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version: { description: Exact release version, required: true, type: string }
+
+permissions: { contents: read }
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs: { sha: "${{ steps.commit.outputs.sha }}" }
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: pnpm/action-setup@v4
+        with: { version: 10.15.1 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24.12.0, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Validate release identity
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          test '${{ github.ref }}' = 'refs/heads/main'
+          test '${{ inputs.version }}' = "$(node -p "require('./release/manifest.json').version")"
+          node --import tsx scripts/release/validate.ts --release
+          test "$(git rev-parse HEAD)" = '${{ github.sha }}'
+          ! gh release view "v${{ inputs.version }}" >/dev/null 2>&1
+      - run: pnpm verify
+      - id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  authorize:
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - run: echo 'Protected release approval granted.'
+
+  build-digests:
+    needs: [validate, authorize]
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { role: inference-api, dockerfile: containers/inference/api.Dockerfile }
+          - { role: inference-manager, dockerfile: containers/inference/manager.Dockerfile }
+          - { role: inference-vllm, dockerfile: containers/inference/vllm.Dockerfile }
+          - { role: inference-evaluator, dockerfile: containers/inference/evaluator.Dockerfile }
+          - { role: inference-migrations, dockerfile: containers/inference/migrations.Dockerfile }
+          - { role: training-api, dockerfile: containers/training/api.Dockerfile }
+          - { role: training-manager, dockerfile: containers/training/manager.Dockerfile }
+          - { role: axolotl-worker, dockerfile: containers/training/axolotl.Dockerfile }
+          - { role: marker-worker, dockerfile: containers/training/marker.Dockerfile }
+          - { role: artifact-worker, dockerfile: containers/training/artifact.Dockerfile }
+          - { role: training-migrations, dockerfile: containers/training/migrations.Dockerfile }
+          - { role: lab-controller, dockerfile: containers/lab/service.Dockerfile, build_args: LAB_ENTRY=controller }
+          - { role: lab-experience-proxy, dockerfile: containers/lab/service.Dockerfile, build_args: LAB_ENTRY=proxy }
+          - { role: hermes-agent, dockerfile: containers/lab/hermes.Dockerfile }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with: { username: "${{ secrets.DOCKERHUB_USERNAME }}", password: "${{ secrets.DOCKERHUB_TOKEN }}" }
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: "${{ matrix.dockerfile }}"
+          build-args: "${{ matrix.build_args }}"
+          platforms: linux/amd64
+          outputs: "type=image,name=treeseed/${{ matrix.role }},push-by-digest=true,name-canonical=true,push=true"
+          provenance: mode=max
+          sbom: true
+          labels: |
+            org.opencontainers.image.version=${{ inputs.version }}
+            org.opencontainers.image.revision=${{ needs.validate.outputs.sha }}
+            org.treeseed-ai.role=${{ matrix.role }}
+      - name: Record immutable digest
+        run: |
+          mkdir -p digest
+          echo '${{ steps.build.outputs.digest }}' > 'digest/${{ matrix.role }}.digest'
+      - uses: actions/upload-artifact@v4
+        with: { name: "digest-${{ matrix.role }}", path: digest, if-no-files-found: error }
+
+  publish-tags:
+    needs: [validate, build-digests]
+    runs-on: ubuntu-latest
+    environment: production
+    permissions: { contents: read, id-token: write }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { pattern: digest-*, path: digests, merge-multiple: true }
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with: { username: "${{ secrets.DOCKERHUB_USERNAME }}", password: "${{ secrets.DOCKERHUB_TOKEN }}" }
+      - uses: sigstore/cosign-installer@v3.9.2
+      - uses: anchore/sbom-action/download-syft@v0.20.6
+      - uses: pnpm/action-setup@v4
+        with: { version: 10.15.1 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24.12.0, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Publish exact tags, scan, sign, and generate SBOMs
+        run: |
+          mkdir -p release-assets/sboms release-assets/vulnerabilities
+          for file in digests/*.digest; do
+            role=$(basename "$file" .digest)
+            digest=$(cat "$file")
+            docker run --rm -v "$PWD/release-assets/vulnerabilities:/reports" aquasec/trivy:0.66.0 image --exit-code 0 --severity CRITICAL --format json --output "/reports/$role.json" "treeseed/$role@$digest"
+          done
+          node --import tsx scripts/release/check-vulnerabilities.ts release-assets/vulnerabilities
+          for file in digests/*.digest; do
+            role=$(basename "$file" .digest)
+            digest=$(cat "$file")
+            docker buildx imagetools create -t "treeseed/$role:${{ inputs.version }}" "treeseed/$role@$digest"
+            cosign sign --yes "treeseed/$role@$digest"
+            syft "treeseed/$role@$digest" -o spdx-json="release-assets/sboms/$role.spdx.json"
+          done
+      - run: node --import tsx scripts/release/collect-image-manifest.ts digests release-assets/image-manifest.json
+      - run: cp release/manifest.json release-assets/compatibility-matrix.json && cp release/vulnerability-exceptions.json release-assets/vulnerability-exceptions.json
+      - uses: actions/upload-artifact@v4
+        with: { name: release-image-metadata, path: release-assets, if-no-files-found: error }
+
+  packages:
+    needs: [validate, publish-tags]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: release-image-metadata, path: release-assets }
+      - uses: pnpm/action-setup@v4
+        with: { version: 10.15.1 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24.12.0, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: TREEAI_IMAGE_MANIFEST="$PWD/release-assets/image-manifest.json" node --import tsx scripts/package-deb.ts all
+      - name: Co-install package contract
+        run: |
+          root=$(mktemp -d)
+          for deb in .artifacts/*.deb; do dpkg-deb --extract "$deb" "$root"; done
+          test -x "$root/usr/bin/treeai"
+          test ! -e "$root/usr/bin/ai-factory-dev"
+          test ! -e "$root/usr/bin/ai-factory-lab"
+      - uses: actions/upload-artifact@v4
+        with: { name: debian-packages, path: .artifacts/*.deb, if-no-files-found: error }
+
+  github-release:
+    needs: [validate, packages]
+    runs-on: ubuntu-latest
+    environment: production
+    permissions: { contents: write }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: debian-packages, path: assets }
+      - uses: actions/download-artifact@v4
+        with: { name: release-image-metadata, path: assets }
+      - name: Import release signing key
+        env: { APT_GPG_PRIVATE_KEY: "${{ secrets.APT_GPG_PRIVATE_KEY }}" }
+        run: printf '%s' "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
+      - name: Sign checksums and publish release
+        env:
+          GH_TOKEN: "${{ github.token }}"
+          APT_GPG_PASSPHRASE: "${{ secrets.APT_GPG_PASSPHRASE }}"
+        run: |
+          export APT_RELEASE_FINGERPRINT="$(cat release/apt/RELEASE_KEY_FINGERPRINT)"
+          cd assets
+          sha256sum $(find . -type f -printf '%P\n' | sort) > SHA256SUMS
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$APT_GPG_PASSPHRASE" --local-user "$APT_RELEASE_FINGERPRINT" --detach-sign --armor SHA256SUMS
+          cd ..
+          gh release create "v${{ inputs.version }}" $(find assets -type f -print | sort) --target '${{ needs.validate.outputs.sha }}' --title "TreeSeed AI ${{ inputs.version }}" --notes-file docs/releases/0.5.0.md
+
+  apt-repository:
+    needs: github-release
+    runs-on: ubuntu-latest
+    environment: production
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all released Debian packages
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          mkdir -p debs pages/apt
+          gh release list --limit 100 --json tagName,isDraft,isPrerelease --jq '.[] | select(.isDraft == false and .isPrerelease == false) | .tagName' | while read tag; do gh release download "$tag" --pattern '*.deb' --dir debs --skip-existing; done
+      - name: Import signing key and build deterministic repository
+        env:
+          APT_GPG_PRIVATE_KEY: "${{ secrets.APT_GPG_PRIVATE_KEY }}"
+          APT_GPG_PASSPHRASE: "${{ secrets.APT_GPG_PASSPHRASE }}"
+        run: |
+          printf '%s' "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
+          export APT_RELEASE_FINGERPRINT="$(cat release/apt/RELEASE_KEY_FINGERPRINT)"
+          sh scripts/release/build-apt-repository.sh debs pages/apt '${{ inputs.version }}'
+      - uses: actions/upload-artifact@v4
+        with: { name: apt-pages-site, path: pages, if-no-files-found: error }
+
+  apt-pages:
+    needs: apt-repository
+    runs-on: ubuntu-latest
+    permissions: { contents: read, pages: write, id-token: write }
+    environment: { name: github-pages, url: "${{ steps.deploy.outputs.page_url }}" }
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: apt-pages-site, path: pages }
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: pages }
+      - id: deploy
+        uses: actions/deploy-pages@v4

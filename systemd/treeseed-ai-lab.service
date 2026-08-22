@@ -1,0 +1,18 @@
+[Unit]
+Description=AI Factory Hermes experience laboratory
+After=network-online.target docker.service treeseed-ai-factory.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=root
+Environment=COMPOSE_FILE=/usr/lib/treeseed-ai/lab/compose.yml
+ExecStart=/usr/bin/docker compose -p treeseed-ai-lab --env-file /etc/treeseed-ai/lab/environment -f ${COMPOSE_FILE} up -d --remove-orphans --wait
+ExecReload=/usr/bin/docker compose -p treeseed-ai-lab --env-file /etc/treeseed-ai/lab/environment -f ${COMPOSE_FILE} up -d --remove-orphans --wait
+ExecStop=/usr/bin/docker compose -p treeseed-ai-lab --env-file /etc/treeseed-ai/lab/environment -f ${COMPOSE_FILE} down
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target

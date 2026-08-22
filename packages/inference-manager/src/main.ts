@@ -1,0 +1,28 @@
+#!/usr/bin/env node
+import { httpHandler,JobWorker,PostgresJobRepository,reconcileCompose,requiredEnv,type JobHandler } from '@ai-platform/common';
+import { readFileSync } from 'node:fs';
+import { Pool } from 'pg';
+
+const command=process.argv[2]??'worker';
+function artifactImportHandler(fallback:string):JobHandler{
+  if(!process.env.ARTIFACT_IMPORT_URL)return httpHandler(`${fallback}/import`);
+  return async(job,signal,progress)=>{await progress(.05);const token=readFileSync(process.env.ARTIFACT_IMPORT_TOKEN_FILE!,'utf8').trim();const response=await fetch(process.env.ARTIFACT_IMPORT_URL!,{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify(job),signal});if(!response.ok)throw new Error(`Artifact importer returned ${response.status}: ${await response.text()}`);await progress(.95);return((await response.json())as{resultManifest:string}).resultManifest;};
+}
+async function evaluatorCall(evaluator:string,path:string,job:any,input:unknown,signal:AbortSignal){const response=await fetch(`${evaluator}/${path}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jobId:job.id,type:job.type,input}),signal});if(!response.ok)throw new Error(`${path} worker returned ${response.status}: ${await response.text()}`);return response.json()as Promise<{resultManifest?:string}>;}
+function deploymentHandler(pool:Pool,evaluator:string,action:'promote'|'rollback'):JobHandler{
+  return async(job,signal,progress)=>{
+    await progress(.05);if(action==='promote')await evaluatorCall(evaluator,'authorize',job,job.request,signal);
+    const existing=await pool.query('SELECT id FROM deployments WHERE source_job_id=$1',[job.id]);if(existing.rowCount)return`deployment://${existing.rows[0].id}`;
+    const candidate=action==='promote'?await pool.query('SELECT id,manifest FROM candidates WHERE id=$1 AND status=$2',[String((job.request as any).candidateId??''),'inactive']):await pool.query(`SELECT c.id,c.manifest FROM deployments active JOIN deployments prior ON prior.id=active.previous_id JOIN candidates c ON c.id=prior.candidate_id WHERE active.active=true ORDER BY active.created_at DESC LIMIT 1`);
+    if(!candidate.rowCount)throw new Error(action==='promote'?'Inactive candidate was not found.':'No known-good deployment is available for rollback.');const selected=candidate.rows[0],result=await evaluatorCall(evaluator,action,job,{candidateId:selected.id,manifest:selected.manifest},signal);await progress(.85);
+    const client=await pool.connect();let prior:{deployment_id:string;candidate_id:string;manifest:unknown}|undefined,newDeployment:string|undefined;
+    try{await client.query('BEGIN');const active=await client.query(`SELECT d.id deployment_id,c.id candidate_id,c.manifest FROM deployments d JOIN candidates c ON c.id=d.candidate_id WHERE d.active=true ORDER BY d.created_at DESC LIMIT 1 FOR UPDATE`);prior=active.rows[0];await client.query('UPDATE deployments SET active=false WHERE active=true');const inserted=await client.query(`INSERT INTO deployments(candidate_id,active,previous_id,source_job_id) VALUES($1,true,$2,$3) ON CONFLICT(source_job_id) DO UPDATE SET active=true RETURNING id`,[selected.id,prior?.deployment_id??null,job.id]);newDeployment=inserted.rows[0].id;await client.query("UPDATE candidates SET status=CASE WHEN id=$1 THEN 'active' ELSE 'inactive' END",[selected.id]);await client.query('COMMIT');}catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
+    if(action==='promote'){try{await evaluatorCall(evaluator,'canary',job,{candidateId:selected.id},signal);}catch(error){if(prior)await evaluatorCall(evaluator,'rollback',job,{candidateId:prior.candidate_id,manifest:prior.manifest},signal);const restore=await pool.connect();try{await restore.query('BEGIN');await restore.query('UPDATE deployments SET active=false WHERE id=$1',[newDeployment]);if(prior)await restore.query('UPDATE deployments SET active=true WHERE id=$1',[prior.deployment_id]);await restore.query("UPDATE candidates SET status=CASE WHEN id=$1 THEN 'active' ELSE 'inactive' END",[prior?.candidate_id??'']);await restore.query('COMMIT');}catch(restoreError){await restore.query('ROLLBACK');throw new Error(`Canary and database rollback failed: ${String(restoreError)}`);}finally{restore.release();}throw new Error(`Post-promotion canary failed and rollback completed: ${String(error)}`);}}
+    await progress(.98);return result.resultManifest;
+  };
+}
+if(command==='plan'||command==='apply'){
+  const result=await reconcileCompose({composeFile:process.env.COMPOSE_FILE??'/usr/lib/treeseed-ai/inference/compose.yml',project:'treeseed-ai-inference',action:command});process.stdout.write(JSON.stringify(result,null,2)+'\n');
+}else{
+  const pool=new Pool({connectionString:requiredEnv('DATABASE_URL')});const jobs=new PostgresJobRepository(pool);const evaluator=process.env.EVALUATOR_URL??'http://evaluator:8080';const handlers={'adapter.import':artifactImportHandler(evaluator),'evaluation.run':httpHandler(`${evaluator}/evaluate`),'ranking.run':httpHandler(`${evaluator}/rank`),'deployment.promote':deploymentHandler(pool,evaluator,'promote'),'deployment.rollback':deploymentHandler(pool,evaluator,'rollback')};const modeFile=process.env.AI_FACTORY_MODE_FILE;const enabled=()=>{if(!modeFile)return Object.keys(handlers);try{return JSON.parse(readFileSync(modeFile,'utf8')).mode==='awake'?Object.keys(handlers):['adapter.import','ranking.run'];}catch{return['adapter.import','ranking.run'];}};const worker=new JobWorker({jobs,workerId:`inference-manager-${process.pid}`,handlers,enabledTypes:enabled});process.on('SIGTERM',()=>worker.stop());await worker.run();
+}

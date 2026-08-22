@@ -1,0 +1,1 @@
+{"schemaVersion":"treeai.command-descriptor/v1","group":"host","package":"treeseed-ai-host-runtime","version":"0.5.0","executable":"/usr/lib/treeseed-ai/host-runtime/dist/cli.js","commands":["plan","apply","verify","migration-plan"]}

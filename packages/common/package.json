@@ -1,0 +1,10 @@
+{
+  "name": "@ai-platform/common",
+  "version": "0.5.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "bin": { "ai-api-key": "./dist/key-cli.js" },
+  "scripts": { "build": "tsc -p tsconfig.json", "test": "vitest run ../../tests/common" },
+  "dependencies": { "@aws-sdk/client-s3": "^3.879.0", "hono": "^4.11.4", "pg": "^8.16.3" }
+}

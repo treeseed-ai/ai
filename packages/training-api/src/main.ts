@@ -1,0 +1,3 @@
+#!/usr/bin/env node
+import {serve} from '@hono/node-server';import{postgresApiKeyResolver,PostgresJobRepository}from'@ai-platform/common';import{Pool}from'pg';import{createTrainingControlApp}from'./app.js';import{trainingConfig}from'./config.js';
+const config=trainingConfig();const pool=new Pool({connectionString:config.databaseUrl});const jobs=new PostgresJobRepository(pool);const resolveKey=postgresApiKeyResolver(pool,config.apiKeys);serve({fetch:createTrainingControlApp({jobs,resolveKey,version:config.version,ready:async()=>{await pool.query('SELECT 1');return true;}}).fetch,hostname:config.host,port:config.port});process.stdout.write(JSON.stringify({service:'training-api',port:config.port})+'\n');

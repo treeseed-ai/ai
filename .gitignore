@@ -1,7 +1,13 @@
 dist/
 node_modules/
 coverage/
+.treeseed/
+.artifacts/
 *.log
+__pycache__/
+*.pyc
 .env
 .env.*
 !.env.example
+release/apt/*.private.asc
+release/apt/*.secret.asc

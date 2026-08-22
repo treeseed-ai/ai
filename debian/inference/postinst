@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+if ! getent group treeseed-ai-inference >/dev/null; then groupadd --system treeseed-ai-inference; fi
+if ! getent passwd treeseed-ai-inference >/dev/null; then useradd --system --gid treeseed-ai-inference --home-dir /var/lib/treeseed-ai/inference --shell /usr/sbin/nologin treeseed-ai-inference; fi
+install -d -o treeseed-ai-inference -g treeseed-ai-inference -m 0750 /etc/treeseed-ai/inference /var/lib/treeseed-ai/inference /var/cache/treeseed-ai/inference
+if [ ! -e /etc/treeseed-ai/inference/environment ]; then cp /usr/share/treeseed-ai/inference/inference.env.example /etc/treeseed-ai/inference/environment; chmod 0640 /etc/treeseed-ai/inference/environment; fi
+chown root:treeseed-ai-inference /etc/treeseed-ai/inference/environment
+systemctl daemon-reload

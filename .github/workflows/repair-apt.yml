@@ -1,0 +1,43 @@
+name: Repair TreeSeed AI APT publication
+
+on:
+  workflow_dispatch:
+
+permissions: { contents: read }
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: production
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reconstruct all public package releases
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          mkdir -p debs pages/apt
+          gh release list --limit 100 --json tagName,isDraft,isPrerelease --jq '.[] | select(.isDraft == false and .isPrerelease == false) | .tagName' | while read tag; do gh release download "$tag" --pattern '*.deb' --dir debs --skip-existing; done
+      - name: Sign APT metadata
+        env:
+          APT_GPG_PRIVATE_KEY: "${{ secrets.APT_GPG_PRIVATE_KEY }}"
+          APT_GPG_PASSPHRASE: "${{ secrets.APT_GPG_PASSPHRASE }}"
+        run: |
+          printf '%s' "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
+          export APT_RELEASE_FINGERPRINT="$(cat release/apt/RELEASE_KEY_FINGERPRINT)"
+          sh scripts/release/build-apt-repository.sh debs pages/apt repair
+      - uses: actions/upload-artifact@v4
+        with: { name: repaired-apt-pages-site, path: pages, if-no-files-found: error }
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions: { contents: read, pages: write, id-token: write }
+    environment: { name: github-pages, url: "${{ steps.deploy.outputs.page_url }}" }
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: repaired-apt-pages-site, path: pages }
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: pages }
+      - id: deploy
+        uses: actions/deploy-pages@v4

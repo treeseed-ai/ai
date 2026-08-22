@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+if ! getent group treeseed-ai-lab >/dev/null; then groupadd --system treeseed-ai-lab; fi
+if ! getent passwd treeseed-ai-lab >/dev/null; then useradd --system --gid treeseed-ai-lab --home-dir /var/lib/treeseed-ai/lab --shell /usr/sbin/nologin treeseed-ai-lab; fi
+install -d -o root -g treeseed-ai-lab -m 0750 /etc/treeseed-ai/lab
+install -d -o treeseed-ai-lab -g treeseed-ai-lab -m 0750 /var/lib/treeseed-ai/lab /var/cache/treeseed-ai/lab
+systemctl daemon-reload
+exit 0

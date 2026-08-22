@@ -1,0 +1,15 @@
+{
+  auto_https off
+}
+:4770 {
+  tls /tls/server.crt /tls/server.key
+  reverse_proxy inference-api:4770
+}
+:4771 {
+  tls /tls/server.crt /tls/server.key
+  reverse_proxy inference-api:4771
+}
+:4780 {
+  tls /tls/server.crt /tls/server.key
+  reverse_proxy training-api:4780
+}

@@ -1,0 +1,15 @@
+{
+  auto_https off
+}
+:4791 {
+  tls /tls/server.crt /tls/server.key
+  reverse_proxy open-webui:8080
+}
+:4792 {
+  tls /tls/server.crt /tls/server.key
+  reverse_proxy hermes:9119
+}
+:4793 {
+  tls /tls/server.crt /tls/server.key
+  reverse_proxy controller:8081
+}

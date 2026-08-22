@@ -1,0 +1,2 @@
+import{describe,expect,it}from'vitest';import{hashApiKey,verifyApiKey}from'../../packages/common/src/auth.ts';
+describe('API key hashing',()=>{it('uses salted scrypt hashes and rejects wrong secrets',()=>{const first=hashApiKey('secret');const second=hashApiKey('secret');expect(first).not.toBe(second);expect(verifyApiKey('secret',first)).toBe(true);expect(verifyApiKey('wrong',first)).toBe(false);});});

@@ -1,0 +1,68 @@
+{
+  "schemaVersion": "ai.host-runtime-compatibility/v1",
+  "release": "0.5.0",
+  "architecture": "amd64",
+  "supportedPlatforms": {
+    "debian:12": { "codename": "bookworm", "dockerSuffix": "debian.12~bookworm" },
+    "debian:13": { "codename": "trixie", "dockerSuffix": "debian.13~trixie" },
+    "ubuntu:22.04": { "codename": "jammy", "dockerSuffix": "ubuntu.22.04~jammy" },
+    "ubuntu:24.04": { "codename": "noble", "dockerSuffix": "ubuntu.24.04~noble" },
+    "ubuntu:26.04": { "codename": "resolute", "dockerSuffix": "ubuntu.26.04~resolute" }
+  },
+  "repositories": {
+    "docker": { "keyUrl": "https://download.docker.com/linux/{id}/gpg", "fingerprint": "9DC858229FC7DD38854AE2D88D81803C0EBFCD88", "url": "https://download.docker.com/linux/{id}" },
+    "nvidia": { "keyUrl": "https://nvidia.github.io/libnvidia-container/gpgkey", "fingerprint": "C95B321B61E88C1809C4F759DDCAE044F796ECB0", "url": "https://nvidia.github.io/libnvidia-container/stable/deb/amd64" }
+  },
+  "packages": {
+    "docker-ce": "5:29.7.2-1~{dockerSuffix}",
+    "docker-ce-cli": "5:29.7.2-1~{dockerSuffix}",
+    "containerd.io": "2.3.3-1~{dockerSuffix}",
+    "docker-buildx-plugin": "0.36.1-1~{dockerSuffix}",
+    "docker-compose-plugin": "5.5.0-1~{dockerSuffix}",
+    "nvidia-container-toolkit": "1.20.0-1"
+  },
+  "artifacts": {
+    "debian:12": [
+      {"name":"docker-ce","version":"5:29.7.2-1~debian.12~bookworm","architecture":"amd64","filename":"dists/bookworm/pool/stable/amd64/docker-ce_29.7.2-1~debian.12~bookworm_amd64.deb","sha256":"e37c0647a2b3ad84915d3b96331db9695ecb4196409df5f37f78cf58a5084e19"},
+      {"name":"docker-ce-cli","version":"5:29.7.2-1~debian.12~bookworm","architecture":"amd64","filename":"dists/bookworm/pool/stable/amd64/docker-ce-cli_29.7.2-1~debian.12~bookworm_amd64.deb","sha256":"9048b959cfe8ffc329a24145b4d06f189623c43b0bba64454009adc02cb1362c"},
+      {"name":"containerd.io","version":"2.3.3-1~debian.12~bookworm","architecture":"amd64","filename":"dists/bookworm/pool/stable/amd64/containerd.io_2.3.3-1~debian.12~bookworm_amd64.deb","sha256":"7bec79a23be7c2258c626be8e5d1b2bb4df273b17578bdb07107e557ca75fdbd"},
+      {"name":"docker-buildx-plugin","version":"0.36.1-1~debian.12~bookworm","architecture":"amd64","filename":"dists/bookworm/pool/stable/amd64/docker-buildx-plugin_0.36.1-1~debian.12~bookworm_amd64.deb","sha256":"ae41151af7056d0bccc71ab58ca992e84c15020c560100c7a1005db7483ad5b7"},
+      {"name":"docker-compose-plugin","version":"5.5.0-1~debian.12~bookworm","architecture":"amd64","filename":"dists/bookworm/pool/stable/amd64/docker-compose-plugin_5.5.0-1~debian.12~bookworm_amd64.deb","sha256":"e54ead5156cce87b4f920c4dd3045834056bd6f94734b05e794d0e418a909143"}
+    ],
+    "debian:13": [
+      {"name":"docker-ce","version":"5:29.7.2-1~debian.13~trixie","architecture":"amd64","filename":"dists/trixie/pool/stable/amd64/docker-ce_29.7.2-1~debian.13~trixie_amd64.deb","sha256":"972911c23af76e09334314f306057c1e4bb0464bac5091eb113f35812219a672"},
+      {"name":"docker-ce-cli","version":"5:29.7.2-1~debian.13~trixie","architecture":"amd64","filename":"dists/trixie/pool/stable/amd64/docker-ce-cli_29.7.2-1~debian.13~trixie_amd64.deb","sha256":"3d1a00d1549f7539606252b1e2b88ae2a0c855e02e5fa92ad962c8a118d7f6ad"},
+      {"name":"containerd.io","version":"2.3.3-1~debian.13~trixie","architecture":"amd64","filename":"dists/trixie/pool/stable/amd64/containerd.io_2.3.3-1~debian.13~trixie_amd64.deb","sha256":"736bd37b332166086c09547fdd3baac35ec2153650f45eb5a8cd8aabdc76e74b"},
+      {"name":"docker-buildx-plugin","version":"0.36.1-1~debian.13~trixie","architecture":"amd64","filename":"dists/trixie/pool/stable/amd64/docker-buildx-plugin_0.36.1-1~debian.13~trixie_amd64.deb","sha256":"a2bf4428a02f1e06867e96a0996768636be3f918ddc964f2ce9e046907bb17b7"},
+      {"name":"docker-compose-plugin","version":"5.5.0-1~debian.13~trixie","architecture":"amd64","filename":"dists/trixie/pool/stable/amd64/docker-compose-plugin_5.5.0-1~debian.13~trixie_amd64.deb","sha256":"f9b2e7c446c54869d6d35e7dd70e5b1c69ba734f499181aeb928ec215ae8f5ec"}
+    ],
+    "ubuntu:22.04": [
+      {"name":"docker-ce","version":"5:29.7.2-1~ubuntu.22.04~jammy","architecture":"amd64","filename":"dists/jammy/pool/stable/amd64/docker-ce_29.7.2-1~ubuntu.22.04~jammy_amd64.deb","sha256":"c74646249f324dbe1269f76b5b606708e42ff302461679c0776292b4f59cca88"},
+      {"name":"docker-ce-cli","version":"5:29.7.2-1~ubuntu.22.04~jammy","architecture":"amd64","filename":"dists/jammy/pool/stable/amd64/docker-ce-cli_29.7.2-1~ubuntu.22.04~jammy_amd64.deb","sha256":"b2e8044659394d02573d4892b6d05fdb9d7521ad834acf9371cb1b45daa0c5f3"},
+      {"name":"containerd.io","version":"2.3.3-1~ubuntu.22.04~jammy","architecture":"amd64","filename":"dists/jammy/pool/stable/amd64/containerd.io_2.3.3-1~ubuntu.22.04~jammy_amd64.deb","sha256":"9ff8635e778d2554a635c044c7a33dbd2da599606e2f5f10accad896e6b8ece9"},
+      {"name":"docker-buildx-plugin","version":"0.36.1-1~ubuntu.22.04~jammy","architecture":"amd64","filename":"dists/jammy/pool/stable/amd64/docker-buildx-plugin_0.36.1-1~ubuntu.22.04~jammy_amd64.deb","sha256":"2c11c849c353c880f79993e73aa03f2e58987046049eb4462f52f81d967734f6"},
+      {"name":"docker-compose-plugin","version":"5.5.0-1~ubuntu.22.04~jammy","architecture":"amd64","filename":"dists/jammy/pool/stable/amd64/docker-compose-plugin_5.5.0-1~ubuntu.22.04~jammy_amd64.deb","sha256":"77704c0b1370a3025918d8129eebfe5016dbf20a5c6e824e6ec93e5e898834c6"}
+    ],
+    "ubuntu:24.04": [
+      {"name":"docker-ce","version":"5:29.7.2-1~ubuntu.24.04~noble","architecture":"amd64","filename":"dists/noble/pool/stable/amd64/docker-ce_29.7.2-1~ubuntu.24.04~noble_amd64.deb","sha256":"8243f97d569a0fa33ea32417e399e9f524e7d75d3898fa9d24e0eadaa486af68"},
+      {"name":"docker-ce-cli","version":"5:29.7.2-1~ubuntu.24.04~noble","architecture":"amd64","filename":"dists/noble/pool/stable/amd64/docker-ce-cli_29.7.2-1~ubuntu.24.04~noble_amd64.deb","sha256":"920a5fa031f33f2dd5b56b4a9bc4c725bc9549d6007004a6610a469873ec69fe"},
+      {"name":"containerd.io","version":"2.3.3-1~ubuntu.24.04~noble","architecture":"amd64","filename":"dists/noble/pool/stable/amd64/containerd.io_2.3.3-1~ubuntu.24.04~noble_amd64.deb","sha256":"3a2c59a92b4c57d247f26ea37c6f1913aefee9e6f8d64815c47505e6de0033db"},
+      {"name":"docker-buildx-plugin","version":"0.36.1-1~ubuntu.24.04~noble","architecture":"amd64","filename":"dists/noble/pool/stable/amd64/docker-buildx-plugin_0.36.1-1~ubuntu.24.04~noble_amd64.deb","sha256":"405be4bdbd70052880583da5d181c8e1c06e61f1a5b230ad2ad124e04318def2"},
+      {"name":"docker-compose-plugin","version":"5.5.0-1~ubuntu.24.04~noble","architecture":"amd64","filename":"dists/noble/pool/stable/amd64/docker-compose-plugin_5.5.0-1~ubuntu.24.04~noble_amd64.deb","sha256":"b986e04c3ba099a4c4741af216b3dfbf5f223b863af57758b8460eecbae28eba"}
+    ],
+    "ubuntu:26.04": [
+      {"name":"docker-ce","version":"5:29.7.2-1~ubuntu.26.04~resolute","architecture":"amd64","filename":"dists/resolute/pool/stable/amd64/docker-ce_29.7.2-1~ubuntu.26.04~resolute_amd64.deb","sha256":"d12027201c0a10959a7146365423b8de0296686c82f3b5f8ebf29375a479b3e7"},
+      {"name":"docker-ce-cli","version":"5:29.7.2-1~ubuntu.26.04~resolute","architecture":"amd64","filename":"dists/resolute/pool/stable/amd64/docker-ce-cli_29.7.2-1~ubuntu.26.04~resolute_amd64.deb","sha256":"5967eae97b2c9c4b90ef28c271cbcaf2f0ca64d53ef2a69645423fda45b75885"},
+      {"name":"containerd.io","version":"2.3.3-1~ubuntu.26.04~resolute","architecture":"amd64","filename":"dists/resolute/pool/stable/amd64/containerd.io_2.3.3-1~ubuntu.26.04~resolute_amd64.deb","sha256":"6bf5d8ce94adb0876403753281a293b5af7ebeca51d6fac147d016fa40c0ebe5"},
+      {"name":"docker-buildx-plugin","version":"0.36.1-1~ubuntu.26.04~resolute","architecture":"amd64","filename":"dists/resolute/pool/stable/amd64/docker-buildx-plugin_0.36.1-1~ubuntu.26.04~resolute_amd64.deb","sha256":"27aeedeca57b58a5da1081a934ff03a44d6f00dc10d14f5c299d80596ab58c94"},
+      {"name":"docker-compose-plugin","version":"5.5.0-1~ubuntu.26.04~resolute","architecture":"amd64","filename":"dists/resolute/pool/stable/amd64/docker-compose-plugin_5.5.0-1~ubuntu.26.04~resolute_amd64.deb","sha256":"035cdc536ec75c511cf313aae129efd2e3f958cfc83448be33d9ae5f2790fdcc"}
+    ],
+    "common": [
+      {"name":"nvidia-container-toolkit","version":"1.20.0-1","architecture":"amd64","filename":"./nvidia-container-toolkit_1.20.0-1_amd64.deb","sha256":"da7bb4acbd6027349fb5936dfed7e6394592c40a5392ca43172e2356d5b539b5"}
+    ]
+  },
+  "validatedRanges": { "docker": { "minimum": "29.0.0", "maximumExclusive": "30.0.0" }, "compose": { "minimum": "5.0.0", "maximumExclusive": "6.0.0" }, "toolkit": { "minimum": "1.18.0", "maximumExclusive": "1.21.0" } },
+  "cudaVerificationImage": "nvidia/cuda:12.8.1-base-ubuntu24.04@sha256:e711c99333fdfe8ae1e677b4972be6c5021f0128a1d31f775c7e58d88921b6a9",
+  "artifactResolution": { "source": "signed-apt-index", "requiredFields": ["Package", "Version", "Architecture", "Filename", "SHA256"] },
+  "knownConflicts": ["docker.io", "docker-compose", "docker-doc", "docker-buildx", "podman-docker", "containerd", "runc", "nvidia-docker2", "nvidia-container-runtime"]
+}

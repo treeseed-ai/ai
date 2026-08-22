@@ -1,0 +1,73 @@
+name: treeseed-ai-inference
+x-s3-environment: &s3-environment
+  AWS_ENDPOINT_URL: "${S3_ENDPOINT:-}"
+  AWS_REGION: "${S3_REGION:-us-east-1}"
+  AWS_ACCESS_KEY_ID: "${S3_ACCESS_KEY:-}"
+  AWS_SECRET_ACCESS_KEY: "${S3_SECRET_KEY:-}"
+  S3_BUCKET: "${S3_BUCKET:-ai-inference}"
+services:
+  migrations:
+    image: ${INFERENCE_MIGRATIONS_IMAGE:?INFERENCE_MIGRATIONS_IMAGE is required}
+    build: { context: ../.., dockerfile: containers/inference/migrations.Dockerfile }
+    environment: { DATABASE_URL: "${DATABASE_URL:-postgresql://inference:inference@postgres:5432/inference}" }
+    restart: "no"
+  api:
+    image: ${INFERENCE_API_IMAGE:?INFERENCE_API_IMAGE is required}
+    build: { context: ../.., dockerfile: containers/inference/api.Dockerfile }
+    restart: unless-stopped
+    depends_on: { migrations: { condition: service_completed_successfully }, vllm: { condition: service_healthy } }
+    environment:
+      DATABASE_URL: "${DATABASE_URL:-postgresql://inference:inference@postgres:5432/inference}"
+      AI_API_KEYS: "${AI_API_KEYS:?AI_API_KEYS is required}"
+      CONTROL_HOST: 0.0.0.0
+      INFERENCE_HOST: 0.0.0.0
+      VLLM_URL: http://vllm:8000
+      PUBLIC_MODEL: "${PUBLIC_MODEL:-local-model}"
+      SOURCE_MODEL: "${SOURCE_MODEL:-Qwen/Qwen3.5-4B}"
+      SOURCE_MODEL_REVISION: "${SOURCE_MODEL_REVISION:-851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a}"
+    ports: ["${CONTROL_BIND:-127.0.0.1}:4770:4770", "${INFERENCE_BIND:-0.0.0.0}:4771:4771"]
+  manager:
+    image: ${INFERENCE_MANAGER_IMAGE:?INFERENCE_MANAGER_IMAGE is required}
+    build: { context: ../.., dockerfile: containers/inference/manager.Dockerfile }
+    restart: unless-stopped
+    depends_on: { migrations: { condition: service_completed_successfully }, evaluator: { condition: service_healthy } }
+    environment: { DATABASE_URL: "${DATABASE_URL:-postgresql://inference:inference@postgres:5432/inference}", EVALUATOR_URL: "http://evaluator:8080" }
+  evaluator:
+    image: ${INFERENCE_EVALUATOR_IMAGE:?INFERENCE_EVALUATOR_IMAGE is required}
+    build: { context: ../.., dockerfile: containers/inference/evaluator.Dockerfile }
+    restart: unless-stopped
+    environment: { <<: *s3-environment, VLLM_URL: "http://vllm:8000" }
+    volumes: ["inference-state:/state"]
+    healthcheck: { test: ["CMD","python","-c","import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/healthz')"], interval: 10s, timeout: 3s, retries: 10 }
+  vllm:
+    image: ${INFERENCE_VLLM_IMAGE:?INFERENCE_VLLM_IMAGE is required}
+    build: { context: ../.., dockerfile: containers/inference/vllm.Dockerfile }
+    restart: unless-stopped
+    ipc: host
+    volumes: ["${MODEL_CACHE:-inference-models}:/models", "inference-state:/state:ro"]
+    environment: { HF_HOME: /models }
+    deploy: { resources: { reservations: { devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }] } } }
+    command: ["--model","${SOURCE_MODEL:-Qwen/Qwen3.5-4B}","--revision","${SOURCE_MODEL_REVISION:-851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a}","--served-model-name","${SOURCE_MODEL:-Qwen/Qwen3.5-4B}","--max-model-len","${MAX_MODEL_LENGTH:-16384}","--enable-lora","--enable-auto-tool-choice","--tool-call-parser","qwen3_coder","--reasoning-parser","qwen3","--language-model-only"]
+    healthcheck: { test: ["CMD","curl","-fsS","http://127.0.0.1:8000/health"], interval: 10s, timeout: 5s, retries: 30, start_period: 180s }
+  postgres:
+    image: postgres:17.6-alpine@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94
+    profiles: [state]
+    environment: { POSTGRES_DB: inference, POSTGRES_USER: inference, POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-inference}" }
+    volumes: ["inference-postgres:/var/lib/postgresql/data"]
+    healthcheck: { test: ["CMD-SHELL","pg_isready -U inference"], interval: 5s, timeout: 3s, retries: 20 }
+  minio:
+    image: minio/minio:RELEASE.2025-07-23T15-54-02Z@sha256:d249d1fb6966de4d8ad26c04754b545205ff15a62e4fd19ebd0f26fa5baacbc0
+    profiles: [state]
+    command: server /data
+    environment: { MINIO_ROOT_USER: "${MINIO_ROOT_USER:-inference-root}", MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-inference-root-development}" }
+    volumes: ["inference-objects:/data"]
+    healthcheck: { test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/minio/health/live"], interval: 5s, timeout: 3s, retries: 20 }
+  minio-init:
+    image: minio/mc:RELEASE.2025-07-21T05-28-08Z@sha256:fb8f773eac8ef9d6da0486d5dec2f42f219358bcb8de579d1623d518c9ebd4cc
+    profiles: [state]
+    depends_on: { minio: { condition: service_healthy } }
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD && mc mb --ignore-existing local/$$S3_BUCKET && printf '{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"s3:*\"],\"Resource\":[\"arn:aws:s3:::%s\",\"arn:aws:s3:::%s/*\"]}]}' $$S3_BUCKET $$S3_BUCKET > /tmp/product-policy.json && (mc admin user info local $$S3_ACCESS_KEY >/dev/null 2>&1 || mc admin user add local $$S3_ACCESS_KEY $$S3_SECRET_KEY) && (mc admin policy info local product-policy >/dev/null 2>&1 || mc admin policy create local product-policy /tmp/product-policy.json) && mc admin policy attach local product-policy --user $$S3_ACCESS_KEY"]
+    environment: { MINIO_ROOT_USER: "${MINIO_ROOT_USER:-inference-root}", MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-inference-root-development}", S3_ACCESS_KEY: "${S3_ACCESS_KEY:-inference}", S3_SECRET_KEY: "${S3_SECRET_KEY:-inference-development}", S3_BUCKET: "${S3_BUCKET:-ai-inference}" }
+    restart: "no"
+volumes: { inference-state: {}, inference-models: {}, inference-postgres: {}, inference-objects: {} }

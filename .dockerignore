@@ -1,0 +1,10 @@
+.git
+.artifacts
+node_modules
+coverage
+dist
+**/dist
+**/__pycache__
+*.log
+.env
+.env.*
