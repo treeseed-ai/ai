@@ -75,6 +75,8 @@ function bootstrap(base: string, configured?: PlatformConfiguration, version = r
 	directory(base, "usr/lib/treeseed-ai/bootstrap", "usr/share/treeseed-ai/bootstrap/keyrings", "usr/lib/systemd/system", "usr/share/doc/treeseed-ai");
 	copyFileSync(resolve(root, "scripts/bootstrap/bootstrap.sh"), resolve(base, "usr/lib/treeseed-ai/bootstrap/bootstrap.sh"));
 	chmodSync(resolve(base, "usr/lib/treeseed-ai/bootstrap/bootstrap.sh"), 0o755);
+	copyFileSync(resolve(root, "scripts/bootstrap/migrate-0.4.sh"), resolve(base, "usr/lib/treeseed-ai/bootstrap/migrate-0.4.sh"));
+	chmodSync(resolve(base, "usr/lib/treeseed-ai/bootstrap/migrate-0.4.sh"), 0o755);
 	for (const name of ["stable.sources", "development.sources"]) copyFileSync(resolve(root, `deploy/bootstrap/${name}`), resolve(base, `usr/share/treeseed-ai/bootstrap/${name}`));
 	copyFileSync(resolve(root, "deploy/bootstrap/preferences"), resolve(base, "usr/share/treeseed-ai/bootstrap/preferences"));
 	copyFileSync(resolve(root, "systemd/treeseed-ai-bootstrap.service"), resolve(base, "usr/lib/systemd/system/treeseed-ai-bootstrap.service"));

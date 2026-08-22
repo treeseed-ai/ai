@@ -2,6 +2,20 @@
 
 Install the downloaded `treeseed-ai_*.deb` once. Its maintainer script only creates protected seed state and launches `treeseed-ai-bootstrap.service` asynchronously. The service waits for APT/dpkg locks, installs the private runtime, CLI, catalog, and manager from the signed repository, then hands desired state to the manager.
 
+### Explicit 0.4 takeover
+
+An installed 0.4 local factory has no unified TreeAI configuration, and its package removal guard owns the legacy coordinator. The central installer detects this layout and deliberately does not begin handoff automatically. It also does not stop containers, rewrite product environments, or touch volumes during package installation.
+
+Review and approve the fixed migration after installing the central package:
+
+```bash
+sudo /usr/lib/treeseed-ai/bootstrap/migrate-0.4.sh plan
+sudo /usr/lib/treeseed-ai/bootstrap/migrate-0.4.sh apply --confirm
+sudo journalctl -fu treeseed-ai-bootstrap.service
+```
+
+The plan blocks when inference or GPU training counters are nonzero, the persisted mode is unsafe, or required bundled PostgreSQL/MinIO credentials are absent. Apply records approval and starts the asynchronous bootstrap. At the dpkg boundary it backs up and hashes the legacy environments and coordinator assets, disables the old coordinator, upgrades the repository-managed packages, and converges with registry images. Existing Compose project names and Docker volumes are retained. PostgreSQL, S3, and MinIO credentials are read from the old product environments; TLS, artifact-signing material, and `awake`/`sleep` mode move to manager ownership. A failure before package installation restores the old coordinator. Once dpkg starts, recovery remains manager-owned because restarting old code against partially upgraded files is unsafe.
+
 Use `treeai platform status`, `treeai platform doctor`, `treeai platform events`, and `treeai update watch` for live operation. Read-only monitoring and mode changes use the authenticated manager API. Applying releases, changing channels, adopting a different configuration ID, component ownership, and recovery require local root over `/run/treeseed-ai/manager/control.sock`.
 
 ## Desired state

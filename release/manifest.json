@@ -1,9 +1,9 @@
 {
   "schemaVersion": "treeai.release/v2",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "debianRevision": "1",
-  "debianVersion": "0.6.0-1",
-  "sourceDateEpoch": 1787428800,
+  "debianVersion": "0.6.1-1",
+  "sourceDateEpoch": 1787439600,
   "channel": "stable",
   "githubRepository": "treeseed-ai/ai",
   "dockerNamespace": "treeseed",
