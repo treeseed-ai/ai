@@ -1,0 +1,70 @@
+Source: treeseed-ai
+Section: admin
+Priority: optional
+Maintainer: TreeSeed AI Releases <releases@treeseed.ai>
+Build-Depends: debhelper-compat (= 13), nodejs (>= 22), curl, xz-utils, gnupg
+Standards-Version: 4.7.0
+Homepage: https://github.com/treeseed-ai/ai
+Rules-Requires-Root: no
+
+Package: treeseed-ai
+Architecture: amd64
+Depends: systemd, ca-certificates, curl, gnupg, openssl, apt (>= 2.4), dpkg
+Description: TreeAI managed platform bootstrap and recovery seed
+
+Package: treeseed-ai-archive-keyring
+Architecture: all
+Description: TreeAI stable APT archive public keyring
+
+Package: treeseed-ai-development-archive-keyring
+Architecture: all
+Description: TreeAI development APT archive public keyring
+
+Package: treeseed-ai-host-js-runtime
+Architecture: amd64
+Depends: libc6 (>= 2.36), libstdc++6, ca-certificates
+Description: Private pinned JavaScript runtime for TreeAI
+
+Package: treeseed-ai-manager
+Architecture: amd64
+Depends: treeseed-ai-host-js-runtime (>= 0.6.0), treeseed-ai-cli (>= 0.6.0), treeseed-ai-release-catalog (>= 0.6.0), treeseed-ai-archive-keyring, treeseed-ai-development-archive-keyring, apt, curl, openssl, systemd
+Breaks: treeseed-ai-host-runtime (<< 0.6.0)
+Replaces: treeseed-ai-host-runtime (<< 0.6.0)
+Description: Transactional lifecycle and update manager for TreeAI
+
+Package: treeseed-ai-cli
+Architecture: amd64
+Depends: treeseed-ai-host-js-runtime (>= 0.6.0), ca-certificates
+Description: Unified command-line interface for TreeAI
+
+Package: treeseed-ai-release-catalog
+Architecture: all
+Description: TreeAI signed release deployment catalog
+
+Package: treeseed-ai-host-runtime
+Architecture: amd64
+Depends: treeseed-ai-cli (>= 0.6.0), treeseed-ai-host-js-runtime (>= 0.6.0), ca-certificates, curl, gnupg
+Description: Docker and NVIDIA host capability integration for TreeAI
+
+Package: treeseed-ai-inference
+Architecture: amd64
+Depends: treeseed-ai-cli (>= 0.6.0), treeseed-ai-host-js-runtime (>= 0.6.0), openssl
+Recommends: treeseed-ai-manager (>= 0.6.0), treeseed-ai-host-runtime (>= 0.6.0)
+Description: Containerized TreeAI inference platform
+
+Package: treeseed-ai-training
+Architecture: amd64
+Depends: treeseed-ai-cli (>= 0.6.0), treeseed-ai-host-js-runtime (>= 0.6.0), openssl
+Recommends: treeseed-ai-manager (>= 0.6.0), treeseed-ai-host-runtime (>= 0.6.0)
+Description: Containerized TreeAI training platform
+
+Package: treeseed-ai-lab
+Architecture: amd64
+Depends: treeseed-ai-cli (>= 0.6.0), treeseed-ai-host-js-runtime (>= 0.6.0), openssl
+Recommends: treeseed-ai-manager (>= 0.6.0), treeseed-ai-inference (>= 0.6.0), treeseed-ai-training (>= 0.6.0)
+Description: TreeAI Hermes and Open WebUI experience laboratory
+
+Package: treeseed-ai-factory
+Architecture: amd64
+Depends: treeseed-ai-manager (>= 0.6.0)
+Description: Transitional TreeAI factory dependency

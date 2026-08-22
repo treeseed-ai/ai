@@ -1,9 +1,9 @@
 Package: treeseed-ai-factory
-Version: 0.5.0
+Version: 0.6.0-1
 Section: metapackages
 Priority: optional
 Architecture: amd64
 Maintainer: TreeSeed AI Releases <releases@treeseed.ai>
-Depends: treeseed-ai-cli (= 0.5.0), treeseed-ai-host-runtime (= 0.5.0), treeseed-ai-inference (= 0.5.0), treeseed-ai-training (= 0.5.0), treeseed-ai-lab (= 0.5.0)
+Depends: treeseed-ai-manager (>= 0.6.0)
 Description: Complete TreeSeed AI factory package set
- This inert meta-package installs all independently managed TreeSeed AI products.
+ Transitional package. The manager installs products from desired state.

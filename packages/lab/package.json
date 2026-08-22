@@ -1,6 +1,6 @@
 {
   "name": "@ai-platform/lab",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "scripts": { "build": "tsc -p tsconfig.json && esbuild src/cli.ts --bundle --platform=node --format=esm --outfile=dist/cli.js", "start": "node dist/controller.js", "proxy": "node dist/proxy.js", "test": "vitest run ../../tests/lab" },

@@ -1,0 +1,9 @@
+Package: treeseed-ai
+Version: 0.6.0-1
+Section: admin
+Priority: optional
+Architecture: amd64
+Maintainer: TreeSeed AI Releases <releases@treeseed.ai>
+Depends: systemd, ca-certificates, curl, gnupg, openssl, apt (>= 2.4), dpkg
+Description: TreeAI managed platform bootstrap and recovery seed
+ Configures the signed TreeAI repository and asynchronously hands desired state to the platform manager.

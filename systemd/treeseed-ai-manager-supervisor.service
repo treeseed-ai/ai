@@ -1,0 +1,22 @@
+[Unit]
+Description=TreeAI privileged lifecycle supervisor
+After=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=treeseed-ai-manager
+ExecStart=/usr/lib/treeseed-ai/runtime/bin/node /usr/lib/treeseed-ai/manager/dist/supervisor-main.js
+Restart=on-failure
+RestartSec=3
+RuntimeDirectory=treeseed-ai/manager
+RuntimeDirectoryMode=0750
+UMask=0007
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=false
+ReadWritePaths=/etc/treeseed-ai /var/lib/treeseed-ai /run/treeseed-ai /run/lock /etc/apt/sources.list.d /var/lib/apt /var/cache/apt /var/lib/dpkg /var/log/apt /var/lib/systemd
+
+[Install]
+WantedBy=multi-user.target

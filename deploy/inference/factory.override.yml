@@ -11,7 +11,7 @@ services:
     networks:
       default: {}
       ai-shared: { aliases: [inference-api] }
-    volumes: ["/var/lib/treeseed-ai/host-runtime/factory:/factory:ro", "/run/treeseed-ai/inference:/runtime-status"]
+    volumes: ["/var/lib/treeseed-ai/platform:/factory:ro", "/run/treeseed-ai/inference:/runtime-status"]
     secrets: [training-local-source, artifact-import-token]
     environment:
       AI_FACTORY_MODE_FILE: /factory/mode.json
@@ -28,7 +28,7 @@ services:
       migrations: { condition: service_completed_successfully }
       evaluator: { condition: service_healthy }
       minio-init: { condition: service_completed_successfully }
-    volumes: ["/var/lib/treeseed-ai/host-runtime/factory:/factory:ro"]
+    volumes: ["/var/lib/treeseed-ai/platform:/factory:ro"]
     secrets: [artifact-import-token]
     environment: { AI_FACTORY_MODE_FILE: /factory/mode.json, ARTIFACT_IMPORT_URL: "http://api:4770/internal/artifacts/import", ARTIFACT_IMPORT_TOKEN_FILE: /run/secrets/artifact-import-token }
   vllm:
@@ -41,5 +41,5 @@ services:
 networks:
   ai-shared: { external: true, name: ai-shared }
 secrets:
-  training-local-source: { file: /etc/treeseed-ai/host-runtime/factory/training-local-source.json }
-  artifact-import-token: { file: /etc/treeseed-ai/host-runtime/factory/artifact-import-token }
+  training-local-source: { file: /etc/treeseed-ai/manager/factory/training-local-source.json }
+  artifact-import-token: { file: /etc/treeseed-ai/manager/factory/artifact-import-token }

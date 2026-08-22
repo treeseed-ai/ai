@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+if [ "${1:-}" = remove ] || [ "${1:-}" = purge ]; then systemctl disable --now treeseed-ai-bootstrap.service >/dev/null 2>&1 || true; fi
+exit 0

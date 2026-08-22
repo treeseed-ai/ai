@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "treeai.platform/v1",
+  "configurationId": "default-factory",
+  "generation": 1,
+  "hostRole": "factory",
+  "products": ["host-runtime", "inference", "training", "lab"],
+  "imageSource": "registry",
+  "runtime": { "management": "managed" },
+  "state": { "postgresql": "bundled", "objectStorage": "bundled" },
+  "network": {
+    "bindings": { "manager": "0.0.0.0:4790", "inference": "0.0.0.0:4770", "openai": "0.0.0.0:4771", "training": "0.0.0.0:4780", "lab": "0.0.0.0:4793" },
+    "hostnames": ["localhost"],
+    "sans": ["localhost", "127.0.0.1"],
+    "trustedLanCidrs": []
+  },
+  "updates": {
+    "channel": "stable",
+    "policy": "scheduled",
+    "pollSeconds": 86400,
+    "maintenanceWindow": { "weekday": "sunday", "localTime": "03:00", "jitterMinutes": 30 },
+    "drain": { "inferenceSeconds": 120, "trainingSeconds": 300 }
+  },
+  "secrets": {},
+  "provenance": { "generator": "treeseed-ai-generic/0.6.0", "generatedAt": "2026-08-22T00:00:00.000Z", "configurationDigest": "0000000000000000000000000000000000000000000000000000000000000000" }
+}

@@ -1,4 +1,12 @@
 #!/bin/sh
 set -eu
-case "${1:-}" in remove|deconfigure) systemctl disable --now treeseed-ai-lab.service 2>/dev/null || true;; esac
+case "${1:-}" in
+  remove|deconfigure)
+    if [ -f /etc/treeseed-ai/platform.json ] && systemctl is-active --quiet treeseed-ai-manager-supervisor.service 2>/dev/null && grep -Eq '"lab"' /etc/treeseed-ai/platform.json; then
+      echo 'The manager desired state still enables lab; run sudo treeai platform components disable lab first.' >&2
+      exit 1
+    fi
+    systemctl disable --now treeseed-ai-lab.service 2>/dev/null || true
+    ;;
+esac
 exit 0

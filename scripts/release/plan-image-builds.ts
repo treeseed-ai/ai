@@ -35,7 +35,7 @@ export function computeBuildIdentity(role:string,build:ImageBuild,platform:strin
 }
 
 function main(){
-  const release=JSON.parse(readFileSync('release/manifest.json','utf8'))as{version:string;dockerNamespace:string;images:string[]};
+  const release=JSON.parse(readFileSync('release/manifest.json','utf8'))as{version:string;dockerNamespace:string;images:string[]};release.version=process.env.TREEAI_RELEASE_VERSION??release.version;
   const builds=JSON.parse(readFileSync('release/image-builds.json','utf8'))as{schemaVersion:string;platform:string;images:Record<string,ImageBuild>};
   const output=resolve(process.argv[2]??'.artifacts/image-plan.json'),priorPath=process.argv[3];
   const prior=priorPath&&existsSync(priorPath)?JSON.parse(readFileSync(priorPath,'utf8'))as{schemaVersion:string;version:string;images:Record<string,PriorImage>}:undefined;
@@ -46,7 +46,7 @@ function main(){
   for(const role of release.images){
     const build=builds.images[role],buildIdentity=computeBuildIdentity(role,build,builds.platform,process.cwd(),cache),previous=prior?.schemaVersion==='treeai.images/v2'?prior.images[role]:undefined;
     const reuse=previous?.buildIdentity===buildIdentity&&previous.repository===`${release.dockerNamespace}/${role}`&&/^sha256:[a-f0-9]{64}$/u.test(previous.digest);
-    images[role]={role,action:reuse?'reused':'built',buildIdentity,dockerfile:build.dockerfile,buildArgs:Object.entries(build.buildArgs??{}).map(([key,value])=>`${key}=${value}`).join('\n'),platform:builds.platform,repository:`${release.dockerNamespace}/${role}`,...reuse?{digest:previous.digest,tag:previous.tag,firstBuiltVersion:previous.firstBuiltVersion??previous.tag}:{tag:release.version,firstBuiltVersion:release.version}};
+    const tag=process.env.TREEAI_IMAGE_TAG??release.version;images[role]={role,action:reuse?'reused':'built',buildIdentity,dockerfile:build.dockerfile,buildArgs:Object.entries(build.buildArgs??{}).map(([key,value])=>`${key}=${value}`).join('\n'),platform:builds.platform,repository:`${release.dockerNamespace}/${role}`,...reuse?{digest:previous.digest,tag:previous.tag,firstBuiltVersion:previous.firstBuiltVersion??previous.tag}:{tag,firstBuiltVersion:release.version}};
   }
   writeFileSync(output,`${JSON.stringify({schemaVersion:'treeai.image-build-plan/v1',version:release.version,previousVersion:prior?.version??null,images},null,2)}\n`);
   process.stdout.write(`${JSON.stringify({status:'ready',built:Object.values(images).filter((item)=>item.action==='built').length,reused:Object.values(images).filter((item)=>item.action==='reused').length})}\n`);
