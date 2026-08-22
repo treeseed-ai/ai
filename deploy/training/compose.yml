@@ -49,7 +49,7 @@ services:
     environment: { <<: *s3-environment, SIGNING_KEY: /run/secrets/artifact-signing-key, SIGNING_KEY_ID: "${SIGNING_KEY_ID:-default}" }
     healthcheck: *worker-health
   postgres:
-    image: postgres:17.6-alpine@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94
+    image: postgres:17.11-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
     profiles: [state]
     environment: { POSTGRES_DB: training, POSTGRES_USER: training, POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-training}" }
     volumes: ["training-postgres:/var/lib/postgresql/data"]

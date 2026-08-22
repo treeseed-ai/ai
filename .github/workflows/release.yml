@@ -17,7 +17,7 @@ jobs:
       - uses: pnpm/action-setup@v4
         with: { version: 10.15.1 }
       - uses: actions/setup-node@v4
-        with: { node-version: 24.12.0, cache: pnpm }
+        with: { node-version: 24.19.0, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - name: Validate release identity
         env: { GH_TOKEN: "${{ github.token }}" }
@@ -104,7 +104,7 @@ jobs:
       - uses: pnpm/action-setup@v4
         with: { version: 10.15.1 }
       - uses: actions/setup-node@v4
-        with: { node-version: 24.12.0, cache: pnpm }
+        with: { node-version: 24.19.0, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - name: Publish exact tags, scan, sign, and generate SBOMs
         run: |
@@ -112,7 +112,7 @@ jobs:
           for file in digests/*.digest; do
             role=$(basename "$file" .digest)
             digest=$(cat "$file")
-            docker run --rm -v "$PWD/release-assets/vulnerabilities:/reports" aquasec/trivy:0.66.0 image --exit-code 0 --severity CRITICAL --format json --output "/reports/$role.json" "treeseed/$role@$digest"
+            docker run --rm -v "$PWD/release-assets/vulnerabilities:/reports" -v "$PWD/.trivy-cache:/root/.cache/trivy" aquasec/trivy:0.74.0 image --scanners vuln --skip-version-check --exit-code 0 --severity CRITICAL --format json --output "/reports/$role.json" "treeseed/$role@$digest"
           done
           node --import tsx scripts/release/check-vulnerabilities.ts release-assets/vulnerabilities
           for file in digests/*.digest; do
@@ -137,7 +137,7 @@ jobs:
       - uses: pnpm/action-setup@v4
         with: { version: 10.15.1 }
       - uses: actions/setup-node@v4
-        with: { node-version: 24.12.0, cache: pnpm }
+        with: { node-version: 24.19.0, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: TREEAI_IMAGE_MANIFEST="$PWD/release-assets/image-manifest.json" node --import tsx scripts/package-deb.ts all
