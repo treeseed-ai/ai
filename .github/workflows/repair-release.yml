@@ -74,7 +74,7 @@ jobs:
       - name: Build policy-compliant Debian packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential debhelper lintian
+          sudo apt-get install -y build-essential debhelper lintian nodejs
           TREEAI_IMAGE_MANIFEST="$PWD/release-assets/image-manifest.json" dpkg-buildpackage -b -us -uc
           mkdir -p .artifacts
           find .. -maxdepth 1 -type f -name 'treeseed-ai*.deb' -exec cp {} .artifacts/ \;

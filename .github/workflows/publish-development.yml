@@ -74,7 +74,7 @@ jobs:
       - name: Build development Debian generation
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential debhelper lintian
+          sudo apt-get install -y build-essential debhelper lintian nodejs
           sed -i "1s/(0.6.0-1)/(${{ inputs.debian_version }})/; s/) stable;/) development;/" debian/changelog
           TREEAI_DEBIAN_VERSION='${{ inputs.debian_version }}' TREEAI_RELEASE_VERSION='${{ inputs.debian_version }}' TREEAI_RELEASE_CHANNEL=development TREEAI_RELEASE_GENERATION='${{ inputs.generation }}' TREEAI_IMAGE_MANIFEST="$PWD/assets/image-manifest.json" dpkg-buildpackage -b -us -uc
           find .. -maxdepth 1 -type f -name 'treeseed-ai*.deb' -exec cp {} assets/ \;
