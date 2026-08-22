@@ -191,12 +191,22 @@ jobs:
         with: { node-version: 24.19.0, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: TREEAI_IMAGE_MANIFEST="$PWD/release-assets/image-manifest.json" node --import tsx scripts/package-deb.ts all
+      - name: Build policy-compliant Debian packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y debhelper lintian
+          TREEAI_IMAGE_MANIFEST="$PWD/release-assets/image-manifest.json" dpkg-buildpackage -b -us -uc
+          mkdir -p .artifacts
+          find .. -maxdepth 1 -type f -name 'treeseed-ai*.deb' -exec cp {} .artifacts/ \;
+          node --import tsx scripts/package-deb.ts configured config/platform.default.json
+          lintian --fail-on error .artifacts/*.deb
       - name: Co-install package contract
         run: |
           root=$(mktemp -d)
           for deb in .artifacts/*.deb; do dpkg-deb --extract "$deb" "$root"; done
           test -x "$root/usr/bin/treeai"
+          test -x "$root/usr/lib/treeseed-ai/runtime/bin/node"
+          test -f "$root/usr/lib/systemd/system/treeseed-ai-manager-supervisor.service"
           test ! -e "$root/usr/bin/ai-factory-dev"
           test ! -e "$root/usr/bin/ai-factory-lab"
       - uses: actions/upload-artifact@v4
@@ -232,7 +242,7 @@ jobs:
           sha256sum "${files[@]}" > SHA256SUMS
           gpg --batch --yes --pinentry-mode loopback --passphrase "$APT_GPG_PASSPHRASE" --local-user "$APT_RELEASE_FINGERPRINT" --detach-sign --armor SHA256SUMS
           cd ..
-          gh release create "v${{ inputs.version }}" $(find published-assets -type f -print | sort) --target '${{ needs.validate.outputs.sha }}' --title "TreeSeed AI ${{ inputs.version }}" --notes-file docs/releases/0.5.0.md
+          gh release create "v${{ inputs.version }}" $(find published-assets -type f -print | sort) --target '${{ needs.validate.outputs.sha }}' --title "TreeSeed AI ${{ inputs.version }}" --notes-file docs/releases/0.6.0.md
 
   apt-repository:
     needs: github-release

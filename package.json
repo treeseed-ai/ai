@@ -1,6 +1,6 @@
 {
   "name": "@ai-platform/workspace",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "license": "Apache-2.0",
   "repository": {
@@ -16,7 +16,7 @@
   "engines": { "node": ">=22" },
   "workspaces": ["packages/*"],
   "scripts": {
-    "build": "pnpm --filter @ai-platform/common build && pnpm --filter @ai-platform/cli build && pnpm --filter @ai-platform/host-runtime build && pnpm --filter @ai-platform/inference-api build && pnpm --filter @ai-platform/inference-manager build && pnpm --filter @ai-platform/training-api build && pnpm --filter @ai-platform/training-manager build && pnpm --filter @ai-platform/lab build",
+    "build": "pnpm --filter @ai-platform/common build && pnpm --filter @ai-platform/manager build && pnpm --filter @ai-platform/cli build && pnpm --filter @ai-platform/host-runtime build && pnpm --filter @ai-platform/inference-api build && pnpm --filter @ai-platform/inference-manager build && pnpm --filter @ai-platform/training-api build && pnpm --filter @ai-platform/training-manager build && pnpm --filter @ai-platform/lab build",
     "test": "vitest run",
     "check:file-architecture": "node --import tsx scripts/support/check-source-shape.ts",
     "check:release": "node --import tsx scripts/release/validate.ts",

@@ -1,0 +1,10 @@
+Package: treeseed-ai-manager
+Version: 0.6.0-1
+Section: admin
+Priority: optional
+Architecture: amd64
+Maintainer: TreeSeed AI Releases <releases@treeseed.ai>
+Depends: treeseed-ai-host-js-runtime (>= 0.6.0), treeseed-ai-cli (>= 0.6.0), treeseed-ai-release-catalog (>= 0.6.0), treeseed-ai-archive-keyring, treeseed-ai-development-archive-keyring, apt, curl, openssl, systemd
+Breaks: treeseed-ai-host-runtime (<< 0.6.0)
+Replaces: treeseed-ai-host-runtime (<< 0.6.0)
+Description: Transactional lifecycle and update manager for TreeAI

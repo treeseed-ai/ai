@@ -1,0 +1,1 @@
+{"schemaVersion":"treeai.command-descriptor/v2","abi":2,"group":"mode","package":"treeseed-ai-manager","packageRange":">=0.0.0 <1.0.0","cliRange":">=0.0.0 <1.0.0","apiRange":">=1.0.0 <2.0.0","executable":"/usr/lib/treeseed-ai/manager/dist/cli.js","commands":["awake","sleep"]}

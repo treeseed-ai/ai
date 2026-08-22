@@ -1,0 +1,8 @@
+[Unit]
+Description=Check and apply cataloged TreeAI updates
+After=network-online.target treeseed-ai-manager-supervisor.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/flock --nonblock /run/treeseed-ai/manager/update.lock /usr/lib/treeseed-ai/runtime/bin/node /usr/lib/treeseed-ai/manager/dist/timer.js
+TimeoutStartSec=2h

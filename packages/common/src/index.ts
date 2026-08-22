@@ -6,3 +6,4 @@ export * from './openapi.js';
 export * from './storage.js';
 export * from './supervisor.js';
 export * from './types.js';
+export * from './platform/index.js';

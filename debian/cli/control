@@ -1,9 +1,9 @@
 Package: treeseed-ai-cli
-Version: 0.5.0
+Version: 0.6.0-1
 Section: utils
 Priority: optional
 Architecture: amd64
 Maintainer: TreeSeed AI Releases <releases@treeseed.ai>
-Depends: nodejs (>= 22), ca-certificates
+Depends: treeseed-ai-host-js-runtime (>= 0.6.0), ca-certificates
 Description: Unified command-line interface for TreeSeed AI products
  Installs the inert treeai command and local operator authorization group.

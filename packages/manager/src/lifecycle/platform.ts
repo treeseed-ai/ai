@@ -1,0 +1,437 @@
+import { execFileSync, spawnSync } from "node:child_process";
+import { randomBytes, scryptSync } from "node:crypto";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { hashApiKey } from "@ai-platform/common";
+import { readCatalog } from "../core/catalog.js";
+import { event, setSetting, setting } from "../core/store.js";
+import { paths } from "../core/paths.js";
+
+const products = {
+	inference: {
+		compose: "/usr/lib/treeseed-ai/inference/compose.yml",
+		overlay: "/usr/lib/treeseed-ai/inference/factory.override.yml",
+		environment: "/etc/treeseed-ai/inference/environment",
+	},
+	training: {
+		compose: "/usr/lib/treeseed-ai/training/compose.yml",
+		overlay: "/usr/lib/treeseed-ai/training/factory.override.yml",
+		environment: "/etc/treeseed-ai/training/environment",
+	},
+} as const;
+const bases = {
+	inference: ["postgres", "minio", "minio-init", "migrations", "evaluator", "manager", "api"],
+	training: ["postgres", "minio", "minio-init", "migrations", "artifact", "manager", "api"],
+} as const;
+const imageVariables: Record<string, string> = {
+	"inference-api": "INFERENCE_API_IMAGE",
+	"inference-manager": "INFERENCE_MANAGER_IMAGE",
+	"inference-vllm": "INFERENCE_VLLM_IMAGE",
+	"inference-evaluator": "INFERENCE_EVALUATOR_IMAGE",
+	"inference-migrations": "INFERENCE_MIGRATIONS_IMAGE",
+	"training-api": "TRAINING_API_IMAGE",
+	"training-manager": "TRAINING_MANAGER_IMAGE",
+	"axolotl-worker": "AXOLOTL_WORKER_IMAGE",
+	"marker-worker": "MARKER_WORKER_IMAGE",
+	"artifact-worker": "ARTIFACT_WORKER_IMAGE",
+	"training-migrations": "TRAINING_MIGRATIONS_IMAGE",
+};
+function command(file: string, args: string[]) {
+	const result = spawnSync(file, args, { encoding: "utf8", timeout: 900_000 });
+	if (result.status !== 0) throw new Error(`${file} failed: ${(result.stderr || result.stdout).trim()}`);
+	return result.stdout.trim();
+}
+function atomic(path: string, value: string, mode = 0o600) {
+	mkdirSync(dirname(path), { recursive: true, mode: 0o750 });
+	const next = `${path}.new`;
+	writeFileSync(next, value, { mode });
+	renameSync(next, path);
+	chmodSync(path, mode);
+}
+function secret(bytes = 32) {
+	return randomBytes(bytes).toString("hex");
+}
+function credential(id: string, scopes: string[]) {
+	const value = randomBytes(32).toString("base64url");
+	return {
+		plain: `ak_${id}_${value}`,
+		record: { id, hash: hashApiKey(value), scopes, revoked: false },
+	};
+}
+function envMap(path: string) {
+	const values: Record<string, string> = {};
+	if (!existsSync(path)) return values;
+	for (const line of readFileSync(path, "utf8").split("\n")) {
+		const match = line.match(/^([A-Z0-9_]+)=(.*)$/u);
+		if (match) values[match[1]!] = match[2]!.replace(/^'|'$/gu, "");
+	}
+	return values;
+}
+function enabledProducts() {
+	const config = JSON.parse(readFileSync(paths.configuration, "utf8")) as {
+		products: string[];
+	};
+	return new Set(config.products);
+}
+function environment(path: string, values: Record<string, string>, group: string) {
+	let content = existsSync(path) ? readFileSync(path, "utf8") : "";
+	for (const [name, value] of Object.entries(values)) {
+		content = content
+			.split("\n")
+			.filter((line) => line && !line.startsWith(`${name}=`))
+			.join("\n");
+		content += `${content ? "\n" : ""}${name}=${value}`;
+	}
+	atomic(path, `${content}\n`, 0o640);
+	try {
+		execFileSync("chown", [`root:${group}`, path]);
+	} catch {}
+}
+function compose(product: keyof typeof products, args: string[]) {
+	const item = products[product];
+	return command("docker", ["compose", "-p", `treeseed-ai-${product}`, "--env-file", item.environment, "-f", item.compose, "-f", item.overlay, ...args]);
+}
+export function ensureManagedRuntime() {
+	const config = JSON.parse(readFileSync(paths.configuration, "utf8")) as {
+		runtime: { management: string };
+	};
+	if (spawnSync("docker", ["compose", "version"]).status === 0) return;
+	if (config.runtime.management !== "managed") throw new Error("An operator-managed Docker Compose runtime is unavailable.");
+	const cli = "/usr/lib/treeseed-ai/host-runtime/dist/cli.js";
+	if (!existsSync(cli)) throw new Error("Managed runtime package is not installed.");
+	command("/usr/lib/treeseed-ai/runtime/bin/node", [cli, "apply", "--json"]);
+	if (spawnSync("docker", ["compose", "version"]).status !== 0) throw new Error("Managed container runtime installation did not provide Docker Compose.");
+}
+const ensureRuntime = ensureManagedRuntime;
+function ensureNetwork() {
+	const inspect = spawnSync("docker", ["network", "inspect", "ai-shared", "--format", "{{.Driver}} {{.Scope}}"], { encoding: "utf8" });
+	if (inspect.status === 0) {
+		if (inspect.stdout.trim() !== "bridge local") throw new Error("Existing ai-shared network is incompatible.");
+		return;
+	}
+	command("docker", ["network", "create", "--driver", "bridge", "--label", "org.treeseed-ai.manager=true", "ai-shared"]);
+}
+function imageValues(product: "inference" | "training") {
+	const config = JSON.parse(readFileSync(paths.configuration, "utf8")) as {
+			imageSource: string;
+		},
+		catalog = readCatalog(),
+		values: Record<string, string> = {};
+	for (const image of catalog.images) {
+		const variable = imageVariables[image.role],
+			owned = image.role.startsWith(`${product}-`) || (product === "training" && ["axolotl-worker", "marker-worker", "artifact-worker"].includes(image.role));
+		if (!variable || !owned) continue;
+		values[variable] = config.imageSource === "local-build" ? `local/${image.role}:${catalog.release}` : `treeseed/${image.role}@${image.digest}`;
+	}
+	return values;
+}
+function image(role: string) {
+	const config = JSON.parse(readFileSync(paths.configuration, "utf8")) as {
+			imageSource: string;
+		},
+		catalog = readCatalog(),
+		item = catalog.images.find((value) => value.role === role);
+	if (!item) throw new Error(`Catalog image ${role} is missing.`);
+	return config.imageSource === "local-build" ? `local/${role}:${catalog.release}` : `treeseed/${role}@${item.digest}`;
+}
+function productGroup(product: "inference" | "training") {
+	const group = `treeseed-ai-${product}`,
+		record = command("getent", ["group", group]),
+		gid = record.split(":")[2];
+	if (!gid || !/^\d+$/u.test(gid)) throw new Error(`Cannot resolve ${group}.`);
+	const runtime = `/run/treeseed-ai/${product}`;
+	mkdirSync(runtime, { recursive: true, mode: 0o770 });
+	chmodSync(runtime, 0o770);
+	command("chown", [`root:${group}`, runtime]);
+	return gid;
+}
+function ensureSigningMaterial() {
+	const root = "/etc/treeseed-ai/manager/factory";
+	mkdirSync(root, { recursive: true, mode: 0o750 });
+	const privateKey = `${root}/artifact-signing-key.pem`,
+		publicKey = `${root}/artifact-signing-public.pem`;
+	if (!existsSync(privateKey)) {
+		command("openssl", ["genpkey", "-algorithm", "Ed25519", "-out", privateKey]);
+		command("openssl", ["pkey", "-in", privateKey, "-pubout", "-out", publicKey]);
+		chmodSync(privateKey, 0o600);
+		chmodSync(publicKey, 0o644);
+	}
+	return { root, privateKey, publicKey };
+}
+function ensureServiceCredentials(root: string) {
+	const path = `${root}/service-api-credentials.json`;
+	if (existsSync(path))
+		return JSON.parse(readFileSync(path, "utf8")) as Record<
+			string,
+			{
+				plain: string;
+				record: {
+					id: string;
+					hash: string;
+					scopes: string[];
+					revoked: boolean;
+				};
+			}
+		>;
+	const values = {
+		factory: credential("lab-factory", ["platform:read", "platform:mode"]),
+		inference: credential("lab-inference", ["*"]),
+		training: credential("lab-training", ["*"]),
+	};
+	atomic(path, JSON.stringify(values), 0o600);
+	return values;
+}
+function ensureProductConfiguration() {
+	const config = JSON.parse(readFileSync(paths.configuration, "utf8")) as {
+			configurationId: string;
+			state: { postgresql: string; objectStorage: string };
+		},
+		signing = ensureSigningMaterial(),
+		service = ensureServiceCredentials(signing.root);
+	if (config.state.postgresql !== "bundled" || config.state.objectStorage !== "bundled") return;
+	const secretsPath = `${signing.root}/service-secrets.json`;
+	let stored: Record<string, string>;
+	if (existsSync(secretsPath)) stored = JSON.parse(readFileSync(secretsPath, "utf8"));
+	else {
+		const inference = envMap(products.inference.environment),
+			training = envMap(products.training.environment),
+			migrated = config.configurationId === "migrated-local-factory";
+		stored = {
+			inferenceDb: (migrated && inference.POSTGRES_PASSWORD) || secret(24),
+			trainingDb: (migrated && training.POSTGRES_PASSWORD) || secret(24),
+			inferenceS3: (migrated && inference.S3_SECRET_KEY) || secret(),
+			trainingS3: (migrated && training.S3_SECRET_KEY) || secret(),
+			inferenceMinio: (migrated && inference.MINIO_ROOT_PASSWORD) || secret(),
+			trainingMinio: (migrated && training.MINIO_ROOT_PASSWORD) || secret(),
+			artifactToken: existsSync(`${signing.root}/artifact-import-token`) ? readFileSync(`${signing.root}/artifact-import-token`, "utf8").trim() : secret(),
+		};
+		atomic(secretsPath, JSON.stringify(stored), 0o600);
+	}
+	const operator = JSON.parse(readFileSync("/etc/treeseed-ai/treeai/operator-record.json", "utf8")) as unknown,
+		common = (product: "inference" | "training") => ({
+			COMPOSE_PROFILES: "state",
+			AI_API_KEYS: `'${JSON.stringify([operator, service[product]!.record])}'`,
+			DATABASE_URL: `postgresql://${product}:${stored[`${product}Db`]}@postgres:5432/${product}`,
+			POSTGRES_PASSWORD: stored[`${product}Db`]!,
+			S3_ENDPOINT: "http://minio:9000",
+			S3_BUCKET: `ai-${product}`,
+			S3_ACCESS_KEY: product,
+			S3_SECRET_KEY: stored[`${product}S3`]!,
+			MINIO_ROOT_USER: `${product}-root`,
+			MINIO_ROOT_PASSWORD: stored[`${product}Minio`]!,
+		});
+	atomic(paths.apiKeys, `${JSON.stringify([operator, service.factory!.record], null, 2)}\n`, 0o640);
+	try {
+		command("chown", ["root:treeseed-ai-manager", paths.apiKeys]);
+	} catch {}
+	const enabled = enabledProducts();
+	if (enabled.has("inference"))
+		environment(
+			products.inference.environment,
+			{
+				...imageValues("inference"),
+				...common("inference"),
+				RUNTIME_GID: productGroup("inference"),
+				SOURCE_MODEL: "Qwen/Qwen3.5-4B",
+				SOURCE_MODEL_REVISION: "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+				MAX_MODEL_LENGTH: "16384",
+			},
+			"treeseed-ai-inference",
+		);
+	if (enabled.has("training"))
+		environment(
+			products.training.environment,
+			{
+				...imageValues("training"),
+				...common("training"),
+				RUNTIME_GID: productGroup("training"),
+				SIGNING_KEY_FILE: signing.privateKey,
+				SIGNING_KEY_ID: "training-local-0.6",
+			},
+			"treeseed-ai-training",
+		);
+	if (enabled.has("inference") && enabled.has("training")) {
+		atomic(`${signing.root}/artifact-import-token`, stored.artifactToken!);
+		const source = {
+			sourceId: "training-local",
+			endpoint: "http://training-minio:9000",
+			bucket: "ai-training",
+			accessKeyId: "training",
+			secretAccessKey: stored.trainingS3,
+			trustedPublicKey: readFileSync(signing.publicKey, "utf8"),
+		};
+		atomic(`${signing.root}/training-local-source.json`, `${JSON.stringify(source, null, 2)}\n`);
+	}
+}
+function ensureLabConfiguration() {
+	if (!enabledProducts().has("lab")) return;
+	const root = "/etc/treeseed-ai/lab",
+		secrets = `${root}/secrets`,
+		factory = "/etc/treeseed-ai/manager/factory",
+		service = ensureServiceCredentials(factory),
+		operator = JSON.parse(readFileSync("/etc/treeseed-ai/treeai/operator-record.json", "utf8")) as unknown;
+	mkdirSync(secrets, { recursive: true, mode: 0o750 });
+	for (const [name, value] of [
+		["factory-control-key", service.factory!.plain],
+		["factory-inference-key", service.inference!.plain],
+		["factory-training-key", service.training!.plain],
+	] as const)
+		atomic(`${secrets}/${name}`, `${value}\n`);
+	if (existsSync(`${factory}/training-local-source.json`)) copyFileSync(`${factory}/training-local-source.json`, `${root}/training-source.json`);
+	const passwordPath = `${secrets}/hermes-dashboard-password`;
+	if (!existsSync(passwordPath)) {
+		const password = randomBytes(24).toString("base64url"),
+			salt = randomBytes(16),
+			hash = `scrypt$16384$8$1$${salt.toString("base64")}$${scryptSync(password, salt, 32, { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 }).toString("base64")}`;
+		atomic(passwordPath, `${password}\n`);
+		atomic(`${secrets}/hermes-password-hash`, `${hash}\n`);
+		atomic(`${secrets}/hermes-session-secret`, `${randomBytes(32).toString("base64")}\n`);
+	}
+	environment(
+		`${root}/environment`,
+		{
+			AI_LAB_API_KEYS: `'${JSON.stringify([operator])}'`,
+			FACTORY_URL: "https://host.docker.internal:4790",
+			TRAINING_URL: "http://training-api:4780",
+			INFERENCE_CONTROL_URL: "http://inference-api:4770",
+			INFERENCE_URL: "http://inference-api:4771",
+			BASE_MODEL: "Qwen/Qwen3.5-4B",
+			BASE_MODEL_REVISION: "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+			LAB_CONTROLLER_IMAGE: image("lab-controller"),
+			LAB_PROXY_IMAGE: image("lab-experience-proxy"),
+			HERMES_IMAGE: image("hermes-agent"),
+			LAB_MIN_TRAJECTORIES: "100",
+			LAB_IDLE_MINUTES: "15",
+			LAB_COOLDOWN_HOURS: "6",
+		},
+		"treeseed-ai-lab",
+	);
+}
+function lab(args: string[]) {
+	return command("docker", ["compose", "-p", "treeseed-ai-lab", "--env-file", "/etc/treeseed-ai/lab/environment", "-f", "/usr/lib/treeseed-ai/lab/compose.yml", ...args]);
+}
+export function stopManagedProduct(product: unknown) {
+	if (product === "lab") lab(["down"]);
+	else if (product === "inference" || product === "training") compose(product, ["down"]);
+	else throw new Error("Component is not allowlisted.");
+	event("component.stopped", { product });
+	return { product, stopped: true };
+}
+function active(path: string) {
+	try {
+		const value = JSON.parse(readFileSync(path, "utf8")) as {
+			active?: number;
+			activeGpuJobs?: number;
+		};
+		return Number(value.active ?? value.activeGpuJobs ?? 0);
+	} catch {
+		return 0;
+	}
+}
+async function waitIdle(path: string, seconds: number) {
+	for (let elapsed = 0; elapsed < seconds; elapsed++) {
+		if (active(path) === 0) return true;
+		await new Promise((resolve) => setTimeout(resolve, 1000));
+	}
+	return false;
+}
+function writeMode(mode: string, error?: string) {
+	atomic(paths.mode, `${JSON.stringify({ schemaVersion: "treeai.mode/v1", mode, updatedAt: new Date().toISOString(), ...(error ? { error } : {}) }, null, 2)}\n`, 0o644);
+	setSetting("mode", mode);
+}
+export function persistMode(mode: "awake" | "sleep") {
+	writeMode(mode);
+}
+function gateway(args: string[]) {
+	return command("docker", ["compose", "-p", "treeseed-ai-manager-gateway", "-f", "/usr/lib/treeseed-ai/manager/factory/compose.yml", ...args]);
+}
+function warmInference() {
+	command("docker", ["compose", "-p", "treeseed-ai-inference", "--env-file", products.inference.environment, "-f", products.inference.compose, "-f", products.inference.overlay, "exec", "-T", "vllm", "python3", "-c", "import json,urllib.request; b=json.dumps({'model':'Qwen/Qwen3.5-4B','messages':[{'role':'user','content':'Reply ready.'}],'max_tokens':8}).encode(); r=urllib.request.Request('http://127.0.0.1:8000/v1/chat/completions',data=b,headers={'content-type':'application/json'}); urllib.request.urlopen(r,timeout=120).read()"]);
+}
+export function serviceStatus() {
+	const result: Record<string, unknown> = {},
+		enabled = enabledProducts();
+	for (const product of ["inference", "training"] as const)
+		if (enabled.has(product))
+			try {
+				result[product] = JSON.parse(`[${compose(product, ["ps", "--format", "json"]).split("\n").filter(Boolean).join(",")}]`);
+			} catch (error) {
+				result[product] = {
+					error: error instanceof Error ? error.message : String(error),
+				};
+			}
+	return result;
+}
+export async function reconcilePlatform() {
+	ensureRuntime();
+	ensureNetwork();
+	ensureProductConfiguration();
+	ensureLabConfiguration();
+	const mode = setting<string>("mode", "awake"),
+		enabled = enabledProducts();
+	if (!existsSync(paths.mode)) writeMode(mode);
+	if (mode === "awake") {
+		if (enabled.has("training")) {
+			compose("training", ["stop", "marker", "axolotl"]);
+			compose("training", ["up", "-d", "--wait", "--wait-timeout", "600", ...bases.training]);
+		}
+		if (enabled.has("inference")) {
+			compose("inference", ["up", "-d", "--wait", "--wait-timeout", "900", ...bases.inference, "vllm"]);
+			warmInference();
+		}
+	} else if (mode === "sleep") {
+		if (enabled.has("inference")) {
+			compose("inference", ["stop", "vllm"]);
+			compose("inference", ["up", "-d", "--wait", "--wait-timeout", "600", ...bases.inference]);
+		}
+		if (enabled.has("training")) compose("training", ["up", "-d", "--wait", "--wait-timeout", "900", ...bases.training, "marker", "axolotl"]);
+	} else throw new Error(`Unsafe persisted mode ${mode}; manual recovery is required.`);
+	if (enabled.has("inference") || enabled.has("training")) gateway(["up", "-d", "--wait"]);
+	if (enabled.has("lab")) lab(["up", "-d", "--wait", "--wait-timeout", "900"]);
+	const services = serviceStatus();
+	if (enabled.has("lab")) services.lab = { state: "managed", composeProject: "treeseed-ai-lab" };
+	setSetting("components", services);
+	event("components.reconciled", { mode });
+	return { mode, services };
+}
+export async function transitionMode(target: unknown, drain: { inferenceSeconds: number; trainingSeconds: number }) {
+	if (target !== "awake" && target !== "sleep") throw new Error("Mode must be awake or sleep.");
+	const current = setting<string>("mode", "awake"),
+		enabled = enabledProducts();
+	if (current === target) return { mode: target, changed: false };
+	writeMode(target === "awake" ? "transitioning_awake" : "transitioning_sleep");
+	let lifecycleChanged = false;
+	try {
+		if (target === "sleep") {
+			if (enabled.has("inference") && !(await waitIdle("/run/treeseed-ai/inference/status.json", drain.inferenceSeconds))) {
+				writeMode(current);
+				return {
+					mode: current,
+					state: "postponed",
+					reason: "active_inference",
+				};
+			}
+			if (enabled.has("inference")) compose("inference", ["stop", "vllm"]);
+			lifecycleChanged = enabled.has("inference");
+			if (enabled.has("training")) compose("training", ["up", "-d", "--wait", "--wait-timeout", "900", "marker", "axolotl"]);
+		} else {
+			if (enabled.has("training") && !(await waitIdle("/run/treeseed-ai/training/status.json", drain.trainingSeconds))) {
+				writeMode(current);
+				return { mode: current, state: "postponed", reason: "active_training" };
+			}
+			if (enabled.has("training")) compose("training", ["stop", "marker", "axolotl"]);
+			lifecycleChanged = enabled.has("training");
+			if (enabled.has("inference")) {
+				compose("inference", ["up", "-d", "--wait", "--wait-timeout", "900", "vllm"]);
+				warmInference();
+			}
+		}
+		writeMode(target);
+		event("mode.changed", { from: current, to: target });
+		return { mode: target, changed: true };
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		writeMode(lifecycleChanged ? "degraded" : current, message);
+		throw error;
+	}
+}

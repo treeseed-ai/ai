@@ -1,0 +1,7 @@
+Package: treeseed-ai*
+Pin: release o=TreeSeed AI
+Pin-Priority: 700
+
+Package: *
+Pin: origin treeseed-ai.github.io
+Pin-Priority: 100
