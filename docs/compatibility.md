@@ -2,7 +2,7 @@
 
 | Component | V1 pin | Role |
 | --- | --- | --- |
-| Node.js | 24.12.0 | Hono APIs and managers |
+| Node.js | 24.19.0 | Hono APIs and managers |
 | PostgreSQL | 17.6 | Product-local metadata and jobs |
 | MinIO | RELEASE.2025-07-23T15-54-02Z | Optional development object storage |
 | vLLM | 0.25.0 | OpenAI-compatible inference |
