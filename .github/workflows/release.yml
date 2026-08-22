@@ -175,11 +175,13 @@ jobs:
           APT_GPG_PASSPHRASE: "${{ secrets.APT_GPG_PASSPHRASE }}"
         run: |
           export APT_RELEASE_FINGERPRINT="$(cat release/apt/RELEASE_KEY_FINGERPRINT)"
-          cd assets
-          sha256sum $(find . -type f -printf '%P\n' | sort) > SHA256SUMS
+          node --import tsx scripts/release/stage-release-assets.ts assets published-assets
+          cd published-assets
+          mapfile -t files < <(find . -maxdepth 1 -type f -printf '%f\n' | sort)
+          sha256sum "${files[@]}" > SHA256SUMS
           gpg --batch --yes --pinentry-mode loopback --passphrase "$APT_GPG_PASSPHRASE" --local-user "$APT_RELEASE_FINGERPRINT" --detach-sign --armor SHA256SUMS
           cd ..
-          gh release create "v${{ inputs.version }}" $(find assets -type f -print | sort) --target '${{ needs.validate.outputs.sha }}' --title "TreeSeed AI ${{ inputs.version }}" --notes-file docs/releases/0.5.0.md
+          gh release create "v${{ inputs.version }}" $(find published-assets -type f -print | sort) --target '${{ needs.validate.outputs.sha }}' --title "TreeSeed AI ${{ inputs.version }}" --notes-file docs/releases/0.5.0.md
 
   apt-repository:
     needs: github-release
