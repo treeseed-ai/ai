@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { chmodSync, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { basename, resolve } from "node:path";
+import { gzipSync } from "node:zlib";
 import { canonicalJson, finalizeConfiguration, validatePlatformConfiguration, type PlatformConfiguration } from "../packages/common/src/platform/index.js";
 type Release = {
 	version: string;
@@ -71,19 +72,21 @@ function dearmor(source: string, target: string) {
 	execFileSync("gpg", ["--batch", "--yes", "--dearmor", "--output", target, source]);
 }
 function bootstrap(base: string, configured?: PlatformConfiguration, version = release.debianVersion, temporary?: unknown) {
-	directory(base, "usr/lib/treeseed-ai/bootstrap", "usr/share/treeseed-ai/bootstrap", "etc/apt/keyrings", "usr/lib/systemd/system", "etc/apt/preferences.d");
+	directory(base, "usr/lib/treeseed-ai/bootstrap", "usr/share/treeseed-ai/bootstrap/keyrings", "usr/lib/systemd/system", "usr/share/doc/treeseed-ai");
 	copyFileSync(resolve(root, "scripts/bootstrap/bootstrap.sh"), resolve(base, "usr/lib/treeseed-ai/bootstrap/bootstrap.sh"));
 	chmodSync(resolve(base, "usr/lib/treeseed-ai/bootstrap/bootstrap.sh"), 0o755);
 	for (const name of ["stable.sources", "development.sources"]) copyFileSync(resolve(root, `deploy/bootstrap/${name}`), resolve(base, `usr/share/treeseed-ai/bootstrap/${name}`));
-	copyFileSync(resolve(root, "deploy/bootstrap/preferences"), resolve(base, "etc/apt/preferences.d/treeseed-ai"));
+	copyFileSync(resolve(root, "deploy/bootstrap/preferences"), resolve(base, "usr/share/treeseed-ai/bootstrap/preferences"));
 	copyFileSync(resolve(root, "systemd/treeseed-ai-bootstrap.service"), resolve(base, "usr/lib/systemd/system/treeseed-ai-bootstrap.service"));
 	copyFileSync(resolve(root, "config/platform.schema.json"), resolve(base, "usr/share/treeseed-ai/bootstrap/platform.schema.json"));
 	const configuration = finalizeConfiguration(configured ?? JSON.parse(readFileSync(resolve(root, "config/platform.default.json"), "utf8")));
 	writeFileSync(resolve(base, "usr/share/treeseed-ai/bootstrap/platform.json"), canonicalJson(configuration), { mode: 0o600 });
 	if (configured) writeFileSync(resolve(base, "usr/share/treeseed-ai/bootstrap/configured-seed"), `${configuration.configurationId}\n`);
 	if (temporary) writeFileSync(resolve(base, "usr/share/treeseed-ai/bootstrap/temporary-credentials.json"), canonicalJson(temporary), { mode: 0o600 });
-	dearmor(resolve(root, "release/apt/treeseed-ai-archive-keyring.asc"), resolve(base, "etc/apt/keyrings/treeseed-ai-bootstrap-archive-keyring.gpg"));
-	dearmor(resolve(root, "release/apt-development/treeseed-ai-development-archive-keyring.asc"), resolve(base, "etc/apt/keyrings/treeseed-ai-bootstrap-development-archive-keyring.gpg"));
+	dearmor(resolve(root, "release/apt/treeseed-ai-archive-keyring.asc"), resolve(base, "usr/share/treeseed-ai/bootstrap/keyrings/treeseed-ai-bootstrap-archive-keyring.gpg"));
+	dearmor(resolve(root, "release/apt-development/treeseed-ai-development-archive-keyring.asc"), resolve(base, "usr/share/treeseed-ai/bootstrap/keyrings/treeseed-ai-bootstrap-development-archive-keyring.gpg"));
+	copyFileSync(resolve(root, "debian/copyright"), resolve(base, "usr/share/doc/treeseed-ai/copyright"));
+	writeFileSync(resolve(base, "usr/share/doc/treeseed-ai/changelog.Debian.gz"), gzipSync(readFileSync(resolve(root, "debian/changelog")), { level: 9 }));
 	return finish("bootstrap", base, version);
 }
 function runtime(base: string) {
@@ -97,6 +100,7 @@ function runtime(base: string) {
 	const digest = createHash("sha256").update(readFileSync(cache)).digest("hex");
 	if (digest !== manifest.sha256) throw new Error("Private Node runtime checksum mismatch.");
 	execFileSync("tar", ["-xJf", cache, "--strip-components=1", "-C", resolve(base, "usr/lib/treeseed-ai/runtime")]);
+	for (const path of ["CHANGELOG.md", "README.md", "include", "lib", "share", "bin/corepack", "bin/npm", "bin/npx"]) rmSync(resolve(base, "usr/lib/treeseed-ai/runtime", path), { recursive: true, force: true });
 	return finish("host-js-runtime", base);
 }
 function catalog(base: string) {

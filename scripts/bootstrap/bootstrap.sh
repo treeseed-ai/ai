@@ -20,6 +20,11 @@ restore_legacy(){
 }
 trap 'code=$?; if [ "$code" -ne 0 ]; then restore_legacy; fi' EXIT
 install -d -m 0700 "$state" "$state/seed" "$legacy"
+install -d -m 0755 /etc/apt/keyrings
+install -d -m 0755 /etc/apt/preferences.d
+install -m 0644 /usr/share/treeseed-ai/bootstrap/keyrings/treeseed-ai-bootstrap-archive-keyring.gpg /etc/apt/keyrings/treeseed-ai-bootstrap-archive-keyring.gpg
+install -m 0644 /usr/share/treeseed-ai/bootstrap/keyrings/treeseed-ai-bootstrap-development-archive-keyring.gpg /etc/apt/keyrings/treeseed-ai-bootstrap-development-archive-keyring.gpg
+install -m 0644 /usr/share/treeseed-ai/bootstrap/preferences /etc/apt/preferences.d/treeseed-ai
 channel=stable
 if [ -f "$seed" ] && grep -Eq '"channel"[[:space:]]*:[[:space:]]*"development"' "$seed"; then channel=development; fi
 install -m 0644 "/usr/share/treeseed-ai/bootstrap/$channel.sources" "/etc/apt/sources.list.d/treeseed-ai-$channel.sources"
