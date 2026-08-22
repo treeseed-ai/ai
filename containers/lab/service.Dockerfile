@@ -3,7 +3,7 @@ LABEL org.opencontainers.image.base.name="node:24.19.0-bookworm-slim" org.openco
 ARG LAB_ENTRY=controller
 ENV LAB_ENTRY=${LAB_ENTRY}
 WORKDIR /app
-RUN npm install --global npm@12.0.2 && npm cache clean --force && corepack enable
+RUN corepack enable && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages ./packages
 RUN pnpm install --frozen-lockfile && pnpm --filter @ai-platform/common build && pnpm --filter @ai-platform/lab build

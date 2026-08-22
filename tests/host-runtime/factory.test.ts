@@ -80,7 +80,7 @@ describe('local factory contracts', () => {
     for (const file of ['containers/inference/api.Dockerfile', 'containers/inference/vllm.Dockerfile', 'containers/training/axolotl.Dockerfile']) {
       expect(readFileSync(file, 'utf8')).toMatch(/(?:FROM|ARG .*IMAGE=).*@sha256:[a-f0-9]{64}/u);
     }
-    expect(readFileSync('containers/inference/api.Dockerfile', 'utf8')).toContain('npm@12.0.2');
+    expect(readFileSync('containers/inference/api.Dockerfile', 'utf8')).toContain('rm -rf /usr/local/lib/node_modules/npm');
     expect(readFileSync('containers/inference/migrations.Dockerfile', 'utf8')).toContain('postgresql17-client=17.11-r0');
     expect(readFileSync('containers/inference/vllm.Dockerfile', 'utf8')).toContain('apt-get upgrade -y');
     expect(readFileSync('containers/training/axolotl.Dockerfile', 'utf8')).toContain('/opt/nvidia/nsight-compute');
