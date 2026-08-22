@@ -1,14 +1,11 @@
-# AI Package Guide
+# AI Platform Package Guide
 
-- Follow the Market workspace capacity and reconciliation architecture.
-- Do not introduce a second project scheduler or task queue.
-- Do not expose vLLM management endpoints.
-- Keep raw vLLM on loopback or a private Compose network; public clients use the authenticated gateway.
-- The appliance supervisor reconciles machine services but never schedules assignments or training jobs.
-- Do not write directly to project repositories; use assignment-scoped TreeDX operations.
-- Route provider work through assignments, leases, usage, and settlement.
-- Keep raw experience outside Git; Git receives curated manifests and content only.
+- Do not introduce a project scheduler or cross-product task queue; managers process only engine-local jobs.
+- Do not expose raw vLLM or worker management endpoints.
+- Keep raw vLLM and workers on private Compose networks; public clients use authenticated APIs.
+- Keep inference and training independently buildable, installable, configurable, and upgradeable.
+- Do not share product database schemas; exchange immutable signed artifact manifests.
+- Keep raw datasets, checkpoints, models, and archives outside Git.
 - Keep handwritten source and tests below 500 lines and direct executable directories below ten files.
-- Preserve independent package build and test operation.
 - Do not add a push-triggered hosted deployment workflow.
-- Use plan for non-mutating previews and live execution for work; never add dry-run behavior.
+- Use plan for non-mutating Compose previews and apply for live reconciliation; never add dry-run behavior.

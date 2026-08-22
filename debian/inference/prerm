@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+case "${1:-}" in
+  remove|deconfigure)
+    if systemctl is-enabled --quiet treeseed-ai-factory.service 2>/dev/null || systemctl is-active --quiet treeseed-ai-factory.service 2>/dev/null; then
+      echo 'Disable factory mode before removing inference.' >&2
+      exit 1
+    fi
+    systemctl disable --now treeseed-ai-inference.service 2>/dev/null || true
+    ;;
+esac
+exit 0

@@ -1,0 +1,5 @@
+services:
+  api:
+    networks: [default, ai-shared]
+networks:
+  ai-shared: { external: true, name: "${SHARED_AI_NETWORK:-ai-shared}" }

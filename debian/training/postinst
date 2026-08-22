@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+if ! getent group treeseed-ai-training >/dev/null; then groupadd --system treeseed-ai-training; fi
+if ! getent passwd treeseed-ai-training >/dev/null; then useradd --system --gid treeseed-ai-training --home-dir /var/lib/treeseed-ai/training --shell /usr/sbin/nologin treeseed-ai-training; fi
+install -d -o treeseed-ai-training -g treeseed-ai-training -m 0750 /etc/treeseed-ai/training /var/lib/treeseed-ai/training /var/cache/treeseed-ai/training
+install -d -o treeseed-ai-training -g treeseed-ai-training -m 0750 /etc/treeseed-ai/training/secrets /var/lib/treeseed-ai/training/inputs
+if [ ! -e /etc/treeseed-ai/training/environment ]; then cp /usr/share/treeseed-ai/training/training.env.example /etc/treeseed-ai/training/environment; chmod 0640 /etc/treeseed-ai/training/environment; fi
+chown root:treeseed-ai-training /etc/treeseed-ai/training/environment
+systemctl daemon-reload

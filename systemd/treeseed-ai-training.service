@@ -1,0 +1,21 @@
+[Unit]
+Description=AI training and artifact platform
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=treeseed-ai-training
+Group=treeseed-ai-training
+SupplementaryGroups=docker
+Environment=COMPOSE_FILE=/usr/lib/treeseed-ai/training/compose.yml
+ExecStartPre=/usr/lib/treeseed-ai/training/check-host training
+ExecStart=/usr/bin/docker compose -p treeseed-ai-training --env-file /etc/treeseed-ai/training/environment -f ${COMPOSE_FILE} up -d --remove-orphans --wait
+ExecReload=/usr/bin/docker compose -p treeseed-ai-training --env-file /etc/treeseed-ai/training/environment -f ${COMPOSE_FILE} up -d --remove-orphans --wait
+ExecStop=/usr/bin/docker compose -p treeseed-ai-training --env-file /etc/treeseed-ai/training/environment -f ${COMPOSE_FILE} down
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target

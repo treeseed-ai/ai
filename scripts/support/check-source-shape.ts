@@ -3,7 +3,7 @@ import { extname, join, relative } from 'node:path';
 
 const root = process.cwd();
 const executableExtensions = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
-const ignored = new Set(['.git', 'coverage', 'dist', 'node_modules']);
+const ignored = new Set(['.artifacts', '.git', '__pycache__', 'coverage', 'dist', 'node_modules']);
 
 function filesBelow(directory: string): string[] {
 	return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {

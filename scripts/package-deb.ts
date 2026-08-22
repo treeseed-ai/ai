@@ -1,28 +1,19 @@
-import { chmodSync,cpSync,existsSync,mkdirSync,rmSync,symlinkSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
-import { resolve } from 'node:path';
+import{chmodSync,cpSync,existsSync,mkdirSync,readFileSync,rmSync,symlinkSync,writeFileSync}from'node:fs';
+import{execFileSync}from'node:child_process';import{resolve}from'node:path';
 
-const root = process.cwd();
-const destination = resolve(root, '.treeseed/package/treeseed-ai_0.1.0_amd64');
-if (!existsSync(resolve(root, 'dist/cli/main.js'))) throw new Error('Run npm run build before packaging the Debian artifact.');
-rmSync(destination, { recursive: true, force: true });
-mkdirSync(resolve(destination, 'DEBIAN'), { recursive: true });
-mkdirSync(resolve(destination, 'usr/lib/treeseed-ai'), { recursive: true });
-mkdirSync(resolve(destination, 'usr/bin'), { recursive: true });
-mkdirSync(resolve(destination, 'lib/systemd/system'), { recursive: true });
-mkdirSync(resolve(destination, 'etc/treeseed/ai/providers'), { recursive: true });
-mkdirSync(resolve(destination, 'etc/treeseed/ai/opencode'), { recursive: true });
-cpSync(resolve(root, 'debian/control'), resolve(destination, 'DEBIAN/control'));
-for (const script of ['postinst', 'prerm']) { cpSync(resolve(root, `debian/${script}`), resolve(destination, `DEBIAN/${script}`)); chmodSync(resolve(destination, `DEBIAN/${script}`), 0o755); }
-for (const entry of ['dist', 'package.json', 'package-lock.json', 'compose.ai.yml']) cpSync(resolve(root, entry), resolve(destination, 'usr/lib/treeseed-ai', entry), { recursive: true });
-execFileSync('npm', ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund', '--workspaces=false'], {
-	cwd: resolve(destination, 'usr/lib/treeseed-ai'), stdio: 'inherit',
-});
-chmodSync(resolve(destination, 'usr/lib/treeseed-ai/dist/cli/main.js'), 0o755);
-symlinkSync('../lib/treeseed-ai/dist/cli/main.js', resolve(destination, 'usr/bin/treeseed-ai'));
-cpSync(resolve(root, 'systemd/treeseed-ai.service'), resolve(destination, 'lib/systemd/system/treeseed-ai.service'));
-cpSync(resolve(root, 'treeseed.ai-appliance.yaml'), resolve(destination, 'etc/treeseed/ai/treeseed.ai-appliance.yaml'));
-cpSync(resolve(root, 'config/providers/agent.yaml'), resolve(destination, 'etc/treeseed/ai/providers/agent.yaml'));
-cpSync(resolve(root, 'config/providers/platform-operation.yaml'), resolve(destination, 'etc/treeseed/ai/providers/platform-operation.yaml'));
-cpSync(resolve(root, 'config/opencode/opencode.json'), resolve(destination, 'etc/treeseed/ai/opencode/opencode.json'));
-execFileSync('dpkg-deb', ['--build', '--root-owner-group', destination], { stdio: 'inherit' });
+const root=process.cwd(),release=JSON.parse(readFileSync(resolve(root,'release/manifest.json'),'utf8'))as{version:string;products:string[]};
+const requested=process.argv[2]??'all',products=requested==='all'?release.products:[requested];
+const artifacts=resolve(root,'.artifacts');mkdirSync(artifacts,{recursive:true});
+function directory(base:string,...paths:string[]){for(const path of paths)mkdirSync(resolve(base,path),{recursive:true});}
+function metadata(product:string,base:string){const source=resolve(root,`debian/${product}`),target=resolve(base,'DEBIAN');directory(base,'DEBIAN');for(const file of['control','postinst','prerm'])if(existsSync(resolve(source,file))){let content=readFileSync(resolve(source,file),'utf8').replace(/^Version: .*$/mu,`Version: ${release.version}`);writeFileSync(resolve(target,file),content);if(file!=='control')chmodSync(resolve(target,file),0o755);}}
+function descriptor(product:string,base:string){const group=product==='host-runtime'?['host','factory']:[product];directory(base,'usr/lib/treeseed-ai/commands.d');for(const name of group){const target=resolve(base,`usr/lib/treeseed-ai/commands.d/${name}.json`);cpSync(resolve(root,`deploy/commands/${name}.json`),target);chmodSync(target,0o644);}}
+function build(product:string){if(!release.products.includes(product))throw new Error(`Unknown product ${product}`);const name=`treeseed-ai-${product}`,base=resolve(artifacts,`${name}_${release.version}_amd64`);rmSync(base,{recursive:true,force:true});metadata(product,base);
+  if(product==='factory')return finish(base);
+  if(product==='cli'){directory(base,'usr/bin','usr/lib/treeseed-ai/cli/dist','usr/share/treeseed-ai/release');if(!existsSync(resolve(root,'packages/cli/dist/treeai.js')))throw new Error('Build the CLI before packaging.');cpSync(resolve(root,'packages/cli/dist'),resolve(base,'usr/lib/treeseed-ai/cli/dist'),{recursive:true});cpSync(resolve(root,'release/manifest.json'),resolve(base,'usr/share/treeseed-ai/release/manifest.json'));const images=process.env.TREEAI_IMAGE_MANIFEST??resolve(root,'release/image-manifest.json');cpSync(images,resolve(base,'usr/share/treeseed-ai/release/image-manifest.json'));chmodSync(resolve(base,'usr/lib/treeseed-ai/cli/dist/treeai.js'),0o755);symlinkSync('../lib/treeseed-ai/cli/dist/treeai.js',resolve(base,'usr/bin/treeai'));return finish(base);}
+  descriptor(product,base);
+  if(product==='host-runtime'){directory(base,'usr/lib/treeseed-ai/host-runtime','usr/share/treeseed-ai/host-runtime','usr/lib/systemd/system');cpSync(resolve(root,'packages/host-runtime/dist'),resolve(base,'usr/lib/treeseed-ai/host-runtime/dist'),{recursive:true});cpSync(resolve(root,'packages/host-runtime/config'),resolve(base,'usr/lib/treeseed-ai/host-runtime/config'),{recursive:true});cpSync(resolve(root,'deploy/factory'),resolve(base,'usr/lib/treeseed-ai/factory'),{recursive:true});cpSync(resolve(root,'debian/host-runtime/config.example.json'),resolve(base,'usr/share/treeseed-ai/host-runtime/config.example.json'));cpSync(resolve(root,'systemd/treeseed-ai-factory.service'),resolve(base,'usr/lib/systemd/system/treeseed-ai-factory.service'));return finish(base);}
+  if(product==='lab'){directory(base,'usr/lib/treeseed-ai/lab','usr/share/treeseed-ai/lab','usr/lib/systemd/system');cpSync(resolve(root,'packages/lab/dist'),resolve(base,'usr/lib/treeseed-ai/lab/dist'),{recursive:true});for(const file of['compose.yml','Caddyfile'])cpSync(resolve(root,`deploy/lab/${file}`),resolve(base,`usr/lib/treeseed-ai/lab/${file}`));cpSync(resolve(root,'deploy/lab/lab.env.example'),resolve(base,'usr/share/treeseed-ai/lab/lab.env.example'));cpSync(resolve(root,'systemd/treeseed-ai-lab.service'),resolve(base,'usr/lib/systemd/system/treeseed-ai-lab.service'));return finish(base);}
+  directory(base,`usr/lib/treeseed-ai/${product}`,`usr/share/treeseed-ai/${product}`,'usr/lib/systemd/system');for(const file of['compose.yml','shared-network.override.yml','factory.override.yml'])cpSync(resolve(root,`deploy/${product}/${file}`),resolve(base,`usr/lib/treeseed-ai/${product}/${file}`));cpSync(resolve(root,`deploy/${product}/${product}.env.example`),resolve(base,`usr/share/treeseed-ai/${product}/${product}.env.example`));cpSync(resolve(root,`systemd/${name}.service`),resolve(base,`usr/lib/systemd/system/${name}.service`));for(const file of['check-host','upgrade']){const source=file==='check-host'?'scripts/check-host.sh':'scripts/upgrade.sh';cpSync(resolve(root,source),resolve(base,`usr/lib/treeseed-ai/${product}/${file}`));chmodSync(resolve(base,`usr/lib/treeseed-ai/${product}/${file}`),0o755);}finish(base);
+}
+function finish(base:string){execFileSync('dpkg-deb',['--build','--root-owner-group',base,artifacts],{stdio:'inherit'});}
+for(const product of products)build(product);

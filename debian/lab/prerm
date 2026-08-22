@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+case "${1:-}" in remove|deconfigure) systemctl disable --now treeseed-ai-lab.service 2>/dev/null || true;; esac
+exit 0

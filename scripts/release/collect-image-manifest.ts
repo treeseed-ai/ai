@@ -1,0 +1,4 @@
+import{readFileSync,writeFileSync}from'node:fs';import{resolve}from'node:path';
+const release=JSON.parse(readFileSync('release/manifest.json','utf8'))as{version:string;dockerNamespace:string;images:string[]},directory=resolve(process.argv[2]??'.artifacts/digests'),output=resolve(process.argv[3]??'.artifacts/image-manifest.json'),images:Record<string,{repository:string;digest:string;tag:string}>={};
+for(const role of release.images){const digest=readFileSync(resolve(directory,`${role}.digest`),'utf8').trim();if(!/^sha256:[a-f0-9]{64}$/u.test(digest))throw new Error(`Invalid digest for ${role}.`);images[role]={repository:`${release.dockerNamespace}/${role}`,digest,tag:release.version};}
+writeFileSync(output,`${JSON.stringify({schemaVersion:'treeai.images/v1',version:release.version,namespace:release.dockerNamespace,images},null,2)}\n`);

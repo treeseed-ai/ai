@@ -1,0 +1,5 @@
+import{readFileSync}from'node:fs';import type{CompatibilityManifest}from'./types.js';
+export function loadCompatibility(path=process.env.HOST_RUNTIME_COMPATIBILITY??new URL('../config/compatibility.json',import.meta.url).pathname):CompatibilityManifest{return JSON.parse(readFileSync(path,'utf8'))as CompatibilityManifest;}
+export interface RuntimeConfig{source:'official-online'|'local-apt';localApt?:{url:string;suite:string;components:string;signedBy:string}}
+export function loadRuntimeConfig(path=process.env.HOST_RUNTIME_CONFIG??'/etc/treeseed-ai/host-runtime/config.json'):RuntimeConfig{try{return JSON.parse(readFileSync(path,'utf8'))as RuntimeConfig;}catch{return{source:'official-online'};}}
+export function packageVersions(manifest:CompatibilityManifest,platformKey:string){const platform=manifest.supportedPlatforms[platformKey];if(!platform)return{};return Object.fromEntries(Object.entries(manifest.packages).map(([name,version])=>[name,version.replace('{dockerSuffix}',platform.dockerSuffix)]));}

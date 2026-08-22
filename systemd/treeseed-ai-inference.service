@@ -1,0 +1,21 @@
+[Unit]
+Description=AI inference platform
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=treeseed-ai-inference
+Group=treeseed-ai-inference
+SupplementaryGroups=docker
+Environment=COMPOSE_FILE=/usr/lib/treeseed-ai/inference/compose.yml
+ExecStartPre=/usr/lib/treeseed-ai/inference/check-host inference
+ExecStart=/usr/bin/docker compose -p treeseed-ai-inference --env-file /etc/treeseed-ai/inference/environment -f ${COMPOSE_FILE} up -d --remove-orphans --wait
+ExecReload=/usr/bin/docker compose -p treeseed-ai-inference --env-file /etc/treeseed-ai/inference/environment -f ${COMPOSE_FILE} up -d --remove-orphans --wait
+ExecStop=/usr/bin/docker compose -p treeseed-ai-inference --env-file /etc/treeseed-ai/inference/environment -f ${COMPOSE_FILE} down
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target

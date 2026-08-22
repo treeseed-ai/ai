@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "treeai.release/v1",
+  "version": "0.5.0",
+  "channel": "stable",
+  "githubRepository": "treeseed-ai/ai",
+  "dockerNamespace": "treeseed",
+  "architecture": "amd64",
+  "products": ["cli", "host-runtime", "inference", "training", "lab", "factory"],
+  "functionalProducts": ["host-runtime", "inference", "training", "lab"],
+  "images": [
+    "inference-api", "inference-manager", "inference-vllm", "inference-evaluator", "inference-migrations",
+    "training-api", "training-manager", "axolotl-worker", "marker-worker", "artifact-worker", "training-migrations",
+    "lab-controller", "lab-experience-proxy", "hermes-agent"
+  ],
+  "apt": {
+    "baseUrl": "https://treeseed-ai.github.io/ai/apt",
+    "suite": "stable",
+    "component": "main",
+    "architecture": "amd64",
+    "signingIdentity": "TreeSeed AI Releases <releases@treeseed.ai>",
+    "fingerprintFile": "release/apt/RELEASE_KEY_FINGERPRINT"
+  },
+  "imageManifest": "image-manifest.json"
+}

@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+case "${1:-}" in
+  remove|deconfigure)
+    if systemctl is-enabled --quiet treeseed-ai-factory.service 2>/dev/null || systemctl is-active --quiet treeseed-ai-factory.service 2>/dev/null; then
+      echo 'Factory mode owns lifecycle; run treeai factory disable --handoff awake|sleep first.' >&2
+      exit 1
+    fi
+    ;;
+esac
+# Docker, Toolkit, repositories, daemon configuration, application services, and receipts are operator-owned.
+exit 0

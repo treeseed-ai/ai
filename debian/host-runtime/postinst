@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+install -d -m 0750 /etc/treeseed-ai/host-runtime
+install -d -m 0750 /var/lib/treeseed-ai/host-runtime
+install -d -m 0750 /etc/treeseed-ai/host-runtime/factory /var/lib/treeseed-ai/host-runtime/factory
+if [ ! -e /etc/treeseed-ai/host-runtime/config.json ]; then
+  install -m 0640 /usr/share/treeseed-ai/host-runtime/config.example.json /etc/treeseed-ai/host-runtime/config.json
+fi
+systemctl daemon-reload
+exit 0

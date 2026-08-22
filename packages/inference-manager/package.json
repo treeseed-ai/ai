@@ -1,0 +1,9 @@
+{
+  "name": "@ai-platform/inference-manager",
+  "version": "0.5.0",
+  "private": true,
+  "type": "module",
+  "bin": { "ai-inference-manager": "./dist/main.js" },
+  "scripts": { "build": "tsc -p tsconfig.json", "start": "node dist/main.js" },
+  "dependencies": { "@ai-platform/common": "workspace:*", "pg": "^8.16.3" }
+}

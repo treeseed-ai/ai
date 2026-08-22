@@ -1,51 +1,31 @@
 {
-  "name": "@treeseed/ai",
-  "version": "0.1.0",
-  "description": "Installable local AI inference, training, and appliance runtime for TreeSeed.",
-  "license": "Apache-2.0",
+  "name": "@ai-platform/workspace",
+  "version": "0.5.0",
   "private": true,
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/treeseed-ai/ai.git"
-  },
-  "homepage": "https://treeseed.dev",
-  "bugs": {
-    "url": "https://github.com/treeseed-ai/ai/issues"
-  },
+  "license": "Apache-2.0",
   "type": "module",
-  "engines": {
-    "node": ">=22"
-  },
-  "types": "./dist/index.d.ts",
-  "bin": {
-    "treeseed-ai": "./dist/cli/main.js"
-  },
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    }
-  },
+  "packageManager": "pnpm@10.15.1",
+  "engines": { "node": ">=22" },
+  "workspaces": ["packages/*"],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "build:deb": "npm run build && node --import tsx ./scripts/package-deb.ts",
-    "check:file-lengths": "node --import tsx ./scripts/support/check-source-shape.ts",
-    "check:file-architecture": "node --import tsx ./scripts/support/check-source-shape.ts",
-    "start": "node ./dist/cli/main.js serve",
+    "build": "pnpm --filter @ai-platform/common build && pnpm --filter @ai-platform/cli build && pnpm --filter @ai-platform/host-runtime build && pnpm --filter @ai-platform/inference-api build && pnpm --filter @ai-platform/inference-manager build && pnpm --filter @ai-platform/training-api build && pnpm --filter @ai-platform/training-manager build && pnpm --filter @ai-platform/lab build",
     "test": "vitest run",
-    "test:integration": "vitest run tests/integration",
-    "verify": "npm run check:file-lengths && npm run build && npm run test",
-    "verify:local": "npm run verify",
-    "verify:direct": "npm run verify"
+    "check:file-architecture": "node --import tsx scripts/support/check-source-shape.ts",
+    "check:release": "node --import tsx scripts/release/validate.ts",
+    "build:deb": "pnpm build && node --import tsx scripts/package-deb.ts all",
+    "verify": "pnpm check:release && pnpm check:file-architecture && pnpm build && pnpm test"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.879.0",
     "@hono/node-server": "^1.19.9",
-    "@treeseed/sdk": "github:treeseed-ai/sdk#f843c3cb11853db737d28ecc6bcc3d5df5e183e9",
     "hono": "^4.11.4",
+    "pg": "^8.16.3",
     "yaml": "^2.8.1"
   },
   "devDependencies": {
     "@types/node": "^24.6.0",
+    "@types/pg": "^8.15.5",
+    "esbuild": "^0.28.2",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.2"

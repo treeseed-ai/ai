@@ -1,0 +1,55 @@
+name: treeseed-ai-lab
+x-lab-environment: &lab-environment
+  AI_FACTORY_CONTROL_KEY_FILE: /run/secrets/factory-control-key
+  AI_FACTORY_INFERENCE_KEY_FILE: /run/secrets/factory-inference-key
+  AI_FACTORY_TRAINING_KEY_FILE: /run/secrets/factory-training-key
+  FACTORY_URL: "${FACTORY_URL:-https://host.docker.internal:4790}"
+  TRAINING_URL: "${TRAINING_URL:-http://training-api:4780}"
+  INFERENCE_CONTROL_URL: "${INFERENCE_CONTROL_URL:-http://inference-api:4770}"
+  INFERENCE_URL: "${INFERENCE_URL:-http://inference-api:4771}"
+  BASE_MODEL: "${BASE_MODEL:-Qwen/Qwen3.5-4B}"
+  BASE_MODEL_REVISION: "${BASE_MODEL_REVISION:?BASE_MODEL_REVISION is required}"
+services:
+  experience-proxy:
+    image: ${LAB_PROXY_IMAGE:?LAB_PROXY_IMAGE is required}
+    restart: unless-stopped
+    environment: { INFERENCE_URL: "http://inference-api:4771", AI_FACTORY_INFERENCE_KEY_FILE: /run/secrets/factory-inference-key, LAB_STATE_DIR: /state }
+    secrets: [factory-inference-key]
+    volumes: [lab-state:/state]
+    networks: [ai-shared]
+    healthcheck: { test: ["CMD","node","-e","fetch('http://127.0.0.1:8080/healthz').then(r=>{if(!r.ok)process.exit(1)})"], interval: 10s, timeout: 3s, retries: 20 }
+  controller:
+    image: ${LAB_CONTROLLER_IMAGE:?LAB_CONTROLLER_IMAGE is required}
+    restart: unless-stopped
+    depends_on: { experience-proxy: { condition: service_healthy } }
+    volumes: [lab-state:/state, hermes-workspace:/workspace:ro, "/etc/ssl/certs/treeseed-ai-factory-development-ca.pem:/factory-ca.pem:ro"]
+    secrets: [training-source,factory-control-key,factory-inference-key,factory-training-key]
+    environment: { <<: *lab-environment, AI_LAB_API_KEYS: "${AI_LAB_API_KEYS:?AI_LAB_API_KEYS is required}", NODE_EXTRA_CA_CERTS: /factory-ca.pem, LAB_STATE_DIR: /state, HERMES_WORKSPACE: /workspace, TRAINING_SOURCE_FILE: /run/secrets/training-source, LAB_MIN_TRAJECTORIES: "${LAB_MIN_TRAJECTORIES:-100}", LAB_IDLE_MINUTES: "${LAB_IDLE_MINUTES:-15}", LAB_COOLDOWN_HOURS: "${LAB_COOLDOWN_HOURS:-6}" }
+    networks: [ai-shared]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    healthcheck: { test: ["CMD","node","-e","fetch('http://127.0.0.1:8081/healthz').then(r=>{if(!r.ok)process.exit(1)})"], interval: 10s, timeout: 3s, retries: 20 }
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:v0.9.5@sha256:ef3eaeb6235dd86d8ae7425e6af38272b0cea27896c0d5ae8c5cf23f886de76a
+    restart: unless-stopped
+    depends_on: { experience-proxy: { condition: service_healthy } }
+    environment: { OPENAI_API_BASE_URL: "http://experience-proxy:8080/v1", OPENAI_API_BASE_URLS: "http://experience-proxy:8080/v1", OPENAI_API_KEY: lab-internal, OPENAI_API_KEYS: lab-internal, ENABLE_OLLAMA_API: "false", WEBUI_AUTH: "true" }
+    volumes: [open-webui-data:/app/backend/data]
+    networks: [ai-shared]
+  hermes:
+    image: ${HERMES_IMAGE:?HERMES_IMAGE is required}
+    restart: unless-stopped
+    environment: { OPENAI_BASE_URL: "http://experience-proxy:8080/v1", OPENAI_API_KEY: lab-internal, HERMES_HOME: /home/hermes/.hermes, HERMES_DASHBOARD_BASIC_AUTH_USERNAME: lab }
+    secrets: [hermes-password-hash,hermes-session-secret]
+    volumes: [hermes-home:/home/hermes/.hermes, hermes-workspace:/workspace]
+    networks: [ai-shared]
+    healthcheck: { test: ["CMD","python","-c","import socket;s=socket.create_connection(('127.0.0.1',9119),3);s.close()"], interval: 15s, timeout: 5s, retries: 30, start_period: 30s }
+  gateway:
+    image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    restart: unless-stopped
+    depends_on: { controller: { condition: service_healthy }, open-webui: { condition: service_started }, hermes: { condition: service_healthy } }
+    ports: ["${LAB_BIND:-0.0.0.0}:4791:4791","${LAB_BIND:-0.0.0.0}:4792:4792","${LAB_BIND:-0.0.0.0}:4793:4793"]
+    volumes: ["/usr/lib/treeseed-ai/lab/Caddyfile:/etc/caddy/Caddyfile:ro","/etc/treeseed-ai/host-runtime/factory/tls:/tls:ro"]
+    networks: [ai-shared]
+networks: { ai-shared: { external: true, name: ai-shared } }
+secrets: { training-source: { file: /etc/treeseed-ai/lab/training-source.json }, factory-control-key: { file: /etc/treeseed-ai/lab/secrets/factory-control-key }, factory-inference-key: { file: /etc/treeseed-ai/lab/secrets/factory-inference-key }, factory-training-key: { file: /etc/treeseed-ai/lab/secrets/factory-training-key }, hermes-password-hash: { file: /etc/treeseed-ai/lab/secrets/hermes-password-hash }, hermes-session-secret: { file: /etc/treeseed-ai/lab/secrets/hermes-session-secret } }
+volumes: { lab-state: {}, hermes-home: {}, hermes-workspace: {}, open-webui-data: {} }

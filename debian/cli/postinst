@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+if ! getent group treeseed-ai-operators >/dev/null; then groupadd --system treeseed-ai-operators; fi
+install -d -o root -g treeseed-ai-operators -m 0750 /etc/treeseed-ai/treeai
+install -d -o root -g root -m 0755 /usr/lib/treeseed-ai/commands.d
+exit 0

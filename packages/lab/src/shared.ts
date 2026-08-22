@@ -1,0 +1,10 @@
+import {createHash,randomBytes} from'node:crypto';import{appendFileSync,existsSync,mkdirSync,readFileSync,renameSync,writeFileSync}from'node:fs';import{dirname}from'node:path';
+export const stateRoot=process.env.LAB_STATE_DIR??'/state';export const workspaceRoot=process.env.HERMES_WORKSPACE??'/workspace';
+export function digest(value:unknown){return createHash('sha256').update(typeof value==='string'?value:JSON.stringify(value)).digest('hex');}
+export function readJson<T>(path:string,fallback:T):T{try{return JSON.parse(readFileSync(path,'utf8'))as T;}catch{return fallback;}}
+export function atomic(path:string,value:unknown){mkdirSync(dirname(path),{recursive:true});const temporary=`${path}.${process.pid}.${randomBytes(4).toString('hex')}`;writeFileSync(temporary,`${JSON.stringify(value,null,2)}\n`,{mode:0o600});renameSync(temporary,path);}
+export function appendEvent(type:string,data:unknown){mkdirSync(stateRoot,{recursive:true});appendFileSync(`${stateRoot}/events.jsonl`,`${JSON.stringify({id:`${Date.now()}-${randomBytes(3).toString('hex')}`,type,data,at:new Date().toISOString()})}\n`);}
+export function lines(path:string){if(!existsSync(path))return[];return readFileSync(path,'utf8').split('\n').filter(Boolean).flatMap(line=>{try{return[JSON.parse(line)];}catch{return[];}});}
+export function appendBounded(path:string,value:unknown,limit=10_000){const items=[...lines(path),value].slice(-limit),temporary=`${path}.${process.pid}.tmp`;mkdirSync(dirname(path),{recursive:true});writeFileSync(temporary,`${items.map(item=>JSON.stringify(item)).join('\n')}\n`,{mode:0o600});renameSync(temporary,path);}
+export function redactKnownCredentials(value:string){return value.replace(/(?:(?:ak_[a-z0-9-]+_[a-z0-9_-]{16,})|(?:api[_-]?key|token|password|secret)\s*[:=]\s*\S+|\/home\/[^/\s]+)/giu,'[REDACTED]');}
+export function required(name:string){const value=process.env[name];if(value)return value;const path=process.env[`${name}_FILE`];if(path)return readFileSync(path,'utf8').trim();throw new Error(`${name} is required`);}
