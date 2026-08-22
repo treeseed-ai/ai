@@ -18,6 +18,7 @@ import {
 	type PlatformConfiguration,
 } from "@ai-platform/common";
 import { paths } from "../core/paths.js";
+import { securePlatformConfiguration } from "../core/configuration-file.js";
 import { setSetting } from "../core/store.js";
 import { applyUpdate } from "../lifecycle/update.js";
 import { ensureOperatorCredential } from "../lifecycle/credentials.js";
@@ -230,7 +231,7 @@ function client(config: PlatformConfiguration, ca: string) {
 		JSON.stringify(
 			{
 				schemaVersion: "treeai.config/v1",
-				version: "0.6.1",
+				version: "0.6.2",
 				imageSource: config.imageSource,
 				ca,
 				endpoints: {
@@ -289,6 +290,7 @@ function migrateFactoryMaterial(config: PlatformConfiguration) {
 }
 export async function converge() {
 	const config = configuration();
+	securePlatformConfiguration();
 	migrateFactoryMaterial(config);
 	const credential = ensureOperatorCredential();
 	distribute(credential.record);

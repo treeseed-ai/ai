@@ -59,8 +59,8 @@ export function legacyPlatformConfiguration(input: {
 		secrets: {},
 		provenance: {
 			generator: input.legacy04
-				? "treeai-migrate-0.4/0.6.1"
-				: "treeai-migrate-0.5/0.6.1",
+				? "treeai-migrate-0.4/0.6.2"
+				: "treeai-migrate-0.5/0.6.2",
 			generatedAt: input.generatedAt ?? new Date().toISOString(),
 			configurationDigest: "",
 		},

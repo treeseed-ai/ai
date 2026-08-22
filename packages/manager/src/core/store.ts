@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { paths } from "./paths.js";
@@ -28,8 +28,9 @@ let current: DatabaseSync | undefined;
 function db() {
 	if (current) return current;
 	mkdirSync(dirname(paths.database), { recursive: true, mode: 0o2770 });
+	const existed = existsSync(paths.database);
 	current = new DatabaseSync(paths.database);
-	chmodSync(paths.database, 0o660);
+	if (!existed) chmodSync(paths.database, 0o660);
 	current.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
 CREATE TABLE IF NOT EXISTS work(id TEXT PRIMARY KEY,kind TEXT NOT NULL,state TEXT NOT NULL,idempotency_key TEXT NOT NULL UNIQUE,request TEXT NOT NULL,result TEXT,error TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY AUTOINCREMENT,type TEXT NOT NULL,data TEXT NOT NULL,created_at TEXT NOT NULL);

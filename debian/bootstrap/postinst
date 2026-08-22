@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 install -d -m 0700 /var/lib/treeseed-ai/bootstrap /var/lib/treeseed-ai/bootstrap/seed
-install -d -m 0750 /etc/treeseed-ai
+install -d -o root -g root -m 0711 /etc/treeseed-ai
 legacy_04=false
 if /usr/lib/treeseed-ai/bootstrap/migrate-0.4.sh detect >/dev/null 2>&1; then legacy_04=true; fi
 if [ "$legacy_04" = false ] && [ -f /usr/share/treeseed-ai/bootstrap/platform.json ] && { [ ! -f /etc/treeseed-ai/platform.json ] || [ -f /usr/share/treeseed-ai/bootstrap/configured-seed ]; }; then

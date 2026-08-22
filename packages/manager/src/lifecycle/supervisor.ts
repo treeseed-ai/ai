@@ -23,6 +23,7 @@ import {
 } from "./update.js";
 import { event, setSetting, setting } from "../core/store.js";
 import { paths } from "../core/paths.js";
+import { securePlatformConfiguration } from "../core/configuration-file.js";
 import { supervisorOperations, type SupervisorRequest } from "./socket.js";
 import { rotateOperatorCredential } from "./credentials.js";
 import {
@@ -73,6 +74,7 @@ function adopt(parameters: Record<string, unknown> = {}) {
 	)
 		return { changed: false, generation: current.generation };
 	atomic(paths.configuration, finalizeConfiguration(candidate));
+	securePlatformConfiguration();
 	event("config.adopted", {
 		configurationId: candidate.configurationId,
 		generation: candidate.generation,
@@ -97,6 +99,7 @@ function component(value: unknown, enabled: boolean) {
 	config.generation += 1;
 	config.provenance.generator = "treeai-manager-component";
 	atomic(paths.configuration, finalizeConfiguration(config));
+	securePlatformConfiguration();
 	event("component.desired-state", {
 		component: value,
 		enabled,

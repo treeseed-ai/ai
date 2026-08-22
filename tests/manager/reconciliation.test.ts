@@ -29,4 +29,14 @@ describe('manager-owned platform reconciliation',()=>{
     expect(bootstrap.indexOf('manager-reconcile.service')).toBeLessThan(bootstrap.indexOf('systemctl stop treeseed-ai-factory.service'));
     expect(bootstrap).toContain("trap 'code=$?");
   });
+
+  it('relinquishes the legacy gateway before installing manager-owned packages',()=>{
+    const bootstrap=readFileSync('scripts/bootstrap/bootstrap.sh','utf8');
+    const gatewayDown=bootstrap.indexOf('treeseed-ai-factory-gateway -f "$legacy/factory-compose/compose.yml" down --remove-orphans');
+    const packageInstall=bootstrap.indexOf('apt-get -o DPkg::Lock::Timeout=600 --no-remove');
+    expect(gatewayDown).toBeGreaterThan(0);
+    expect(gatewayDown).toBeLessThan(packageInstall);
+    expect(bootstrap).not.toContain('down --volumes');
+    expect(bootstrap).toContain('gateway-was-running');
+  });
 });
