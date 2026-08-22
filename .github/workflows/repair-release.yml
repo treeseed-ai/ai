@@ -47,8 +47,8 @@ jobs:
           node --import tsx scripts/release/check-vulnerabilities.ts release-assets/vulnerabilities
       - name: Verify exact tags and keyless signatures
         run: |
-          jq -r '.images|to_entries[]|[.key,.value.repository,.value.digest]|@tsv' release-assets/image-manifest.json | while IFS=$'\t' read -r role repository digest; do
-            actual=$(docker buildx imagetools inspect "$repository:${{ inputs.version }}" | awk '/^Digest:/{print $2;exit}')
+          jq -r '.images|to_entries[]|[.key,.value.repository,.value.digest,.value.tag]|@tsv' release-assets/image-manifest.json | while IFS=$'\t' read -r role repository digest tag; do
+            actual=$(docker buildx imagetools inspect "$repository:$tag" | awk '/^Digest:/{print $2;exit}')
             test "$actual" = "$digest" || { echo "Digest mismatch for $role" >&2; exit 1; }
             cosign verify --certificate-identity-regexp '^https://github.com/treeseed-ai/ai/.github/workflows/release.yml@refs/heads/main$' --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' "$repository@$digest" >/dev/null
           done
