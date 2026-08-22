@@ -2,7 +2,7 @@ Source: treeseed-ai
 Section: admin
 Priority: optional
 Maintainer: TreeSeed AI Releases <releases@treeseed.ai>
-Build-Depends: debhelper-compat (= 13), nodejs (>= 22), curl, xz-utils, gnupg
+Build-Depends: debhelper-compat (= 13), nodejs, curl, xz-utils, gnupg
 Standards-Version: 4.7.0
 Homepage: https://github.com/treeseed-ai/ai
 Rules-Requires-Root: no
