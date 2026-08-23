@@ -3,7 +3,7 @@ name: Publish protected TreeAI development generation
 on:
   workflow_dispatch:
     inputs:
-      debian_version: { description: "Exact version, e.g. 0.6.1~dev.20260822.142500+gabcdef123456-1", required: true, type: string }
+      debian_version: { description: "Exact version, e.g. 0.6.3~dev.20260822.142500+gabcdef123456-1", required: true, type: string }
       generation: { description: Monotonic numeric catalog generation, required: true, type: string }
 
 permissions: { contents: read }
@@ -75,7 +75,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential debhelper lintian nodejs
-          sed -i "1s/(0.6.0-1)/(${{ inputs.debian_version }})/; s/) stable;/) development;/" debian/changelog
+          sed -i "1s/([^)]*)/(${{ inputs.debian_version }})/; 1s/) stable;/) development;/" debian/changelog
           TREEAI_DEBIAN_VERSION='${{ inputs.debian_version }}' TREEAI_RELEASE_VERSION='${{ inputs.debian_version }}' TREEAI_RELEASE_CHANNEL=development TREEAI_RELEASE_GENERATION='${{ inputs.generation }}' TREEAI_IMAGE_MANIFEST="$PWD/assets/image-manifest.json" dpkg-buildpackage -b -us -uc
           find .. -maxdepth 1 -type f -name 'treeseed-ai*.deb' -exec cp {} assets/ \;
           lintian --fail-on error assets/*.deb
