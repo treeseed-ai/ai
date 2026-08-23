@@ -313,6 +313,7 @@ function ensureLabConfiguration() {
 			INFERENCE_URL: "http://inference-api:4771",
 			BASE_MODEL: "Qwen/Qwen3.5-4B",
 			BASE_MODEL_REVISION: "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+			HERMES_MODEL_CONTEXT_LENGTH: "16384",
 			LAB_CONTROLLER_IMAGE: image("lab-controller"),
 			LAB_PROXY_IMAGE: image("lab-experience-proxy"),
 			LAB_WEB_TOOL_IMAGE: image("lab-web-tool-proxy"),
