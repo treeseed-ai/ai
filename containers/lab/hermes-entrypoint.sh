@@ -5,6 +5,17 @@ install -d -o hermes -g hermes "$HERMES_HOME" /workspace
 chown hermes:hermes "$HERMES_HOME" /workspace
 
 managed="${HERMES_MANAGED_DIR:-/run/hermes-managed}"
+context_length="${TREEAI_MODEL_CONTEXT_LENGTH:-16384}"
+case "$context_length" in
+  ''|*[!0-9]*)
+    echo "TREEAI_MODEL_CONTEXT_LENGTH must be an integer between 16384 and 262144" >&2
+    exit 64
+    ;;
+esac
+if [ "$context_length" -lt 16384 ] || [ "$context_length" -gt 262144 ]; then
+  echo "TREEAI_MODEL_CONTEXT_LENGTH must be an integer between 16384 and 262144" >&2
+  exit 64
+fi
 install -d -o root -g hermes -m 0750 "$managed"
 umask 027
 config="$managed/config.yaml.new.$$"
@@ -15,6 +26,7 @@ printf '%s\n' \
   '  base_url: http://experience-proxy:8080/v1' \
   '  api_key: lab-hermes' \
   '  api_mode: chat_completions' \
+  "  context_length: $context_length" \
   'terminal:' \
   '  backend: local' \
   '  cwd: /workspace' \

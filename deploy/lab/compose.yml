@@ -107,6 +107,7 @@ services:
       OPENAI_API_KEY: lab-hermes
       HERMES_HOME: /home/hermes/.hermes
       HERMES_SERVICE_MODE: gateway
+      TREEAI_MODEL_CONTEXT_LENGTH: ${HERMES_MODEL_CONTEXT_LENGTH:-16384}
       TREEAI_WEB_TOOL_URL: http://web-tool-proxy:8090
       MESSAGING_CWD: /workspace
     secrets: [hermes-api-key]
@@ -126,6 +127,7 @@ services:
     environment:
       HERMES_HOME: /home/hermes/.hermes
       HERMES_SERVICE_MODE: dashboard
+      TREEAI_MODEL_CONTEXT_LENGTH: ${HERMES_MODEL_CONTEXT_LENGTH:-16384}
       HERMES_DASHBOARD_BASIC_AUTH_USERNAME: lab
       GATEWAY_HEALTH_URL: http://hermes-agent:8642
     secrets: [hermes-password-hash, hermes-session-secret]
