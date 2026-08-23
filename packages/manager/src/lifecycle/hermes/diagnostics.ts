@@ -17,6 +17,25 @@ function sanitized(value: string) {
 		.replace(/\/home\/[A-Za-z0-9._-]+/gu, "/home/[REDACTED]");
 }
 
+function privateRuntimeEvidence() {
+	const script = [
+		"import json, pathlib",
+		"root=pathlib.Path('/home/hermes/.hermes')",
+		"paths=['gateway_state.json','logs/gateway.log','logs/errors.log','logs/agent.log']",
+		"result={}",
+		"for name in paths:",
+		" p=root/name",
+		" if p.is_file(): result[name]='\\n'.join(p.read_text(errors='replace').splitlines()[-80:])[-65536:]",
+		"print(json.dumps(result))",
+	].join("\n");
+	try {
+		return JSON.parse(docker(["exec", container, "python", "-c", script])) as Record<string, string>;
+	} catch (error) {
+		const value = error as { stdout?: string; stderr?: string };
+		return { diagnosticError: `${value.stdout ?? ""}${value.stderr ?? ""}` };
+	}
+}
+
 export function hermesDiagnostics() {
 	const state = JSON.parse(
 		docker(["inspect", "--format", "{{json .State}}", container]),
@@ -45,5 +64,11 @@ export function hermesDiagnostics() {
 			failingStreak: state.Health?.FailingStreak ?? 0,
 		},
 		logs: sanitized(logs).split("\n").filter(Boolean),
+		privateRuntime: Object.fromEntries(
+			Object.entries(privateRuntimeEvidence()).map(([name, value]) => [
+				name,
+				sanitized(value).split("\n").filter(Boolean),
+			]),
+		),
 	};
 }
