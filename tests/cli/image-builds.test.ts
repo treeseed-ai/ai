@@ -5,6 +5,13 @@ import{describe,expect,it}from'vitest';
 import{computeBuildIdentity,type ImageBuild}from'../../scripts/release/plan-image-builds.js';
 
 describe('selective image build identities',()=>{
+  it('rewrites the current changelog version for development publications',()=>{
+    const workflow=readFileSync('.github/workflows/publish-development.yml','utf8');
+    expect(workflow).toContain('1s/([^)]*)/(${{ inputs.debian_version }})/');
+    expect(workflow).not.toContain('1s/(0.6.0-1)/');
+    expect(workflow).toContain('0.6.3~dev.');
+  });
+
   it('covers every coordinated role with explicit inputs',()=>{
     const release=JSON.parse(readFileSync('release/manifest.json','utf8'))as{images:string[]};
     const builds=JSON.parse(readFileSync('release/image-builds.json','utf8'))as{platform:string;images:Record<string,ImageBuild>};
