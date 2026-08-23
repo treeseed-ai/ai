@@ -22,7 +22,7 @@ services:
     image: ${LAB_CONTROLLER_IMAGE:?LAB_CONTROLLER_IMAGE is required}
     restart: unless-stopped
     depends_on: { experience-proxy: { condition: service_healthy } }
-    volumes: [lab-state:/state, hermes-workspace:/workspace:ro, "/etc/ssl/certs/treeseed-ai-factory-development-ca.pem:/factory-ca.pem:ro"]
+    volumes: [lab-state:/state, hermes-workspace:/workspace:ro, "/etc/ssl/certs/treeseed-ai-ca.pem:/factory-ca.pem:ro"]
     secrets: [training-source,factory-control-key,factory-inference-key,factory-training-key]
     environment: { <<: *lab-environment, AI_LAB_API_KEYS: "${AI_LAB_API_KEYS:?AI_LAB_API_KEYS is required}", NODE_EXTRA_CA_CERTS: /factory-ca.pem, LAB_STATE_DIR: /state, HERMES_WORKSPACE: /workspace, TRAINING_SOURCE_FILE: /run/secrets/training-source, LAB_MIN_TRAJECTORIES: "${LAB_MIN_TRAJECTORIES:-100}", LAB_IDLE_MINUTES: "${LAB_IDLE_MINUTES:-15}", LAB_COOLDOWN_HOURS: "${LAB_COOLDOWN_HOURS:-6}" }
     networks: [ai-shared]
@@ -48,7 +48,7 @@ services:
     restart: unless-stopped
     depends_on: { controller: { condition: service_healthy }, open-webui: { condition: service_started }, hermes: { condition: service_healthy } }
     ports: ["${LAB_BIND:-0.0.0.0}:4791:4791","${LAB_BIND:-0.0.0.0}:4792:4792","${LAB_BIND:-0.0.0.0}:4793:4793"]
-    volumes: ["/usr/lib/treeseed-ai/lab/Caddyfile:/etc/caddy/Caddyfile:ro","/etc/treeseed-ai/host-runtime/factory/tls:/tls:ro"]
+    volumes: ["/usr/lib/treeseed-ai/lab/Caddyfile:/etc/caddy/Caddyfile:ro","/etc/treeseed-ai/manager/tls:/tls:ro"]
     networks: [ai-shared]
 networks: { ai-shared: { external: true, name: ai-shared } }
 secrets: { training-source: { file: /etc/treeseed-ai/lab/training-source.json }, factory-control-key: { file: /etc/treeseed-ai/lab/secrets/factory-control-key }, factory-inference-key: { file: /etc/treeseed-ai/lab/secrets/factory-inference-key }, factory-training-key: { file: /etc/treeseed-ai/lab/secrets/factory-training-key }, hermes-password-hash: { file: /etc/treeseed-ai/lab/secrets/hermes-password-hash }, hermes-session-secret: { file: /etc/treeseed-ai/lab/secrets/hermes-session-secret } }

@@ -1,0 +1,13 @@
+#!/usr/bin/make -f
+%:
+	dh $@
+
+override_dh_auto_build:
+	corepack pnpm install --frozen-lockfile
+	corepack pnpm build
+
+override_dh_auto_install:
+	TREEAI_DEBHELPER_STAGE=1 node --import tsx scripts/package-deb.ts all
+
+override_dh_auto_test:
+	corepack pnpm verify

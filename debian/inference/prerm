@@ -2,6 +2,10 @@
 set -eu
 case "${1:-}" in
   remove|deconfigure)
+    if [ -f /etc/treeseed-ai/platform.json ] && systemctl is-active --quiet treeseed-ai-manager-supervisor.service 2>/dev/null && grep -Eq '"inference"' /etc/treeseed-ai/platform.json; then
+      echo 'The manager desired state still enables inference; run sudo treeai platform components disable inference first.' >&2
+      exit 1
+    fi
     if systemctl is-enabled --quiet treeseed-ai-factory.service 2>/dev/null || systemctl is-active --quiet treeseed-ai-factory.service 2>/dev/null; then
       echo 'Disable factory mode before removing inference.' >&2
       exit 1

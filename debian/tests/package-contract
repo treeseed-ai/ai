@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+test -x /usr/bin/treeai
+test -f /usr/share/treeseed-ai/release/catalog.json
+test -f /usr/lib/systemd/system/treeseed-ai-manager-supervisor.service
+test ! -e /usr/bin/ai-factory-dev

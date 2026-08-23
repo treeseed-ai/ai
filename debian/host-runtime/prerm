@@ -2,6 +2,10 @@
 set -eu
 case "${1:-}" in
   remove|deconfigure)
+    if [ -f /etc/treeseed-ai/platform.json ] && systemctl is-active --quiet treeseed-ai-manager-supervisor.service 2>/dev/null && grep -Eq '"host-runtime"' /etc/treeseed-ai/platform.json; then
+      echo 'The manager desired state still enables host-runtime; adopt an external-runtime configuration before removal.' >&2
+      exit 1
+    fi
     if systemctl is-enabled --quiet treeseed-ai-factory.service 2>/dev/null || systemctl is-active --quiet treeseed-ai-factory.service 2>/dev/null; then
       echo 'Factory mode owns lifecycle; run treeai factory disable --handoff awake|sleep first.' >&2
       exit 1

@@ -1,38 +1,43 @@
 # Operations
 
-Install either Debian package, edit its environment file under `/etc/treeseed-ai/<product>/`, generate an API key with `treeseed-ai-inference-key` or `treeseed-ai-training-key`, and enable the corresponding systemd unit. Production configurations use external PostgreSQL and S3-compatible endpoints and registry images pinned by digest.
+Install the downloaded `treeseed-ai_*.deb` once. Its maintainer script only creates protected seed state and launches `treeseed-ai-bootstrap.service` asynchronously. The service waits for APT/dpkg locks, installs the private runtime, CLI, catalog, and manager from the signed repository, then hands desired state to the manager.
 
-Use `docker compose ... config` as the non-mutating plan. Apply with `systemctl start` or `docker compose ... up -d --remove-orphans --wait`.
+### Explicit 0.4 takeover
 
-## Optional host preparation
+An installed 0.4 local factory has no unified TreeAI configuration, and its package removal guard owns the legacy coordinator. The central installer detects this layout and deliberately does not begin handoff automatically. It also does not stop containers, rewrite product environments, or touch volumes during package installation.
 
-Install `treeseed-ai-host-runtime` only when the host runtime is not managed elsewhere. Package installation is intentionally inert. Review `treeseed-ai-host-runtime plan`, run `apply` explicitly as root, then run `verify`. Applied plans, exact APT artifact metadata, configuration changes, and receipts are retained under `/var/lib/treeseed-ai/host-runtime/`.
+Review and approve the fixed migration after installing the central package:
 
-`apply` refuses unsupported platforms, conflicting packages, manual Docker binaries, and malformed daemon JSON. `migration-plan` provides non-executing guidance. NVIDIA configuration preserves unrelated daemon keys, does not set NVIDIA as the default runtime, and is restored if validation or Docker restart fails. Removing any of the three packages never removes Docker, Toolkit, repositories, daemon configuration, images, containers, or volumes.
+```bash
+sudo /usr/lib/treeseed-ai/bootstrap/migrate-0.4.sh plan
+sudo /usr/lib/treeseed-ai/bootstrap/migrate-0.4.sh apply --confirm
+sudo journalctl -fu treeseed-ai-bootstrap.service
+```
 
-## Local factory lifecycle
+The plan blocks when inference or GPU training counters are nonzero, the persisted mode is unsafe, or required bundled PostgreSQL/MinIO credentials are absent. Apply records approval and starts the asynchronous bootstrap. At the dpkg boundary it backs up and hashes the legacy environments and coordinator assets, disables the old coordinator, upgrades the repository-managed packages, and converges with registry images. Existing Compose project names and Docker volumes are retained. PostgreSQL, S3, and MinIO credentials are read from the old product environments; TLS, artifact-signing material, and `awake`/`sleep` mode move to manager ownership. A failure before package installation restores the old coordinator. Once dpkg starts, recovery remains manager-owned because restarting old code against partially upgraded files is unsafe.
 
-After all three packages and the host runtime are ready, run `sudo ai-factory-dev plan --source /path/to/ai`, then `configure`, `build`, and `start` with the same `--source`. Save the one-time client keys in your shell or secret manager. Local clients use `/etc/ssl/certs/treeseed-ai-factory-development-ca.pem`; copy that public certificate to LAN clients over a trusted channel. Private keys remain under `/etc/treeseed-ai/host-runtime/factory/`.
+Use `treeai platform status`, `treeai platform doctor`, `treeai platform events`, and `treeai update watch` for live operation. Read-only monitoring and mode changes use the authenticated manager API. Applying releases, changing channels, adopting a different configuration ID, component ownership, and recovery require local root over `/run/treeseed-ai/manager/control.sock`.
 
-Configuration is transactional and idempotent. It creates separate product database/object-store credentials, the `ai-shared` bridge, TLS material, an artifact-signing key, and redacted receipts without starting services or pulling images. Lost client credentials are replaced only with `configure --rotate-client-keys`; restart afterward so the coordinator and product containers load the new hashes.
+## Desired state
 
-The build uses `deploy/factory/docker-bake.hcl` to create all eleven `local/*:0.4.0` role images. It pulls digest-pinned Caddy, PostgreSQL, and MinIO runtime images, runs entrypoint/framework/health smoke checks, and records image IDs and source/base digests. Start refuses a local tag that no longer matches this receipt.
+The active configuration is `/etc/treeseed-ai/platform.json` and conforms to `treeai.platform/v1`. Repository upgrades never overwrite it. A seed with the same configuration ID and a higher generation is staged automatically; a different ID requires `sudo treeai config adopt --confirm`. External credentials are local secret-provider references only.
 
-Use `status`, `mode`, `awake`, `sleep`, `watch`, and `logs inference|training` for live operation. Mode requests are authenticated and asynchronous. Inference drains for up to 120 seconds; GPU training drains for up to 300 seconds. A timeout preserves the prior safe mode, while a failure after lifecycle mutation enters `degraded`. Use `disable --handoff awake|sleep` before removing any factory-owned package.
+Configured installers may include temporary TreeAI-owned credentials. Initial convergence replaces them, records seed consumption, and warns the operator to delete the downloaded package. Final private material remains under `/etc/treeseed-ai`.
 
-The first awake start qualifies Qwen/Qwen3.5-4B from 65,536 tokens downward in 4,096-token steps using two tokenizer-aware concurrent requests. The largest successful profile (minimum 16,384) is persisted under `/var/lib/treeseed-ai/host-runtime/factory/` and reused only while the GPU, driver, vLLM image, model revision, and memory configuration fingerprint remains unchanged.
+## Updates
 
-The factory binds authenticated HTTPS to all interfaces. An inactive firewall is a warning rather than an automatic mutation. Before using an untrusted LAN, restrict ports 4770, 4771, 4780, and 4790 to the selected client CIDR in the host firewall and review the Docker `DOCKER-USER` chain. Apply firewall changes through the host's normal administration process, especially when connected through SSH.
+Stable hosts check daily, stage compatible releases, and apply them Sunday at 03:00 local time with jitter. Development hosts use a separately signed suite and a persistent 60-second timer. An unchanged catalog generation causes no package download, image pull, migration, or restart. Network failures use bounded exponential backoff.
 
-## Backup and restore
+Every update is catalog-driven. The manager rejects removals, implicit downgrades, foreign origins, and uncataloged packages; downloads before installation; pulls only changed locally built and upstream runtime image digests; validates prerequisites; drains affected work; records receipts and last-known-good state; migrates in declared order; and reconciles only affected services. Compose reuses unchanged containers, so an unchanged vLLM digest is neither pulled nor restarted. Drain expiry postpones work without killing it. Cancellation ends when dpkg installation begins.
 
-- Back up each product database independently with `pg_dump --format=custom`.
-- Enable object versioning and lifecycle protection on artifact buckets.
-- Back up the training Ed25519 private key separately. Compromise requires key revocation and rotation.
-- Restore the database and object bucket to a consistent timestamp, run migrations, then start managers. Managers recover jobs with expired leases.
+Use `sudo treeai update channel stable|development` to switch suites. Returning from a development version never performs an implicit Debian downgrade. Major, breaking, destructive, reboot, driver, and downgrade changes require explicit local approval.
 
-## Upgrade
+## GPU modes
 
-Pull images by recorded digest, stop the product manager, back up PostgreSQL, run the migration image, update image references, and reload the systemd unit. Verify `/readyz` before resuming submission.
+`treeai mode awake` drains training, starts and warms vLLM, and then admits inference. `treeai mode sleep` drains inference, stops vLLM, and then admits Marker/Axolotl GPU work. The manager never starts both GPU workloads and never owns product job queues.
 
-Worker crashes are recovered when leases expire. Failed jobs retry with bounded exponential backoff. Cancellation is immediate for queued jobs and cooperative for active jobs.
+Product systemd units remain available for independently installed products, but manager-owned deployments do not enable them. The root supervisor uses fixed Compose files and service allowlists, persists mode under `/var/lib/treeseed-ai/platform/`, and exposes only the TLS gateways. Raw vLLM, PostgreSQL, MinIO, migrations, and workers remain private.
+
+## Backup and recovery
+
+Product PostgreSQL databases and object stores remain independent. Back them up separately, preserve the training Ed25519 key, and retain catalog generations referenced by known-good receipts. Use `treeai recovery status|retry|restore`; restoration is refused unless the target catalog declares rollback compatibility. Unsafe recovery enters `degraded` rather than guessing.

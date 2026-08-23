@@ -1,10 +1,10 @@
 Package: treeseed-ai-inference
-Version: 0.5.0
+Version: 0.6.2-1
 Section: utils
 Priority: optional
 Architecture: amd64
 Maintainer: TreeSeed AI Releases <releases@treeseed.ai>
-Depends: treeseed-ai-cli (= 0.5.0), nodejs (>= 22), openssl
-Recommends: treeseed-ai-host-runtime (= 0.5.0)
+Depends: treeseed-ai-cli (>= 0.6.0), treeseed-ai-host-js-runtime (>= 0.6.0), openssl
+Recommends: treeseed-ai-manager (>= 0.6.0), treeseed-ai-host-runtime (>= 0.6.0)
 Suggests: docker-ce | docker.io, docker-compose-plugin | docker-compose-v2, nvidia-container-toolkit
 Description: Containerized AI inference and adapter evaluation platform

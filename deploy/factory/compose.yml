@@ -5,8 +5,8 @@ services:
     restart: "no"
     ports: ["0.0.0.0:4770:4770", "0.0.0.0:4771:4771", "0.0.0.0:4780:4780"]
     volumes:
-      - /etc/treeseed-ai/host-runtime/factory/Caddyfile:/etc/caddy/Caddyfile:ro
-      - /etc/treeseed-ai/host-runtime/factory/tls:/tls:ro
+      - /usr/lib/treeseed-ai/manager/factory/Caddyfile:/etc/caddy/Caddyfile:ro
+      - /etc/treeseed-ai/manager/tls:/tls:ro
     networks: [ai-shared]
 networks:
   ai-shared: { external: true, name: ai-shared }

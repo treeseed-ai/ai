@@ -1,0 +1,2 @@
+# The official pinned Node binary intentionally contains its upstream zlib build.
+treeseed-ai-host-js-runtime: embedded-library zlib [usr/lib/treeseed-ai/runtime/bin/node]

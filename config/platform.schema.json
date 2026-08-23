@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://treeseed.ai/schemas/treeai.platform.v1.json",
+  "title": "TreeAI platform desired state",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "configurationId", "generation", "hostRole", "products", "imageSource", "runtime", "state", "network", "updates", "secrets", "provenance"],
+  "properties": {
+    "schemaVersion": { "const": "treeai.platform/v1" },
+    "configurationId": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{2,63}$" },
+    "generation": { "type": "integer", "minimum": 1 },
+    "hostRole": { "enum": ["factory", "inference", "training", "lab", "custom"] },
+    "products": { "type": "array", "uniqueItems": true, "items": { "enum": ["host-runtime", "inference", "training", "lab"] } },
+    "imageSource": { "enum": ["registry", "local-build"] },
+    "runtime": { "type": "object", "additionalProperties": false, "required": ["management"], "properties": { "management": { "enum": ["managed", "external"] } } },
+    "state": { "type": "object", "additionalProperties": false, "required": ["postgresql", "objectStorage"], "properties": { "postgresql": { "enum": ["bundled", "external"] }, "objectStorage": { "enum": ["bundled", "external"] } } },
+    "network": { "type": "object", "additionalProperties": false, "required": ["bindings", "hostnames", "sans", "trustedLanCidrs"], "properties": { "bindings": { "type": "object", "additionalProperties": { "type": "string" } }, "hostnames": { "type": "array", "uniqueItems": true, "items": { "type": "string" } }, "sans": { "type": "array", "uniqueItems": true, "items": { "type": "string" } }, "trustedLanCidrs": { "type": "array", "uniqueItems": true, "items": { "type": "string" } } } },
+    "updates": { "type": "object", "additionalProperties": false, "required": ["channel", "policy", "pollSeconds", "maintenanceWindow", "drain"], "properties": { "channel": { "enum": ["stable", "development"] }, "policy": { "enum": ["scheduled", "continuous", "staged", "manual"] }, "pollSeconds": { "type": "integer", "minimum": 60 }, "maintenanceWindow": { "type": "object", "additionalProperties": false, "required": ["weekday", "localTime", "jitterMinutes"], "properties": { "weekday": { "enum": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] }, "localTime": { "type": "string", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$" }, "jitterMinutes": { "type": "integer", "minimum": 0, "maximum": 30 } } }, "drain": { "type": "object", "additionalProperties": false, "required": ["inferenceSeconds", "trainingSeconds"], "properties": { "inferenceSeconds": { "type": "integer", "minimum": 1 }, "trainingSeconds": { "type": "integer", "minimum": 1 } } } } },
+    "secrets": { "type": "object", "additionalProperties": { "type": "object", "additionalProperties": false, "required": ["provider", "reference"], "properties": { "provider": { "enum": ["file", "systemd-credential", "vault", "aws-secrets-manager"] }, "reference": { "type": "string", "minLength": 1 } } } },
+    "provenance": { "type": "object", "additionalProperties": false, "required": ["generator", "generatedAt", "configurationDigest"], "properties": { "generator": { "type": "string" }, "generatedAt": { "type": "string", "format": "date-time" }, "configurationDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" } } }
+  }
+}

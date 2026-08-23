@@ -1,0 +1,15 @@
+[Unit]
+Description=TreeAI asynchronous platform bootstrap
+After=network-online.target apt-daily.service apt-daily-upgrade.service
+Wants=network-online.target
+ConditionPathExists=!/var/lib/treeseed-ai/bootstrap/handoff.complete
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/treeseed-ai/bootstrap/bootstrap.sh
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

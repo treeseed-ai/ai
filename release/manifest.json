@@ -1,12 +1,15 @@
 {
-  "schemaVersion": "treeai.release/v1",
-  "version": "0.5.0",
+  "schemaVersion": "treeai.release/v2",
+  "version": "0.6.2",
+  "debianRevision": "1",
+  "debianVersion": "0.6.2-1",
+  "sourceDateEpoch": 1787442636,
   "channel": "stable",
   "githubRepository": "treeseed-ai/ai",
   "dockerNamespace": "treeseed",
   "architecture": "amd64",
-  "products": ["cli", "host-runtime", "inference", "training", "lab", "factory"],
-  "functionalProducts": ["host-runtime", "inference", "training", "lab"],
+  "products": ["bootstrap", "archive-keyring", "development-archive-keyring", "host-js-runtime", "manager", "release-catalog", "cli", "host-runtime", "inference", "training", "lab", "factory"],
+  "functionalProducts": ["manager", "host-runtime", "inference", "training", "lab"],
   "images": [
     "inference-api", "inference-manager", "inference-vllm", "inference-evaluator", "inference-migrations",
     "training-api", "training-manager", "axolotl-worker", "marker-worker", "artifact-worker", "training-migrations",
@@ -18,7 +21,12 @@
     "component": "main",
     "architecture": "amd64",
     "signingIdentity": "TreeSeed AI Releases <releases@treeseed.ai>",
-    "fingerprintFile": "release/apt/RELEASE_KEY_FINGERPRINT"
+    "fingerprintFile": "release/apt/RELEASE_KEY_FINGERPRINT",
+    "developmentSuite": "development",
+    "developmentBaseUrl": "https://treeseed-ai.github.io/ai/apt",
+    "developmentFingerprintFile": "release/apt-development/RELEASE_KEY_FINGERPRINT"
   },
-  "imageManifest": "image-manifest.json"
+  "catalog": "release/catalog.json",
+  "imageManifest": "image-manifest.json",
+  "imageBuilds": "release/image-builds.json"
 }
