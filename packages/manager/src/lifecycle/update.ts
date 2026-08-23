@@ -13,9 +13,7 @@ import { assertCatalogedSimulation } from "./apt-policy.js";
 import { aptOptions } from "../core/apt-options.js";
 export { aptOptions } from "../core/apt-options.js";
 const allowedPackages = new Set(["treeseed-ai", "treeseed-ai-archive-keyring", "treeseed-ai-development-archive-keyring", "treeseed-ai-host-js-runtime", "treeseed-ai-manager", "treeseed-ai-cli", "treeseed-ai-release-catalog", "treeseed-ai-host-runtime", "treeseed-ai-inference", "treeseed-ai-training", "treeseed-ai-lab", "treeseed-ai-factory"]);
-function configuration() {
-	return validatePlatformConfiguration(JSON.parse(readFileSync(paths.configuration, "utf8")));
-}
+function configuration() { return validatePlatformConfiguration(JSON.parse(readFileSync(paths.configuration, "utf8"))); }
 function command(file: string, args: string[], cwd?: string) {
 	const result = spawnSync(file, args, { encoding: "utf8", cwd });
 	if (result.status !== 0) throw new Error(`${file} failed: ${(result.stderr || result.stdout).trim()}`);
@@ -78,6 +76,7 @@ function changedRuntimeImages(catalog: ReleaseCatalog) {
 	const previous = new Map(previousReceipt()?.runtimeImages?.map((item) => [item.id, item.digest]) ?? []);
 	return selectedRuntimeImages(catalog).filter((item) => previous.get(item.id) !== item.digest);
 }
+export function managementOnly(catalog: ReleaseCatalog) { return catalog.packageSet === "management"; }
 export function checkForUpdate() {
 	const config = configuration(),
 		channel = config.updates.channel;
@@ -113,18 +112,19 @@ export function planUpdate(input?: ReleaseCatalog) {
 	if (catalog.classification === "blocked") throw new Error("The candidate catalog is blocked.");
 	const simulation = command("apt-get", [...aptOptions(config.updates.channel), "-s", "--no-remove", "--no-install-recommends", "install", ...packages]);
 	assertCatalogedSimulation(simulation, catalog);
-	const plan = {
+	const packageOnly = managementOnly(catalog),
+		plan = {
 		schemaVersion: "treeai.update-plan/v1",
 		generation: catalog.generation,
 		channel: catalog.channel,
 		packages,
-		images: changedImages(catalog),
-		runtimeImages: changedRuntimeImages(catalog),
-		migrations: catalog.migrations,
+		images: packageOnly ? [] : changedImages(catalog),
+		runtimeImages: packageOnly ? [] : changedRuntimeImages(catalog),
+		migrations: packageOnly ? [] : catalog.migrations,
 		gates: catalog.gates,
 		automatic: catalog.automatic && catalog.classification === "automatic",
 		imagePolicy: catalog.imagePolicy,
-		localImages: localImageReadiness(catalog),
+		localImages: packageOnly ? { ready: true, required: [], images: new Map<string, string>() } : localImageReadiness(catalog),
 		simulationDigest: createHash("sha256").update(simulation).digest("hex"),
 	};
 	event("update.planned", {
@@ -193,7 +193,7 @@ function receipt(catalog: ReleaseCatalog, packages: string[], state: string) {
 		const environment = `/etc/treeseed-ai/${product}/environment`;
 		if (existsSync(environment)) copyFileSync(environment, join(knownGood, `${product}.environment`));
 	}
-	const prior = previousReceipt(), packageOnly = catalog.imagePolicy.mode === "package-only", localImages = localImageReadiness(catalog);
+	const prior = previousReceipt(), packageOnly = managementOnly(catalog), localImages = packageOnly ? { ready: true, required: [], images: new Map<string, string>() } : localImageReadiness(catalog);
 	const value = {
 			schemaVersion: "treeai.update-receipt/v1",
 			generation: catalog.generation,
@@ -275,12 +275,13 @@ function health() {
 export async function applyUpdate() {
 	const config = configuration(),
 		catalog = candidateCatalog(config.updates.channel),
-		packages = exactPackages(catalog);
+		packages = exactPackages(catalog),
+		packageOnly = managementOnly(catalog);
+	if (catalog.generation === setting("knownGoodGeneration", 0) && setting("stagedGeneration", null) === null) return { state: "unchanged", generation: catalog.generation, packageOnly };
 	if (setting("updatesPaused", false)) return { state: "postponed", reason: "updates_paused" };
 	let plan = planUpdate(catalog);
 	if (!plan.automatic && setting("automaticInvocation", false)) return { state: "postponed", reason: "local_approval_required" };
-	event("update.acquiring", { generation: catalog.generation });
-	command("apt-get", [...aptOptions(config.updates.channel), "--download-only", "--no-remove", "--no-install-recommends", "install", ...packages]);
+	event("update.acquiring", { generation: catalog.generation }); command("apt-get", [...aptOptions(config.updates.channel), "--download-only", "--no-remove", "--no-install-recommends", "install", ...packages]);
 	if (
 		!plan.localImages.ready &&
 		setting("automaticInvocation", false) &&
@@ -324,7 +325,6 @@ export async function applyUpdate() {
 				: "Run treeai local-build plan --source PATH, then treeai local-build build --source PATH.",
 		};
 	}
-	const packageOnly = catalog.imagePolicy.mode === "package-only";
 	ensureManagedRuntime();
 	if (!packageOnly) await acquireImages(catalog);
 	if (!packageOnly && activeWork()) {
@@ -363,6 +363,7 @@ export async function applyUpdate() {
 		return {
 			state: "succeeded",
 			generation: catalog.generation,
+			packageOnly,
 			receipt: path,
 			snapshot: snapshotPath,
 			platform,
@@ -440,7 +441,7 @@ export function updateStatus() {
 	const stagedGeneration = setting<number | null>("stagedGeneration", null),
 		stagedPath = stagedGeneration ? join(paths.state, `staged-catalog-${stagedGeneration}.json`) : undefined,
 		stagedCatalog = stagedPath && existsSync(stagedPath) ? validateCatalog(JSON.parse(readFileSync(stagedPath, "utf8"))) : undefined,
-		localImages = stagedCatalog ? localImageReadiness(stagedCatalog, { inspect: false }) : undefined;
+		localImages = stagedCatalog ? (managementOnly(stagedCatalog) ? { ready: true, required: [], images: new Map<string, string>() } : localImageReadiness(stagedCatalog, { inspect: false })) : undefined;
 	const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"],
 		[hour, minute] = config.updates.maintenanceWindow.localTime.split(":").map(Number),
 		next = new Date();

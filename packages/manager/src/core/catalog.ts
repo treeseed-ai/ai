@@ -41,6 +41,7 @@ export interface ReleaseCatalog {
 		nodeRuntime: string;
 		nvidiaDriver: string;
 	};
+	packageSet: "all" | "management";
 	packages: CatalogPackage[];
 	images: CatalogImage[];
 	imagePolicy: {
@@ -91,6 +92,7 @@ export function validateCatalog(input: unknown): ReleaseCatalog {
 	if (!/^[A-F0-9]{40}$/u.test(value.signingKeyFingerprint ?? ""))
 		throw new Error("Invalid catalog signing key identity.");
 	if (
+		!(["all", "management"] as const).includes(value.packageSet as "all" | "management") ||
 		!Array.isArray(value.packages) ||
 		value.packages.some(
 			(item) =>

@@ -8,6 +8,7 @@
   "automatic": false,
   "suite": "stable",
   "signingKeyFingerprint": "B94202432CC72B933C4554BC9B8CBEABA53728D0",
+  "packageSet": "all",
   "platform": { "architecture": "amd64", "operatingSystems": ["debian:12", "debian:13", "ubuntu:22.04", "ubuntu:24.04", "ubuntu:26.04"], "manager": ">=0.8.0 <0.9.0", "nodeRuntime": "24.6.0", "nvidiaDriver": ">=570" },
   "packages": [],
   "images": [],
