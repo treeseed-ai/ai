@@ -9,9 +9,8 @@ import { event, setSetting, setting } from "../core/store.js";
 import { paths } from "../core/paths.js";
 import { hashHermesPassword } from "./hermes/password.js";
 import { ensurePlatformTls } from "./certificates/tls.js";import { activateManagerCertificate } from "./certificates/activation.js";
-import { imageVariables } from "../core/image-variables.js";
-import { summarizeComposeStatus, type ProductStatus } from "./status.js";
-import { reconcileLabEdge } from "./lab/edge.js";
+import { imageVariables } from "../core/image-variables.js";import { summarizeComposeStatus, type ProductStatus } from "./status.js";
+import { reconcileLabEdge } from "./lab/edge.js";import { migrationDiagnostics } from "./migrations/diagnostics.js";
 const products = {
 	inference: {
 		compose: "/usr/lib/treeseed-ai/inference/compose.yml",
@@ -77,6 +76,7 @@ function environment(path: string, values: Record<string, string>, group: string
 	} catch {}
 }
 function compose(product: keyof typeof products, args: string[]) { const item = products[product]; return command("docker", ["compose", "-p", `treeseed-ai-${product}`, "--env-file", item.environment, "-f", item.compose, "-f", item.overlay, ...args]); }
+function reconcileProduct(product:keyof typeof products,args:string[]){try{return compose(product,args);}catch(error){const diagnostics=migrationDiagnostics(product,products[product]),message=error instanceof Error?error.message:String(error);throw new Error(diagnostics?`${message}\nMigration diagnostics:\n${diagnostics}`:message);}}
 export function ensureManagedRuntime() {
 	const config = JSON.parse(readFileSync(paths.configuration, "utf8")) as {
 		runtime: { management: string };
@@ -430,18 +430,18 @@ export async function reconcilePlatform() {
 	if (mode === "awake") {
 		if (enabled.has("training")) {
 			compose("training", ["stop", "marker", "axolotl"]);
-			compose("training", ["up", "-d", "--wait", "--wait-timeout", "600", ...bases.training]);
+			reconcileProduct("training", ["up", "-d", "--wait", "--wait-timeout", "600", ...bases.training]);
 		}
 		if (enabled.has("inference")) {
-			compose("inference", ["up", "-d", "--wait", "--wait-timeout", "900", ...bases.inference, "vllm"]);
+			reconcileProduct("inference", ["up", "-d", "--wait", "--wait-timeout", "900", ...bases.inference, "vllm"]);
 			warmInference();
 		}
 	} else if (mode === "sleep") {
 		if (enabled.has("inference")) {
 			compose("inference", ["stop", "vllm"]);
-			compose("inference", ["up", "-d", "--wait", "--wait-timeout", "600", ...bases.inference]);
+			reconcileProduct("inference", ["up", "-d", "--wait", "--wait-timeout", "600", ...bases.inference]);
 		}
-		if (enabled.has("training")) compose("training", ["up", "-d", "--wait", "--wait-timeout", "900", ...bases.training, "marker", "axolotl"]);
+		if (enabled.has("training")) reconcileProduct("training", ["up", "-d", "--wait", "--wait-timeout", "900", ...bases.training, "marker", "axolotl"]);
 	} else throw new Error(`Unsafe persisted mode ${mode}; manual recovery is required.`);
 	if (enabled.has("inference") || enabled.has("training")) gateway(["up", "-d", "--wait"]);
 	try {

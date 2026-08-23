@@ -26,7 +26,8 @@ describe("independent product architecture", () => {
 		expect(runner).toContain("treeai_schema_migrations");
 		expect(runner).toContain("sha256sum");
 		expect(runner).toContain("/migrations/*.sql");
-		expect(runner).toContain("pg_advisory_xact_lock");
+		expect(runner).toContain('psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration"');
+		expect(runner).toContain("ON CONFLICT(product,version) DO NOTHING");
 		for (const product of ["inference", "training"]) {
 			const dockerfile = readFileSync(`containers/${product}/migrations.Dockerfile`, "utf8");
 			expect(dockerfile).toContain("treeai-run-migrations");

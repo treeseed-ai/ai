@@ -25,11 +25,12 @@ for migration in /migrations/*.sql; do
 		[ "$existing" = "$checksum" ] || { echo "Applied migration checksum changed: $TREEAI_MIGRATION_PRODUCT/$version" >&2; exit 1; }
 		continue
 	fi
-	psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v product="$TREEAI_MIGRATION_PRODUCT" -v version="$version" -v checksum="$checksum" <<SQL
-BEGIN;
-SELECT pg_advisory_xact_lock(hashtext(:'product' || ':schema-migrations'));
-\i $migration
-INSERT INTO treeai_schema_migrations(product,version,checksum) VALUES(:'product',:'version',:'checksum');
-COMMIT;
+	# Every shipped migration is idempotent. Use the proven file execution path so
+	# existing installations can adopt history even when their schema predates it.
+	psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration"
+	psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v product="$TREEAI_MIGRATION_PRODUCT" -v version="$version" -v checksum="$checksum" <<'SQL'
+INSERT INTO treeai_schema_migrations(product,version,checksum)
+VALUES(:'product',:'version',:'checksum')
+ON CONFLICT(product,version) DO NOTHING;
 SQL
 done

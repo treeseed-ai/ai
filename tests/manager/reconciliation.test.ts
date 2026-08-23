@@ -22,6 +22,17 @@ describe('manager-owned platform reconciliation',()=>{
     expect(gateway).toContain('/etc/treeseed-ai/manager/tls:/tls:ro');
   });
 
+  it('adds bounded redacted migration diagnostics to failed reconciliation',()=>{
+    const platform=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8');
+    const diagnostics=readFileSync('packages/manager/src/lifecycle/migrations/diagnostics.ts','utf8');
+    expect(diagnostics).toContain('function migrationDiagnostics');
+    expect(diagnostics).toContain('redactSensitiveText');
+    expect(diagnostics).toContain('"--tail", "80", "migrations"');
+    expect(diagnostics).toContain('.slice(-65_536)');
+    expect(platform).toContain('reconcileProduct("training"');
+    expect(platform).toContain('reconcileProduct("inference"');
+  });
+
   it('backs up and restores the 0.5 coordinator around final handoff',()=>{
     const bootstrap=readFileSync('scripts/bootstrap/bootstrap.sh','utf8');
     expect(bootstrap).toContain('restore_legacy');
