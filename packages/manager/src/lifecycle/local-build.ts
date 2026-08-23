@@ -140,6 +140,7 @@ const smokeCommands: Record<string, string[]> = {
 	"training-manager": ["node", "--check", "/app/packages/training-manager/dist/main.js"],
 	"lab-controller": ["node", "--check", "/app/packages/lab/dist/controller.js"],
 	"lab-experience-proxy": ["node", "--check", "/app/packages/lab/dist/proxy.js"],
+	"lab-library-bridge":["node","--check","/app/packages/lab/dist/library-bridge.js"],
 	"inference-vllm": ["python3", "-c", "import vllm"],
 	"inference-evaluator": ["python", "-c", "import ast,pathlib;ast.parse(pathlib.Path('/app/evaluator/worker.py').read_text())"],
 	"artifact-worker": ["python", "-c", "import ast,pathlib;ast.parse(pathlib.Path('/app/artifact/worker.py').read_text())"],

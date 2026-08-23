@@ -1,3 +1,13 @@
+treeseed-ai (0.9.0-1) stable; urgency=high
+
+  * Add Open WebUI Knowledge Base ingestion through an isolated library bridge.
+  * Normalize immutable S3-backed document revisions and completion datasets.
+  * Add fixed continual-pretraining QLoRA with GPU profile qualification.
+  * Add strict held-out evaluation and library-specific inference aliases.
+  * Add bounded smoke and standard library cycles plus TreeAI controls.
+
+ -- TreeSeed AI Releases <releases@treeseed.ai>  Sun, 23 Aug 2026 14:10:00 -0400
+
 treeseed-ai (0.8.0-1) stable; urgency=high
 
   * Add private, authenticated Hermes agent routing beside direct inference.

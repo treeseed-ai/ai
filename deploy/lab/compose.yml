@@ -56,6 +56,25 @@ services:
       interval: 10s
       timeout: 3s
       retries: 20
+  library-bridge:
+    image: ${LAB_LIBRARY_BRIDGE_IMAGE:?LAB_LIBRARY_BRIDGE_IMAGE is required}
+    restart: unless-stopped
+    depends_on:
+      open-webui: { condition: service_healthy }
+    environment:
+      OPEN_WEBUI_URL: http://open-webui:8080
+      TRAINING_URL: http://training-api:4780
+      TRAINING_INGEST_KEY_FILE: /run/secrets/training-ingest-key
+      LAB_LIBRARY_ACTION_KEY_FILE: /run/secrets/lab-library-action-key
+      LAB_CONTROLLER_URL: http://controller:8081
+      PORT: "8082"
+    secrets: [training-ingest-key, lab-library-action-key]
+    networks: [lab-private, ai-shared]
+    healthcheck:
+      test: ["CMD","node","-e","fetch('http://127.0.0.1:8082/healthz').then(r=>{if(!r.ok)process.exit(1)})"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
   open-webui:
     image: ${OPEN_WEBUI_IMAGE:?OPEN_WEBUI_IMAGE is required}
     restart: unless-stopped
@@ -75,7 +94,9 @@ services:
       WEBUI_URL: "${OPEN_WEBUI_URL:-https://localhost:4791}"
       CORS_ALLOW_ORIGIN: "${OPEN_WEBUI_CORS_ALLOW_ORIGIN:-https://localhost:4791}"
       WEBUI_SESSION_COOKIE_SECURE: "true"
-    volumes: [open-webui-data:/app/backend/data]
+    volumes:
+      - open-webui-data:/app/backend/data
+      - /usr/lib/treeseed-ai/lab/open-webui:/opt/treeai/actions:ro
     networks: [lab-private]
     healthcheck:
       test: ["CMD","python","-c","import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=3).read()"]
@@ -161,6 +182,8 @@ secrets:
   hermes-api-key: { file: /etc/treeseed-ai/lab/secrets/hermes-api-key }
   hermes-password-hash: { file: /etc/treeseed-ai/lab/secrets/hermes-password-hash }
   hermes-session-secret: { file: /etc/treeseed-ai/lab/secrets/hermes-session-secret }
+  training-ingest-key: { file: /etc/treeseed-ai/lab/secrets/training-ingest-key }
+  lab-library-action-key: { file: /etc/treeseed-ai/lab/secrets/lab-library-action-key }
 volumes:
   lab-state: {}
   hermes-home: {}

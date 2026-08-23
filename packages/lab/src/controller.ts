@@ -154,7 +154,7 @@ export function createLabController(options: ControllerOptions = {}) {
 	];
 	const app = new Hono();
 	app.get("/healthz", (context) => context.json({ ok: true })); app.get("/readyz", async (context) => { try { await hermes("/health"); return context.json({ ok: true }); } catch { return context.json({ ok: false, reason: "hermes-unavailable" }, 503); } });
-	app.get("/openapi.json", (context) => context.json(openApiDocument({ title: "AI Experience Lab API", version: "0.8.0", routes })));
+	app.get("/openapi.json", (context) => context.json(openApiDocument({ title: "AI Experience Lab API", version: "0.9.0", routes })));
 	app.get("/docs", (context) => context.html('<!doctype html><title>TreeAI Lab API</title><script id="api-reference" data-url="/openapi.json"></script><script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>'));
 	app.onError((error, context) => context.json({ error: { code: "agent_unavailable", message: "Hermes Agent is unavailable." } }, 503));
 	app.use("/v1/*", apiKeyAuthorization(async (id) => keys.find((key) => key.id === id) ?? null));

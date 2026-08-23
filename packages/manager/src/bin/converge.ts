@@ -139,7 +139,7 @@ function client(config: PlatformConfiguration, ca: string) {
 		JSON.stringify(
 			{
 				schemaVersion: "treeai.config/v1",
-				version: "0.8.0",
+				version: "0.9.0",
 				imageSource: config.imageSource,
 				ca,
 				endpoints: {
