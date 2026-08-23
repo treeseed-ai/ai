@@ -27,11 +27,20 @@ function installManagedAction(lab: Lab, command: Runner, record: Recorder) {
 	record("lab.open-webui.action-installed", { action: "treeai_train_library", result });
 }
 
+function reloadGateway(lab: Lab, record: Recorder) {
+	const config = ["--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"];
+	lab(["exec", "-T", "gateway", "caddy", "validate", ...config]);
+	lab(["exec", "-T", "gateway", "caddy", "reload", ...config]);
+	record("lab.gateway.configuration-reloaded", { config: "/etc/caddy/Caddyfile" });
+}
+
 export function reconcileLabEdge(lab: Lab, command: Runner, record: Recorder) {
 	lab(["up", "-d", "--remove-orphans", "--wait", "--wait-timeout", "900"]);
+	if (!bindingsReady(command)) {
+		record("lab.edge-recreate-required", { reason: "effective_bindings_missing" });
+		lab(["up", "-d", "--force-recreate", "--no-deps", "gateway"]);
+		if (!bindingsReady(command)) throw new Error("Lab gateway effective loopback bindings are missing after recreation.");
+	}
+	reloadGateway(lab, record);
 	installManagedAction(lab, command, record);
-	if (bindingsReady(command)) return;
-	record("lab.edge-recreate-required", { reason: "effective_bindings_missing" });
-	lab(["up", "-d", "--force-recreate", "--no-deps", "gateway"]);
-	if (!bindingsReady(command)) throw new Error("Lab gateway effective loopback bindings are missing after recreation.");
 }
