@@ -1,0 +1,44 @@
+import { ArtifactStore } from '@ai-platform/common';
+import type { Pool,PoolClient } from 'pg';
+
+export const documentStates=['received','classified','pending_processing','processing','ready','quarantined','deleted'] as const;
+export interface LibraryInput {sourceKind:'open-webui'|'api';externalId:string;slug:string;name:string;description?:string}
+export interface DocumentInput {externalId:string;filename:string;relativePath:string;directoryExternalId?:string;declaredMimeType:string;detectedMimeType:string;sha256:string;size:number;provenance?:Record<string,unknown>}
+export interface RelationshipInput {directories?:Array<{externalId:string;parentExternalId?:string;name:string;relativePath:string;deleted?:boolean}>;documents?:Array<{externalId:string;filename?:string;relativePath?:string;directoryExternalId?:string}>}
+
+function row(value:Record<string,unknown>){return{id:String(value.id),sourceKind:value.source_kind,externalId:value.external_id,slug:value.slug,name:value.name,description:value.description,deleted:value.deleted,createdAt:new Date(value.created_at as string).toISOString(),updatedAt:new Date(value.updated_at as string).toISOString()};}
+function documentRow(value:Record<string,unknown>){return{id:String(value.id),libraryId:String(value.library_id),externalId:value.external_id,state:value.state,deletedAt:value.deleted_at?new Date(value.deleted_at as string).toISOString():null,currentRevision:value.current_revision_id?{id:String(value.current_revision_id),sha256:value.object_sha256,filename:value.filename,relativePath:value.relative_path,directoryExternalId:value.directory_external_id,declaredMimeType:value.declared_mime_type,detectedMimeType:value.detected_mime_type,revision:Number(value.revision),provenance:value.provenance,diagnostics:value.diagnostics,normalizedManifestUri:value.normalized_manifest_uri,tokenCount:value.token_count===null?null:Number(value.token_count)}:null,createdAt:new Date(value.created_at as string).toISOString(),updatedAt:new Date(value.updated_at as string).toISOString()};}
+
+export class LibraryRepository {
+	constructor(readonly pool:Pool,readonly objects:ArtifactStore){}
+	async list(){const result=await this.pool.query('SELECT * FROM libraries WHERE deleted=false ORDER BY name,id');return result.rows.map(row);}
+	async get(id:string){const result=await this.pool.query('SELECT * FROM libraries WHERE id=$1 AND deleted=false',[id]);return result.rowCount?row(result.rows[0]):null;}
+	async upsert(input:LibraryInput){
+		if(!/^[a-z0-9][a-z0-9-]{0,62}$/u.test(input.slug))throw new Error('slug must contain lowercase letters, numbers, and hyphens');
+		if(!input.externalId||!input.name||input.externalId.length>200||input.name.length>200)throw new Error('externalId and name are required');
+		const result=await this.pool.query(`INSERT INTO libraries(source_kind,external_id,slug,name,description) VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_kind,external_id) DO UPDATE SET slug=excluded.slug,name=excluded.name,description=excluded.description,deleted=false,updated_at=now() RETURNING *`,[input.sourceKind,input.externalId,input.slug,input.name,input.description??'']);return row(result.rows[0]);
+	}
+	async documents(libraryId:string){const result=await this.pool.query(`SELECT d.*,r.object_sha256,r.filename,r.relative_path,r.directory_external_id,r.declared_mime_type,r.detected_mime_type,r.revision,r.provenance,r.diagnostics,r.normalized_manifest_uri,r.token_count FROM library_documents d LEFT JOIN document_revisions r ON r.id=d.current_revision_id WHERE d.library_id=$1 ORDER BY r.relative_path,d.id`,[libraryId]);return result.rows.map(documentRow);}
+	async ingest(libraryId:string,input:DocumentInput,temporaryPath:string){
+		if(!/^[a-f0-9]{64}$/u.test(input.sha256))throw new Error('A valid SHA-256 digest is required');
+		if(input.size<0||input.size>100*1024*1024)throw new Error('Document exceeds the 100 MiB limit');
+		const stored=await this.objects.putFile(`library-source/${input.sha256}`,temporaryPath,input.sha256,input.detectedMimeType);
+		const client=await this.pool.connect();try{return await this.ingestTransaction(client,libraryId,input,stored.uri);}finally{client.release();}
+	}
+	private async ingestTransaction(client:PoolClient,libraryId:string,input:DocumentInput,uri:string){
+		await client.query('BEGIN');try{
+			const library=await client.query('SELECT id FROM libraries WHERE id=$1 AND deleted=false FOR UPDATE',[libraryId]);if(!library.rowCount)throw new Error('Library not found');
+			await client.query(`INSERT INTO document_objects(sha256,object_uri,size,detected_mime_type) VALUES($1,$2,$3,$4) ON CONFLICT(sha256) DO NOTHING`,[input.sha256,uri,input.size,input.detectedMimeType]);
+			const document=await client.query(`INSERT INTO library_documents(library_id,external_id) VALUES($1,$2) ON CONFLICT(library_id,external_id) DO UPDATE SET state='received',deleted_at=null,updated_at=now() RETURNING id`,[libraryId,input.externalId]);
+			const revision=await client.query('SELECT COALESCE(MAX(revision),0)+1 next FROM document_revisions WHERE document_id=$1',[document.rows[0].id]);
+			const inserted=await client.query(`INSERT INTO document_revisions(document_id,object_sha256,revision,filename,relative_path,directory_external_id,declared_mime_type,detected_mime_type,provenance) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,[document.rows[0].id,input.sha256,revision.rows[0].next,input.filename,input.relativePath,input.directoryExternalId??null,input.declaredMimeType,input.detectedMimeType,input.provenance??{}]);
+			await client.query(`UPDATE library_documents SET current_revision_id=$1,state='received',updated_at=now() WHERE id=$2`,[inserted.rows[0].id,document.rows[0].id]);await client.query('COMMIT');
+			return(await this.documents(libraryId)).find((value)=>value.id===String(document.rows[0].id));
+		}catch(error){await client.query('ROLLBACK');throw error;}
+	}
+	async deleteDocument(libraryId:string,documentId:string){const result=await this.pool.query(`UPDATE library_documents SET state='deleted',deleted_at=now(),updated_at=now() WHERE id=$1 AND library_id=$2 AND state<>'deleted' RETURNING id`,[documentId,libraryId]);return Boolean(result.rowCount);}
+	async deleteExternalDocument(libraryId:string,externalId:string){const result=await this.pool.query(`UPDATE library_documents SET state='deleted',deleted_at=now(),updated_at=now() WHERE external_id=$1 AND library_id=$2 AND state<>'deleted' RETURNING id`,[externalId,libraryId]);return Boolean(result.rowCount);}
+	async relationships(libraryId:string,input:RelationshipInput){
+		const directories=input.directories??[],documents=input.documents??[],client=await this.pool.connect();try{await client.query('BEGIN');for(const directory of directories){if(!directory.externalId||!directory.name)throw new Error('Directory identity and name are required');await client.query(`INSERT INTO library_directories(library_id,external_id,parent_external_id,name,relative_path,deleted) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(library_id,external_id) DO UPDATE SET parent_external_id=excluded.parent_external_id,name=excluded.name,relative_path=excluded.relative_path,deleted=excluded.deleted,revision=library_directories.revision+1,updated_at=now()`,[libraryId,directory.externalId,directory.parentExternalId??null,directory.name,directory.relativePath,directory.deleted??false]);}for(const relation of documents){const current=await client.query(`SELECT d.id,r.* FROM library_documents d JOIN document_revisions r ON r.id=d.current_revision_id WHERE d.library_id=$1 AND d.external_id=$2 FOR UPDATE`,[libraryId,relation.externalId]);if(!current.rowCount)continue;const value=current.rows[0],revision=Number(value.revision)+1,inserted=await client.query(`INSERT INTO document_revisions(document_id,object_sha256,revision,filename,relative_path,directory_external_id,declared_mime_type,detected_mime_type,state,provenance,diagnostics,normalized_manifest_uri,token_count) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,[value.id,value.object_sha256,revision,relation.filename??value.filename,relation.relativePath??value.relative_path,relation.directoryExternalId??value.directory_external_id,value.declared_mime_type,value.detected_mime_type,value.state,value.provenance,value.diagnostics,value.normalized_manifest_uri,value.token_count]);await client.query('UPDATE library_documents SET current_revision_id=$1,updated_at=now() WHERE id=$2',[inserted.rows[0].id,value.id]);}await client.query('COMMIT');return{updated:directories.length+documents.length};}catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
+	}
+}

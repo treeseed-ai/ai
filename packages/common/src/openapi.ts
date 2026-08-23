@@ -1,4 +1,4 @@
-export interface RouteSpec { method: string; path: string; summary: string; scope?: string; requestSchema?: object; responseSchema?: object }
+export interface RouteSpec { method: string; path: string; summary: string; scope?: string; requestSchema?: object; requestContentType?:string; responseSchema?: object }
 
 export function openApiDocument(input: { title: string; version: string; routes: RouteSpec[] }) {
 	const paths: Record<string,Record<string,unknown>> = {};
@@ -8,7 +8,7 @@ export function openApiDocument(input: { title: string; version: string; routes:
 		paths[path]![route.method.toLowerCase()] = {
 			summary: route.summary,
 			security: route.scope ? [{ apiKey: [route.scope] }] : [],
-			...(route.requestSchema ? { requestBody: { required: true, content: { 'application/json': { schema: route.requestSchema } } } } : {}),
+			...(route.requestSchema ? { requestBody: { required: true, content: { [route.requestContentType??'application/json']: { schema: route.requestSchema } } } } : {}),
 			responses: { '200': { description: 'Success' }, '202': { description: 'Accepted' }, '400': { description: 'Invalid request' }, '401': { description: 'Unauthorized' }, '403': { description: 'Forbidden' } },
 		};
 	}

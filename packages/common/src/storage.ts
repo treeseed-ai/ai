@@ -1,5 +1,6 @@
 import { GetObjectCommand,HeadObjectCommand,PutObjectCommand,S3Client,type S3ClientConfig } from '@aws-sdk/client-s3';
 import { createHash } from 'node:crypto';
+import { createReadStream,statSync } from 'node:fs';
 
 export class ArtifactStore {
 	readonly client: S3Client;
@@ -8,6 +9,11 @@ export class ArtifactStore {
 		const digest = createHash('sha256').update(body).digest('hex');
 		await this.client.send(new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: body, ContentType: contentType, Metadata: { sha256: digest } }));
 		return { uri: `s3://${this.bucket}/${key}`, size: body.byteLength, sha256: digest };
+	}
+	async putFile(key:string,path:string,digest:string,contentType='application/octet-stream') {
+		const size=statSync(path).size;
+		await this.client.send(new PutObjectCommand({Bucket:this.bucket,Key:key,Body:createReadStream(path),ContentLength:size,ContentType:contentType,Metadata:{sha256:digest}}));
+		return{uri:`s3://${this.bucket}/${key}`,size,sha256:digest};
 	}
 	async head(key: string) { return this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key })); }
 	async bytes(key: string) {
