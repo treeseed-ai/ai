@@ -39,10 +39,10 @@ Put the returned `record` in the `AI_API_KEYS` JSON array. The plaintext credent
 
 ## Ubuntu 26.04 managed factory
 
-Release 0.7.0 supports Ubuntu 26.04 (Resolute) amd64. Download one generic or generated configuration package and install it locally:
+Release 0.7.1 supports Ubuntu 26.04 (Resolute) amd64. Download one generic or generated configuration package and install it locally:
 
 ```bash
-sudo apt install ./treeseed-ai_0.7.0-1_amd64.deb
+sudo apt install ./treeseed-ai_0.7.1-1_amd64.deb
 systemctl status treeseed-ai-bootstrap.service
 treeai platform status
 treeai platform doctor
