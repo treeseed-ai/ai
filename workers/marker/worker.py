@@ -28,7 +28,7 @@ def process(job):
         return{"state":"ready","resultManifest":upload_bundle(target,job["jobId"]),"tokenCount":max(1,len(existing)//4)}
     with tempfile.TemporaryDirectory(prefix="treeai-marker-") as temporary:
         source=Path(temporary)/filename;source.write_bytes(data)
-        subprocess.run(["marker_single",str(source),"--output_dir",str(target),"--output_format","markdown","--mode","balanced"],check=True,timeout=int(os.getenv("MARKER_TIMEOUT","3600")))
+        subprocess.run(["marker_single",str(source),"--output_dir",str(target),"--output_format","markdown"],check=True,timeout=int(os.getenv("MARKER_TIMEOUT","3600")))
     markdown_files=sorted(target.rglob("*.md"));text="\n".join(item.read_text(errors="replace") for item in markdown_files)
     if not text.strip():return{"state":"quarantined","diagnostics":{"code":"empty_document"}}
     if SECRET.search(text):return{"state":"quarantined","diagnostics":{"code":"suspected_secret"}}

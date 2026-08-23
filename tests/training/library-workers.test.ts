@@ -1,4 +1,5 @@
 import {execFileSync} from 'node:child_process';
+import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {describe,expect,it} from 'vitest';
 
@@ -28,4 +29,5 @@ describe('library document workers',()=>{
 		expect(result).toMatchObject({base_model:'Qwen/Qwen3.5-4B',revision:'851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a',adapter:'qlora',load_in_4bit:true,lora_r:16,lora_alpha:32,lora_dropout:0.05,micro_batch_size:1,gradient_accumulation_steps:8,learning_rate:0.0001,weight_decay:0.01,warmup_ratio:0.03,seed:42});
 		expect(result.datasets[0].type).toBe('completion');expect(result.lora_target_modules).toEqual(['q_proj','k_proj','v_proj','o_proj','gate_proj','up_proj','down_proj']);
 	});
+	it('invokes the pinned Marker 1.10.2 CLI without unsupported mode flags',()=>{const worker=readFileSync('workers/marker/worker.py','utf8');expect(worker).toContain('["marker_single",str(source),"--output_dir",str(target),"--output_format","markdown"]');expect(worker).not.toContain('"--mode"');});
 });
