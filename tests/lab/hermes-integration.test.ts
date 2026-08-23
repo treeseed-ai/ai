@@ -99,6 +99,7 @@ describe("tight Hermes integration", () => {
 	it("rejects error-bearing extraction output as web evidence", () => {
 		const search = { role: "tool", toolName: "web_search", content: '{"data":{"web":[{"provenance":{}}]}}' };
 		expect(hasSuccessfulWebEvidence([search, { role: "tool", toolName: "web_extract", content: '{"results":[{"error":"blocked"}]}' }])).toBe(false);
-		expect(hasSuccessfulWebEvidence([search, { role: "tool", toolName: "web_extract", content: '{"results":[{"metadata":{"status":200}}]}' }])).toBe(true);
+		expect(hasSuccessfulWebEvidence([search, { role: "tool", toolName: "web_extract", content: '<untrusted>{"results":[{"error":null,"provenance":{"status":200,"sha256":"abc"}}]}</untrusted>' }])).toBe(true);
+		expect(hasSuccessfulWebEvidence([search, { role: "tool", toolName: "web_extract", content: '{"success":false,"error":null,"provenance":{}}' }])).toBe(false);
 	});
 });
