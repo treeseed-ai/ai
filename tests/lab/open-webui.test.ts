@@ -48,6 +48,7 @@ describe("Open WebUI local single-user integration", () => {
 		]);
 		expect(compose.services.controller.group_add).toEqual([
 			"${RUNTIME_GID:?RUNTIME_GID is required}",
+			"10001",
 		]);
 		expect(compose.services.gateway.ports).toBeUndefined();
 		const platform = readFileSync(

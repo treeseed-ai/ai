@@ -127,7 +127,13 @@ export function createLabController(options: ControllerOptions = {}) {
 	app.post("/v1/hermes/sessions/:id/finalize", requireScope("lab:experience:write"), async (context) => {
 		try { return await idempotent(context, `finalize:${context.req.param("id")}`, () => finalize(context.req.param("id"))); } catch { return context.json({ error: { code: "finalization_failed", message: "Hermes evidence could not be finalized." } }, 422); }
 	});
-	app.post("/v1/hermes/verify", requireScope("lab:experience:write"), (context) => idempotent(context, "hermes-verify", deepVerify));
+	app.post("/v1/hermes/verify", requireScope("lab:experience:write"), async (context) => {
+		try { return await idempotent(context, "hermes-verify", deepVerify); }
+		catch (error) {
+			appendEvent("hermes.deep-verification-failed", { message: sanitize(error instanceof Error ? error.message : String(error)) });
+			return context.json({ error: { code: "deep_verification_failed", message: "Hermes completed an unhealthy deep verification step." } }, 422);
+		}
+	});
 	app.get("/v1/trajectories", requireScope("lab:read"), (context) => context.json({ items: lines(`${stateRoot}/trajectories.jsonl`).reverse() }));
 	app.get("/v1/trajectories/:id", requireScope("lab:read"), (context) => { const item = lines(`${stateRoot}/trajectories.jsonl`).find((value) => value.id === context.req.param("id")); return item ? context.json(item) : context.json({ error: { code: "not_found", message: "Trajectory not found" } }, 404); });
 	app.get("/v1/artifacts", requireScope("lab:read"), (context) => context.json({ items: lines(`${stateRoot}/artifact-observations.jsonl`).reverse() }));
