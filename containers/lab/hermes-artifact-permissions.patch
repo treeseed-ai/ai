@@ -1,0 +1,14 @@
+--- a/tools/file_operations.py
++++ b/tools/file_operations.py
+@@ -1422,6 +1422,12 @@ class LocalFileOperations(FileOperations):
+         if write_result.exit_code != 0:
+             return WriteResult(error=f"Failed to write file: {write_result.stdout}")
+ 
++        # TreeAI harvests immutable workspace artifacts through a separate
++        # read-only controller running in the Hermes supplementary group.
++        permission_result = self._exec(f"chmod g+r -- {self._escape_shell_arg(path)}")
++        if permission_result.exit_code != 0:
++            return WriteResult(error=f"Failed to make workspace artifact group-readable: {permission_result.stdout}")
++
+         # Get bytes written (wc -c is POSIX, works on Linux + macOS)
+         stat_cmd = f"wc -c < {self._escape_shell_arg(path)} 2>/dev/null"
