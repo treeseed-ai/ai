@@ -158,7 +158,9 @@ function catalog(base: string) {
 		throw new Error("Package-only publication requires a complete full development catalog base.");
 	} else {
 		// The installed pre-packageSet manager must also recognize this bridge as
-		// image-inert. Image lineage stays complete in `images` and in receipts.
+		// image-inert. Its known-good receipt preserves local-only image IDs; omit
+		// their non-pullable sentinel records from this compatibility catalog.
+		value.images = (value.images as Array<{ localBuildOnly?: boolean }>).filter((image) => image.localBuildOnly !== true);
 		value.imagePolicy = {
 			...value.imagePolicy,
 			mode: "package-only",
