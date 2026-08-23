@@ -63,7 +63,8 @@ export function createLabController(options: ControllerOptions = {}) {
 		return trajectory;
 	}
 	async function deepVerify() {
-		const artifactName = `treeai-hermes-deep-check-${crypto.randomUUID()}.txt`, artifactContent = `TREEAI_HERMES_READY_${crypto.randomUUID()}`;
+		const artifactName = `treeai-hermes-deep-check-${crypto.randomUUID()}.txt`, artifactContent = `TREEAI_HERMES_READY_${crypto.randomUUID()}`,
+			webArtifactName = `treeai-hermes-web-check-${crypto.randomUUID()}.md`;
 		async function completion(model: string, stream: boolean, content: string) {
 			const response = await requestFetch(`${experienceUrl}/v1/chat/completions`, { method: "POST", headers: { authorization: "Bearer lab-hermes", "content-type": "application/json", "x-ai-client": "hermes" }, body: JSON.stringify({ model, stream, messages: [{ role: "user", content }], temperature: 0 }) });
 			const raw = await response.text();
@@ -78,7 +79,11 @@ export function createLabController(options: ControllerOptions = {}) {
 		const trajectory = await finalize(agent.sessionId);
 		const observations = lines(`${stateRoot}/artifact-observations.jsonl`), correlated = observations.find((item) => trajectory.artifactObservationIds.includes(String(item.id)) && item.relativePath === artifactName);
 		if (!correlated) throw new Error("Hermes verification did not produce the expected correlated workspace artifact");
-		return { status: "ready", direct: true, streaming: true, hermes: true, trajectoryId: trajectory?.id, artifacts: trajectory?.artifactObservationIds ?? [] };
+		const webAgent = await completion("hermes-agent", false, `Use web_search to search for IANA Example Domain, use web_extract on https://example.com/, then create /workspace/${webArtifactName} with a concise sourced summary containing the words Example Domain. Reply WEB_READY.`);
+		if (!webAgent.sessionId) throw new Error("Hermes web verification did not return a session identifier");
+		const webTrajectory = await finalize(webAgent.sessionId), webObservations = lines(`${stateRoot}/artifact-observations.jsonl`), webCorrelated = webObservations.find((item) => webTrajectory.artifactObservationIds.includes(String(item.id)) && item.relativePath === webArtifactName);
+		if (!webCorrelated) throw new Error("Hermes web verification did not produce the expected correlated workspace artifact");
+		return { status: "ready", direct: true, streaming: true, hermes: true, web: true, trajectoryId: trajectory.id, webTrajectoryId: webTrajectory.id, artifacts: [...trajectory.artifactObservationIds, ...webTrajectory.artifactObservationIds] };
 	}
 	async function idempotent(context: Context, action: string, operation: () => Promise<unknown>) {
 		const key = context.req.header("idempotency-key");
