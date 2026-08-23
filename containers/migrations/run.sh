@@ -20,7 +20,10 @@ for migration in /migrations/*.sql; do
 	case "$version" in
 		*[!A-Za-z0-9_.-]*) echo "Invalid migration filename: $version" >&2; exit 1 ;;
 	esac
-	existing="$(psql "$DATABASE_URL" -At -v ON_ERROR_STOP=1 -v product="$TREEAI_MIGRATION_PRODUCT" -v version="$version" -c "SELECT checksum FROM treeai_schema_migrations WHERE product=:'product' AND version=:'version'")"
+	existing="$(psql "$DATABASE_URL" -At -v ON_ERROR_STOP=1 -v product="$TREEAI_MIGRATION_PRODUCT" -v version="$version" <<'SQL'
+SELECT checksum FROM treeai_schema_migrations WHERE product=:'product' AND version=:'version';
+SQL
+)"
 	if [ -n "$existing" ]; then
 		[ "$existing" = "$checksum" ] || { echo "Applied migration checksum changed: $TREEAI_MIGRATION_PRODUCT/$version" >&2; exit 1; }
 		continue

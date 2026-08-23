@@ -28,6 +28,8 @@ describe("independent product architecture", () => {
 		expect(runner).toContain("/migrations/*.sql");
 		expect(runner).toContain('psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration"');
 		expect(runner).toContain("ON CONFLICT(product,version) DO NOTHING");
+		expect(runner).toContain("SELECT checksum FROM treeai_schema_migrations WHERE product=:'product'");
+		expect(runner).not.toMatch(/-c ["']SELECT checksum FROM treeai_schema_migrations/u);
 		for (const product of ["inference", "training"]) {
 			const dockerfile = readFileSync(`containers/${product}/migrations.Dockerfile`, "utf8");
 			expect(dockerfile).toContain("treeai-run-migrations");
