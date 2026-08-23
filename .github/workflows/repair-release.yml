@@ -39,7 +39,7 @@ jobs:
           source_sha=$(gh api "repos/${{ github.repository }}/actions/runs/$SOURCE_RUN_ID" --jq 'select(.event=="workflow_dispatch" and .head_branch=="main" and .name=="Publish coordinated TreeSeed AI release")|.head_sha')
           test -n "$source_sha"
           git merge-base --is-ancestor "$source_sha" HEAD
-          unexpected=$(git diff --name-only "$source_sha" HEAD | grep -Ev '^(\.github/workflows/(release|repair-release|publish-development)\.yml|debian/(changelog|control|bootstrap/control|treeseed-ai-host-js-runtime\.lintian-overrides)|scripts/(package-deb\.ts|bootstrap/bootstrap\.sh|release/validate-image-metadata\.ts)|tests/cli/cli\.test\.ts)$' || true)
+          unexpected=$(git diff --name-only "$source_sha" HEAD | grep -Ev '^(\.github/workflows/(release|repair-release|publish-development)\.yml|debian/(changelog|control|bootstrap/control|treeseed-ai-host-js-runtime\.lintian-overrides)|scripts/(package-deb\.ts|bootstrap/bootstrap\.sh|release/validate-image-metadata\.ts)|tests/cli/(cli|release-assets)\.test\.ts)$' || true)
           test -z "$unexpected" || { printf 'Image-affecting changes since source run:\n%s\n' "$unexpected" >&2; exit 1; }
           test "$(gh api "repos/${{ github.repository }}/actions/runs/$SOURCE_RUN_ID/jobs" --paginate --jq '[.jobs[]|select(.name=="publish-tags" and .conclusion=="success")]|length')" = 1
           gh run download "$SOURCE_RUN_ID" --name release-image-metadata --dir release-assets
