@@ -6,6 +6,7 @@ import {
 	reconcileConfiguredPlatform,
 	writeServerExtensions,
 } from "../../packages/manager/src/bin/converge.js";
+import { requiredServerSans } from "../../packages/manager/src/lifecycle/certificates/tls.js";
 
 describe("manager scheduling and privilege split", () => {
 	it("polls development every 60 seconds with jitter", () => {
@@ -73,6 +74,11 @@ describe("manager scheduling and privilege split", () => {
 		} finally {
 			rmSync(stage, { recursive: true, force: true });
 		}
+	});
+
+	it("issues manager TLS for the fixed Docker host alias", () => {
+		const config = JSON.parse(readFileSync("config/platform.default.json", "utf8"));
+		expect(requiredServerSans(config)).toContain("DNS:host.docker.internal");
 	});
 
 	it("reconciles desired state after a package-only update", async () => {

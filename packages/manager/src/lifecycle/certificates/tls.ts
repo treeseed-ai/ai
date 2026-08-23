@@ -38,6 +38,7 @@ export function requiredServerSans(config: PlatformConfiguration) {
 	return [
 		...new Set([
 			"localhost",
+			"host.docker.internal",
 			"127.0.0.1",
 			hostname(),
 			...config.network.hostnames,
