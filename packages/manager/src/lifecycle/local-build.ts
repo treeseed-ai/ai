@@ -146,8 +146,8 @@ const smokeCommands: Record<string, string[]> = {
 	"artifact-worker": ["python", "-c", "import ast,pathlib;ast.parse(pathlib.Path('/app/artifact/worker.py').read_text())"],
 	"marker-worker": ["python3", "-c", "import marker,boto3"],
 	"axolotl-worker": ["python3", "-c", "import axolotl,accelerate"],
-	"inference-migrations": ["sh", "-c", "test -s /migrations/001_initial.sql"],
-	"training-migrations": ["sh", "-c", "test -s /migrations/001_initial.sql"],
+	"inference-migrations": ["sh", "-c", "test -s /migrations/001_initial.sql && grep -q \"<<'SQL'\" /usr/local/bin/treeai-run-migrations && ! grep -q -- \"-c 'SELECT checksum\" /usr/local/bin/treeai-run-migrations"],
+	"training-migrations": ["sh", "-c", "test -s /migrations/001_initial.sql && grep -q \"<<'SQL'\" /usr/local/bin/treeai-run-migrations && ! grep -q -- \"-c 'SELECT checksum\" /usr/local/bin/treeai-run-migrations"],
 	"hermes-agent": ["python", "-c", "from importlib.metadata import version;assert version('hermes-agent')=='0.18.2'"],
 	"lab-web-tool-proxy": ["python", "-c", "source=open('/app/worker.py',encoding='utf-8').read();compile(source,'/app/worker.py','exec')"],
 };
