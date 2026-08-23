@@ -18,8 +18,20 @@ export async function discoverProviderModels(requestFetch: typeof fetch, experie
 }
 
 export function hasSuccessfulWebEvidence(events: Array<{ role?: string; toolName?: string; content?: unknown }>) {
-	const successful = events.filter((event) => event.role === "tool" && ["web_search", "web_extract"].includes(event.toolName ?? "") && !String(event.content ?? "").includes('"error"'));
-	return successful.some((event) => event.toolName === "web_search") && successful.some((event) => event.toolName === "web_extract");
+	function payload(content: unknown) {
+		const text = String(content ?? ""), start = text.indexOf("{"), end = text.lastIndexOf("}");
+		if (start < 0 || end <= start) return null;
+		try { return JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>; } catch { return null; }
+	}
+	function hasError(value: unknown): boolean {
+		if (Array.isArray(value)) return value.some(hasError);
+		if (!value || typeof value !== "object") return false;
+		return Object.entries(value).some(([key, item]) => (key === "error" && item !== null && item !== "") || (key === "success" && item === false) || hasError(item));
+	}
+	const successful = events.filter((event) => event.role === "tool" && ["web_search", "web_extract"].includes(event.toolName ?? "") && payload(event.content) && !hasError(payload(event.content)));
+	const search = successful.some((event) => event.toolName === "web_search" && String(event.content).includes('"provenance"'));
+	const extract = successful.some((event) => event.toolName === "web_extract" && String(event.content).includes('"provenance"'));
+	return search && extract;
 }
 
 function migrateCaptureV1() {

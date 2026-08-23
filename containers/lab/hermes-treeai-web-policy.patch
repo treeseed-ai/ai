@@ -39,3 +39,8 @@
 -            backend = _get_extract_backend()
  
              # All seven providers (brave-free, ddgs, searxng, exa, parallel,
+@@ -958,3 +965,4 @@ async def web_extract_tool(
+                 "content": r.get("content", ""),
+                 "error": r.get("error"),
++                **({"provenance": r["metadata"]} if backend == "treeai" and isinstance(r.get("metadata"), dict) else {}),
+                 **({  "blocked_by_policy": r["blocked_by_policy"]} if "blocked_by_policy" in r else {}),
