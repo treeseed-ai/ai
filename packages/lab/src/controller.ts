@@ -6,6 +6,7 @@ import { streamSSE } from "hono/streaming";
 import { existsSync, mkdirSync, renameSync } from "node:fs";
 import { appendEvent, atomic, lines, readJson, required, sanitize, stateRoot } from "./shared.js";
 import { finalizeEvidence, sourceForSession } from "./evidence.js";
+import {LibraryCycles} from './library-cycles.js';
 
 type ControllerOptions = { fetch?: typeof fetch; now?: () => number };
 const sessionPattern = /^[A-Za-z0-9._-]{1,128}$/u;
@@ -62,6 +63,7 @@ export function createLabController(options: ControllerOptions = {}) {
 	const experienceUrl = process.env.EXPERIENCE_PROXY_URL ?? "http://experience-proxy:8080";
 	const webToolUrl = process.env.WEB_TOOL_URL ?? "http://web-tool-proxy:8090";
 	const keys = parseBootstrapKeys(process.env.AI_LAB_API_KEYS ?? "");
+	const libraryCycles=new LibraryCycles(requestFetch);
 	async function hermes(path: string, method = "GET") {
 		const response = await requestFetch(`${hermesUrl}${path}`, { method, headers: { authorization: `Bearer ${required("HERMES_API_KEY")}`, "content-type": "application/json" } });
 		const value = await response.json().catch(() => ({}));
@@ -136,6 +138,11 @@ export function createLabController(options: ControllerOptions = {}) {
 		{ method: "GET", path: "/v1/trajectories", summary: "Agent trajectories", scope: "lab:read" },
 		{ method: "GET", path: "/v1/trajectories/:id", summary: "Agent trajectory", scope: "lab:read" },
 		{ method: "GET", path: "/v1/artifacts", summary: "Artifact observations", scope: "lab:read" },
+		{ method: "GET", path: "/v1/libraries", summary: "Training libraries", scope: "lab:read" },
+		{ method: "GET", path: "/v1/libraries/:id", summary: "Training library", scope: "lab:read" },
+		{ method: "POST", path: "/v1/libraries/:id/train", summary: "Start a bounded library cycle", scope: "lab:write" },
+		{ method: "GET", path: "/v1/library-cycles", summary: "Library cycles", scope: "lab:read" },
+		{ method: "GET", path: "/v1/library-cycles/:id", summary: "Library cycle", scope: "lab:read" },
 		{ method: "GET", path: "/v1/cycles", summary: "Disabled training cycles", scope: "lab:read" },
 		{ method: "GET", path: "/v1/experience", summary: "Captured trajectories", scope: "lab:read" },
 		{ method: "GET", path: "/v1/events/stream", summary: "Events", scope: "lab:read" },
@@ -171,6 +178,10 @@ export function createLabController(options: ControllerOptions = {}) {
 	app.get("/v1/trajectories", requireScope("lab:read"), (context) => context.json({ items: lines(`${stateRoot}/trajectories.jsonl`).reverse() }));
 	app.get("/v1/trajectories/:id", requireScope("lab:read"), (context) => { const item = lines(`${stateRoot}/trajectories.jsonl`).find((value) => value.id === context.req.param("id")); return item ? context.json(item) : context.json({ error: { code: "not_found", message: "Trajectory not found" } }, 404); });
 	app.get("/v1/artifacts", requireScope("lab:read"), (context) => context.json({ items: lines(`${stateRoot}/artifact-observations.jsonl`).reverse() }));
+	app.get('/v1/libraries',requireScope('lab:read'),async context=>context.json(await (async()=>{const response=await requestFetch(`${process.env.TRAINING_URL??'http://training-api:4780'}/v1/libraries`,{headers:{authorization:`Bearer ${required('AI_FACTORY_TRAINING_KEY')}`}});if(!response.ok)throw new Error('Training libraries are unavailable');return response.json();})()));
+	app.get('/v1/libraries/:id',requireScope('lab:read'),async context=>{const response=await requestFetch(`${process.env.TRAINING_URL??'http://training-api:4780'}/v1/libraries/${encodeURIComponent(context.req.param('id'))}`,{headers:{authorization:`Bearer ${required('AI_FACTORY_TRAINING_KEY')}`}});return context.json(await response.json(),response.status as 200);});
+	app.post('/v1/libraries/:id/train',requireScope('lab:write'),async context=>{const key=context.req.header('idempotency-key');if(!key)return context.json({error:{code:'invalid_request',message:'Idempotency-Key is required.'}},400);const body=await context.req.json().catch(()=>({}))as{mode?:string};if(!['smoke','standard'].includes(body.mode??''))return context.json({error:{code:'invalid_request',message:'mode must be smoke or standard.'}},400);try{return context.json(libraryCycles.start(context.req.param('id'),body.mode as'smoke'|'standard',key),202);}catch(error){return context.json({error:{code:'cycle_conflict',message:error instanceof Error?error.message:String(error)}},409);}});
+	app.get('/v1/library-cycles',requireScope('lab:read'),context=>context.json({items:libraryCycles.list().reverse()}));app.get('/v1/library-cycles/:id',requireScope('lab:read'),context=>{const value=libraryCycles.get(context.req.param('id'));return value?context.json(value):context.json({error:{code:'not_found',message:'Library cycle not found.'}},404);});
 	app.get("/v1/cycles", requireScope("lab:read"), (context) => context.json({ items: [], disabled: true }));
 	app.get("/v1/experience", requireScope("lab:read"), (context) => context.json({ items: lines(`${stateRoot}/trajectories.jsonl`).reverse() }));
 	for (const action of ["enable", "cycle-now", "resume"]) app.post(`/v1/loop/${action}`, requireScope("lab:write"), (context) => context.req.header("idempotency-key") ? context.json({ error: { code: "training_pipeline_not_configured", message: "Continual pretraining, corrective SFT, and KTO pipelines must be qualified before automatic cycling can be enabled." } }, 409) : context.json({ error: { code: "invalid_request", message: "Idempotency-Key is required." } }, 400));

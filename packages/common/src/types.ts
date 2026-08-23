@@ -42,14 +42,15 @@ export interface ArtifactObject {
 }
 
 export interface ArtifactManifest {
-	schemaVersion: 'ai.artifact/v1';
+	schemaVersion: 'ai.artifact/v1'|'ai.artifact/v2';
 	artifactId: string;
 	artifactType: 'lora-adapter' | 'dataset' | 'document-bundle' | 'checkpoint' | 'archive';
 	createdAt: string;
 	baseModel?: { id: string; revision: string };
 	trainingConfigDigest?: string;
 	datasets?: string[];
-	adapter?: { format: 'peft'; architecture: string };
+	adapter?: { format: 'peft'; architecture: string; purpose?:'continual-pretraining'|'corrective-sft'|'kto'|'composed'; targetModules?:string[]; rank?:number; alpha?:number };
+	library?:{id:string;slug:string;snapshotId:string;mode:'smoke'|'standard';promotionEligible:boolean}|null;
 	objects: ArtifactObject[];
 	evaluations?: Array<{ suite: string; metric: string; value: number }>;
 	provenance: Record<string, unknown>;

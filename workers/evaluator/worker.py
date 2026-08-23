@@ -97,5 +97,36 @@ def canary(job):
     with ThreadPoolExecutor(max_workers=2) as pool: responses=list(pool.map(lambda prompt:post("/v1/chat/completions",{"model":candidate,"messages":[{"role":"user","content":prompt}],"temperature":0,"max_tokens":32}),["Reply with canary-one.","Reply with canary-two."]))
     if any(not json.loads(value)["choices"][0]["message"].get("content") for value in responses):raise ValueError("Canary response was empty")
     return write(job,"canary",{"candidateId":candidate,"passed":True,"concurrency":2})
+def library_likelihood(job):
+    value=job["input"];model=str(value["candidateId"]);stored=value.get("evaluationObject",{});uri=stored.get("uri","")
+    if not uri:raise ValueError("A copied held-out evaluation object is required")
+    body=s3_client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(uri))["Body"].read().decode("utf-8");losses=[];tokens=0
+    for line in body.splitlines():
+        if not line.strip():continue
+        prompt=json.loads(line).get("text","")
+        if not prompt:continue
+        response=json.loads(post("/v1/completions",{"model":model,"prompt":prompt,"max_tokens":1,"temperature":0,"prompt_logprobs":1}))
+        values=response.get("choices",[{}])[0].get("prompt_logprobs") or response.get("prompt_logprobs") or []
+        for entry in values:
+            if not isinstance(entry,dict) or not entry:continue
+            chosen=next(iter(entry.values()));logprob=chosen.get("logprob") if isinstance(chosen,dict) else chosen
+            if isinstance(logprob,(int,float)):losses.append(-float(logprob));tokens+=1
+    if not losses:raise ValueError("vLLM returned no held-out prompt log probabilities")
+    return write(job,"library-likelihood",{"candidateId":model,"metric":"completion-negative-log-likelihood","value":sum(losses)/len(losses),"tokenCount":tokens,"evaluationObject":{"sha256":stored.get("sha256"),"size":stored.get("size")}})
+def state_manifest(uri):
+    target=Path(str(uri)[7:]).resolve() if str(uri).startswith("file://") else None
+    if not target or STATE not in target.parents:raise ValueError("Evaluation manifest is outside evaluator state")
+    return json.loads(target.read_text())
+def rank_library(job):
+    value=job["input"];general=state_manifest(value["generalManifest"]);base=state_manifest(value["baseLikelihoodManifest"]);candidate=state_manifest(value["candidateLikelihoodManifest"]);candidate_id=str(value["candidateId"])
+    general_results=general.get("results",[]);active_general=next((item for item in general_results if item["candidate"]!=candidate_id),None);candidate_general=next((item for item in general_results if item["candidate"]==candidate_id),None);reasons=[]
+    if not active_general or not candidate_general:reasons.append("base and candidate general evaluations are required")
+    else:
+        if not candidate_general.get("criticalChecksPassed"):reasons.append("critical general checks failed")
+        regressions=[key for key,score in candidate_general.get("categories",{}).items() if score<active_general.get("categories",{}).get(key,0)]
+        if regressions:reasons.append("general category regressions: "+", ".join(regressions))
+    base_nll=float(base["value"]);candidate_nll=float(candidate["value"])
+    if candidate_nll>base_nll*0.98:reasons.append("held-out completion NLL did not improve by at least 2 percent")
+    return write(job,"library-ranking",{"policy":"library-strict-improvement-v1","policyVersion":"1","candidateId":candidate_id,"baseNegativeLogLikelihood":base_nll,"candidateNegativeLogLikelihood":candidate_nll,"improvement":(base_nll-candidate_nll)/base_nll if base_nll else 0,"promotable":not reasons,"ranking":[{"candidate":candidate_id}],"explanation":"; ".join(reasons) if reasons else "Held-out NLL improved by at least 2 percent and all general behavior gates passed."})
 
-serve({"/import": import_adapter, "/evaluate": evaluate, "/rank": rank, "/authorize":authorize, "/canary":canary, "/promote": lambda job: deployment(job, "promote"), "/rollback": lambda job: deployment(job, "rollback")})
+serve({"/import": import_adapter, "/evaluate": evaluate, "/library-likelihood":library_likelihood, "/rank": rank, "/rank-library":rank_library, "/authorize":authorize, "/canary":canary, "/promote": lambda job: deployment(job, "promote"), "/rollback": lambda job: deployment(job, "rollback")})

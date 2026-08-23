@@ -15,15 +15,18 @@ export function createArtifactImporter(pool:Pool){
     if(request.sourceId!==source.sourceId||!request.manifestUri)throw new Error('Unknown artifact source or missing manifest URI.');
     const input=store(source.bucket,source.endpoint,source.accessKeyId,source.secretAccessKey);
     const manifestBytes=await input.bytes(objectKey(request.manifestUri,source.bucket));
-    const manifest=JSON.parse(Buffer.from(manifestBytes).toString('utf8'))as ArtifactManifest;
+    const manifest=JSON.parse(Buffer.from(manifestBytes).toString('utf8'))as ArtifactManifest&{library?:{id?:string;slug?:string;mode?:string;promotionEligible?:boolean};adapter?:ArtifactManifest['adapter']&{purpose?:string}};
     if(!verifyManifest(manifest,createPublicKey(source.trustedPublicKey)))throw new Error('Artifact manifest signature is invalid.');
     if(manifest.artifactType!=='lora-adapter'||manifest.adapter?.format!=='peft')throw new Error('Manifest is not a compatible PEFT LoRA adapter.');
     if(manifest.baseModel?.id!==(process.env.SOURCE_MODEL??'Qwen/Qwen3.5-4B')||manifest.baseModel?.revision!==(process.env.SOURCE_MODEL_REVISION??'851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a'))throw new Error('Adapter base model revision is incompatible with this inference deployment.');
     const output=store(process.env.S3_BUCKET??'ai-inference',process.env.S3_ENDPOINT!,process.env.S3_ACCESS_KEY!,process.env.S3_SECRET_KEY!);
     const copied=[];
     for(const object of manifest.objects){const bytes=await input.bytes(objectKey(object.uri,source.bucket));if(bytes.byteLength!==object.size||sha256(bytes)!==object.sha256)throw new Error(`Checksum verification failed for ${object.uri}.`);copied.push(await putOnce(output,`objects/${object.sha256}`,bytes));}
+    let libraryEvaluationObject;
+    if(manifest.library){const datasetUri=manifest.datasets?.[0];if(typeof datasetUri!=='string')throw new Error('Library adapter has no immutable dataset manifest.');const datasetBytes=await input.bytes(objectKey(datasetUri,source.bucket)),dataset=JSON.parse(Buffer.from(datasetBytes).toString('utf8'))as{schemaVersion?:string;evaluationObject?:{uri:string;size:number;sha256:string}};if(dataset.schemaVersion!=='ai.library-dataset/v1')throw new Error('Library adapter dataset manifest is incompatible.');if(manifest.library.promotionEligible&&!dataset.evaluationObject)throw new Error('Promotable library adapter has no held-out evaluation corpus.');if(dataset.evaluationObject){const heldout=await input.bytes(objectKey(dataset.evaluationObject.uri,source.bucket));if(heldout.byteLength!==dataset.evaluationObject.size||sha256(heldout)!==dataset.evaluationObject.sha256)throw new Error('Held-out evaluation corpus checksum failed.');libraryEvaluationObject=await putOnce(output,`evaluation/${dataset.evaluationObject.sha256}.jsonl`,heldout,'application/x-ndjson');}}
     const manifestDigest=sha256(manifestBytes);const stored=await putOnce(output,`manifests/${manifest.artifactId}/${manifestDigest}.json`,manifestBytes,'application/json');
-    const candidate=await pool.query(`INSERT INTO candidates(manifest_uri,manifest,status) VALUES($1,$2,'inactive') ON CONFLICT(manifest_uri) DO UPDATE SET manifest=excluded.manifest RETURNING id`,[stored.uri,{sourceManifest:manifest,copiedObjects:copied,sourceId:source.sourceId}]);
+    if(manifest.library&&(!manifest.library.id||!/^[a-z0-9][a-z0-9-]{0,62}$/u.test(manifest.library.slug??'')||manifest.adapter?.purpose!=='continual-pretraining'))throw new Error('Library adapter metadata is invalid.');
+    const candidate=await pool.query(`INSERT INTO candidates(manifest_uri,manifest,status,purpose,library_id,library_slug) VALUES($1,$2,'inactive',$3,$4,$5) ON CONFLICT(manifest_uri) DO UPDATE SET manifest=excluded.manifest,purpose=excluded.purpose,library_id=excluded.library_id,library_slug=excluded.library_slug RETURNING id`,[stored.uri,{sourceManifest:manifest,copiedObjects:copied,sourceId:source.sourceId,libraryEvaluationObject},manifest.adapter?.purpose??null,manifest.library?.id??null,manifest.library?.slug??null]);
     return `candidate://${candidate.rows[0].id}`;
   };
 }
