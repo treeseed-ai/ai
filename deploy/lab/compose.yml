@@ -141,10 +141,14 @@ services:
     image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
     restart: unless-stopped
     volumes: ["/usr/lib/treeseed-ai/lab/Caddyfile:/etc/caddy/Caddyfile:ro", "/etc/treeseed-ai/manager/tls:/tls:ro"]
-    networks: [lab-private]
+    # Keep application routing on the internal network, but attach the only
+    # published service to a non-internal edge bridge so Docker can install
+    # host port forwarding rules.
+    networks: [lab-private, lab-edge]
 networks:
   ai-shared: { external: true, name: ai-shared }
   lab-private: { internal: true }
+  lab-edge: {}
   lab-egress: {}
 secrets:
   training-source: { file: /etc/treeseed-ai/lab/training-source.json }
