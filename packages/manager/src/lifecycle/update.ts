@@ -10,22 +10,11 @@ import { securePlatformConfiguration } from "../core/configuration-file.js";
 import { ensureManagedRuntime, persistMode, reconcilePlatform } from "./platform.js";
 import { buildCatalogLocalImages, localImageReadiness } from "./local-build.js";
 import { assertCatalogedSimulation } from "./apt-policy.js";
+import { aptOptions } from "../core/apt-options.js";
+export { aptOptions } from "../core/apt-options.js";
 const allowedPackages = new Set(["treeseed-ai", "treeseed-ai-archive-keyring", "treeseed-ai-development-archive-keyring", "treeseed-ai-host-js-runtime", "treeseed-ai-manager", "treeseed-ai-cli", "treeseed-ai-release-catalog", "treeseed-ai-host-runtime", "treeseed-ai-inference", "treeseed-ai-training", "treeseed-ai-lab", "treeseed-ai-factory"]);
 function configuration() {
 	return validatePlatformConfiguration(JSON.parse(readFileSync(paths.configuration, "utf8")));
-}
-export function aptOptions(channel: "stable" | "development") {
-	return [
-		"-o", `Dir::Etc::sourcelist=/etc/apt/sources.list.d/treeseed-ai-${channel}.sources`,
-		"-o", "Dir::Etc::sourceparts=-",
-		"-o", "APT::Get::List-Cleanup=0",
-		...(channel === "development" ? [
-			"-o", "Acquire::http::No-Cache=true",
-			"-o", "Acquire::http::Max-Age=0",
-			"-o", "Acquire::https::No-Cache=true",
-			"-o", "Acquire::https::Max-Age=0",
-		] : []),
-	];
 }
 function command(file: string, args: string[], cwd?: string) {
 	const result = spawnSync(file, args, { encoding: "utf8", cwd });
