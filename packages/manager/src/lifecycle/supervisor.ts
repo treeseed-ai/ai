@@ -37,6 +37,7 @@ import {
 	resetOpenWebUi,
 } from "./lab-webui.js";
 import { rotateHermesPassword } from "./hermes/rotation.js";
+import { hermesDiagnostics } from "./hermes/diagnostics.js";
 function rootOnly() {
 	if (process.getuid?.() !== 0)
 		throw new Error("Manager supervisor must run as root.");
@@ -164,6 +165,8 @@ export async function execute(request: SupervisorRequest) {
 			return resetOpenWebUi(parameters.confirm === true);
 		case "lab.hermes.password.rotate":
 			return rotateHermesPassword();
+		case "lab.hermes.diagnostics":
+			return hermesDiagnostics();
 		case "mode.set": {
 			const config = validatePlatformConfiguration(
 				JSON.parse(readFileSync(paths.configuration, "utf8")),
