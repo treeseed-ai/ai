@@ -57,6 +57,7 @@ function previousReceipt() {
 	return generation && existsSync(path)
 		? (JSON.parse(readFileSync(path, "utf8")) as {
 				images: Array<{ role: string; digest: string }>;
+				localImages?: Array<{ role: string; imageId: string }>;
 				runtimeImages?: Array<{ id: string; digest: string }>;
 			})
 		: undefined;
@@ -193,16 +194,16 @@ function receipt(catalog: ReleaseCatalog, packages: string[], state: string) {
 		const environment = `/etc/treeseed-ai/${product}/environment`;
 		if (existsSync(environment)) copyFileSync(environment, join(knownGood, `${product}.environment`));
 	}
-	const localImages = localImageReadiness(catalog);
+	const prior = previousReceipt(), packageOnly = catalog.imagePolicy.mode === "package-only", localImages = localImageReadiness(catalog);
 	const value = {
 			schemaVersion: "treeai.update-receipt/v1",
 			generation: catalog.generation,
 			state,
 			mode: setting("mode", "awake"),
 			packages,
-			images: selectedImages(catalog),
-			localImages: [...localImages.images].map(([role, imageId]) => ({ role, imageId })),
-			runtimeImages: selectedRuntimeImages(catalog),
+		images: packageOnly && prior ? prior.images : selectedImages(catalog),
+		localImages: packageOnly && prior?.localImages ? prior.localImages : [...localImages.images].map(([role, imageId]) => ({ role, imageId })),
+		runtimeImages: packageOnly && prior?.runtimeImages ? prior.runtimeImages : selectedRuntimeImages(catalog),
 			rollback: catalog.rollback,
 			knownGood,
 			createdAt: new Date().toISOString(),
@@ -324,9 +325,10 @@ export async function applyUpdate() {
 				: "Run treeai local-build plan --source PATH, then treeai local-build build --source PATH.",
 		};
 	}
+	const packageOnly = catalog.imagePolicy.mode === "package-only";
 	ensureManagedRuntime();
-	await acquireImages(catalog);
-	if (activeWork()) {
+	if (!packageOnly) await acquireImages(catalog);
+	if (!packageOnly && activeWork()) {
 		setSetting("stagedGeneration", catalog.generation);
 		event("update.postponed", {
 			generation: catalog.generation,
@@ -349,7 +351,7 @@ export async function applyUpdate() {
 	try {
 		event("update.installing", { generation: catalog.generation });
 		command("apt-get", [...aptOptions(config.updates.channel), "--no-remove", "--no-install-recommends", "install", "-y", ...packages]);
-		const platform = await reconcilePlatform();
+		const platform = packageOnly ? undefined : await reconcilePlatform();
 		health();
 		const path = receipt(catalog, packages, "known-good");
 		setSetting("knownGoodGeneration", catalog.generation);

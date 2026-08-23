@@ -100,6 +100,7 @@ jobs:
             cp all-development-debs/*.deb development-debs/
           fi
           sh scripts/release/mirror-apt-suite.sh https://treeseed-ai.github.io/ai/apt stable pages/apt || true
+          sh scripts/release/mirror-apt-suite.sh https://treeseed-ai.github.io/ai/apt development pages/apt || true
           export APT_RELEASE_FINGERPRINT="$(cat release/apt-development/RELEASE_KEY_FINGERPRINT)"
           sh scripts/release/build-apt-repository.sh development-debs pages/apt "$TREEAI_RC_DEBIAN_VERSION" development
       - uses: actions/upload-artifact@v4
