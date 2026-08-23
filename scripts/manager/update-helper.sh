@@ -1,5 +1,10 @@
 #!/bin/sh
 set -eu
+exec 9>/run/treeseed-ai/manager/update.lock
+if ! flock --wait 1800 9; then
+  echo "Timed out waiting for the active TreeAI update transaction." >&2
+  exit 1
+fi
 systemctl daemon-reload
 systemctl restart treeseed-ai-manager-supervisor.service
 systemctl restart treeseed-ai-manager-api.service
