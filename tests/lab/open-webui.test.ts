@@ -60,6 +60,11 @@ describe("Open WebUI local single-user integration", () => {
 		expect(readFileSync('deploy/lab/Caddyfile','utf8')).toContain('reverse_proxy library-bridge:8082');
 		const action=readFileSync('deploy/lab/open-webui/treeai_train_library.py','utf8');
 		expect(action).toContain('class Action:');
+		const installer=readFileSync('deploy/lab/open-webui/install_treeai_action.py','utf8');
+		expect(installer).toContain('/api/v1/auths/signin');
+		expect(installer).toContain('"authorization": f"Bearer {token}"');
+		expect(installer).toContain('call("GET", "/")');
+		expect(installer).not.toContain('print(token)');
 		expect(readFileSync('packages/lab/src/library-bridge.ts','utf8')).toContain('exactly one attached Knowledge Base');
 		expect(action).not.toMatch(/api[_-]?key\s*=/iu);
 		const platform = readFileSync(
