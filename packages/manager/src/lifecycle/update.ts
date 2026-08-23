@@ -284,13 +284,13 @@ export async function applyUpdate() {
 	if (
 		!plan.localImages.ready &&
 		setting("automaticInvocation", false) &&
-		config.imageSource === "local-build" &&
 		config.updates.channel === "development" &&
 		config.updates.policy === "continuous"
 	) {
 		event("root-capability.started", {
 			operation: "development.local-images.build",
 			generation: catalog.generation,
+			configuredImageSource: config.imageSource,
 			requiredRoles: catalog.imagePolicy.requiredLocalImages.map((item) => item.role),
 		});
 		try {
