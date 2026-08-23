@@ -18,6 +18,25 @@ function bindingsReady(command: Runner) {
 	}
 }
 
+function digest(output: string) {
+	return output.trim().split(/\s+/u)[0] ?? "";
+}
+
+function gatewayConfigCurrent(command: Runner) {
+	try {
+		const installed = digest(command("sha256sum", ["/usr/lib/treeseed-ai/lab/Caddyfile"]));
+		const mounted = digest(command("docker", [
+			"exec",
+			"treeseed-ai-lab-gateway-1",
+			"sha256sum",
+			"/etc/caddy/Caddyfile",
+		]));
+		return installed.length === 64 && installed === mounted;
+	} catch {
+		return false;
+	}
+}
+
 function installManagedAction(lab: Lab, command: Runner, record: Recorder) {
 	const environment = JSON.parse(
 		command("docker", ["inspect", "--format", "{{json .Config.Env}}", "treeseed-ai-lab-open-webui-1"]),
@@ -36,10 +55,14 @@ function reloadGateway(lab: Lab, record: Recorder) {
 
 export function reconcileLabEdge(lab: Lab, command: Runner, record: Recorder) {
 	lab(["up", "-d", "--remove-orphans", "--wait", "--wait-timeout", "900"]);
-	if (!bindingsReady(command)) {
-		record("lab.edge-recreate-required", { reason: "effective_bindings_missing" });
+	const bindings = bindingsReady(command), configCurrent = gatewayConfigCurrent(command);
+	if (!bindings || !configCurrent) {
+		record("lab.edge-recreate-required", {
+			reason: !bindings ? "effective_bindings_missing" : "managed_config_changed",
+		});
 		lab(["up", "-d", "--force-recreate", "--no-deps", "gateway"]);
 		if (!bindingsReady(command)) throw new Error("Lab gateway effective loopback bindings are missing after recreation.");
+		if (!gatewayConfigCurrent(command)) throw new Error("Lab gateway did not mount the installed Caddy configuration.");
 	}
 	reloadGateway(lab, record);
 	installManagedAction(lab, command, record);
