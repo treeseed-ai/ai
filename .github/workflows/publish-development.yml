@@ -52,6 +52,26 @@ jobs:
           mkdir -p prior-catalog
           dpkg-deb --extract "$catalog_deb" prior-catalog
           cp prior-catalog/usr/share/treeseed-ai/release/catalog.json assets/prior-catalog.json
+          if test '${{ inputs.package_only_bridge }}' = true; then
+            expected=$(jq '.images | length' release/manifest.json)
+            selected=''
+            while read -r candidate; do
+              candidate_dir=$(mktemp -d)
+              if gh release download "$candidate" --pattern 'treeseed-ai-release-catalog_*.deb' --dir "$candidate_dir" >/dev/null 2>&1; then
+                candidate_deb=$(find "$candidate_dir" -maxdepth 1 -type f -name 'treeseed-ai-release-catalog_*.deb' -print -quit)
+                mkdir "$candidate_dir/catalog"
+                dpkg-deb --extract "$candidate_deb" "$candidate_dir/catalog"
+                candidate_catalog="$candidate_dir/catalog/usr/share/treeseed-ai/release/catalog.json"
+                if jq -e --argjson expected "$expected" '(.images | length) == $expected and .imagePolicy.mode == "local-images-required" and .imagePolicy.sourceBundle != null' "$candidate_catalog" >/dev/null; then
+                  cp "$candidate_catalog" assets/prior-catalog.json
+                  selected="$candidate"
+                  break
+                fi
+              fi
+            done < <(gh release list --limit 100 --json tagName,isDraft,isPrerelease --jq '.[] | select(.isDraft == false and .isPrerelease == true) | .tagName')
+            test -n "$selected"
+            echo "TREEAI_PACKAGE_ONLY_BASE=$selected" >> "$GITHUB_ENV"
+          fi
           gpg --batch --import release/apt/treeseed-ai-archive-keyring.asc
           gpg --batch --verify prior/SHA256SUMS.asc prior/SHA256SUMS
           (cd prior && sha256sum -c SHA256SUMS)
