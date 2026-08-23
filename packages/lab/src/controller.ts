@@ -10,6 +10,13 @@ import { finalizeEvidence, sourceForSession } from "./evidence.js";
 type ControllerOptions = { fetch?: typeof fetch; now?: () => number };
 const sessionPattern = /^[A-Za-z0-9._-]{1,128}$/u;
 
+export async function discoverProviderModels(requestFetch: typeof fetch, experienceUrl: string) {
+	const response = await requestFetch(`${experienceUrl}/v1/models`, { headers: { authorization: "Bearer lab-open-webui" } });
+	const value = await response.json().catch(() => ({}));
+	if (!response.ok) throw new Error(`Experience provider models returned ${response.status}`);
+	return sanitize(value);
+}
+
 function migrateCaptureV1() {
 	const receipt = `${stateRoot}/capture-v1-migration.json`;
 	if (existsSync(receipt)) return;
@@ -42,6 +49,9 @@ export function createLabController(options: ControllerOptions = {}) {
 		const value = await response.json().catch(() => ({}));
 		if (!response.ok) throw new Error(`Hermes ${path} returned ${response.status}`);
 		return sanitize(value);
+	}
+	async function providerModels() {
+		return discoverProviderModels(requestFetch, experienceUrl);
 	}
 	async function finalize(id: string) {
 		if (!sessionPattern.test(id)) throw new Error("Invalid Hermes session identifier");
@@ -81,6 +91,7 @@ export function createLabController(options: ControllerOptions = {}) {
 	const routes: RouteSpec[] = [
 		{ method: "GET", path: "/healthz", summary: "Liveness" }, { method: "GET", path: "/readyz", summary: "Readiness" },
 		{ method: "GET", path: "/v1/status", summary: "Lab state", scope: "lab:read" },
+		{ method: "GET", path: "/v1/provider/models", summary: "Sanitized provider model discovery", scope: "lab:read" },
 		{ method: "GET", path: "/v1/hermes/status", summary: "Hermes status", scope: "lab:hermes:read" },
 		{ method: "GET", path: "/v1/hermes/capabilities", summary: "Hermes capabilities", scope: "lab:hermes:read" },
 		{ method: "GET", path: "/v1/hermes/tools", summary: "Hermes tools", scope: "lab:hermes:read" },
@@ -107,6 +118,7 @@ export function createLabController(options: ControllerOptions = {}) {
 	app.onError((error, context) => context.json({ error: { code: "agent_unavailable", message: "Hermes Agent is unavailable." } }, 503));
 	app.use("/v1/*", apiKeyAuthorization(async (id) => keys.find((key) => key.id === id) ?? null));
 	app.get("/v1/status", requireScope("lab:read"), (context) => context.json({ enabled: false, paused: true, phase: "training-pipelines-not-configured", trajectories: lines(`${stateRoot}/trajectories.jsonl`).length }));
+	app.get("/v1/provider/models", requireScope("lab:read"), async (context) => context.json(await providerModels()));
 	app.get("/v1/hermes/status", requireScope("lab:hermes:read"), async (context) => context.json(await hermes("/health/detailed")));
 	app.get("/v1/hermes/capabilities", requireScope("lab:hermes:read"), async (context) => context.json(await hermes("/v1/capabilities")));
 	app.get("/v1/hermes/tools", requireScope("lab:hermes:read"), async (context) => context.json(await hermes("/v1/toolsets")));
