@@ -142,16 +142,20 @@ function catalog(base: string) {
 		const planned = imagePlan?.images?.[role];
 		return planned?.action === "built" ? [{ role, buildIdentity: planned.buildIdentity }] : [];
 	});
-	value.imagePolicy = {
-		mode: requiredLocalImages.length && process.env.TREEAI_FORCE_PACKAGE_ONLY !== "1" ? "local-images-required" : "package-only",
-		productionManifestVersion: imageManifest.version ?? release.version,
-		sourceRevision: process.env.TREEAI_SOURCE_REVISION ?? "release-source",
-		sourceBundle: process.env.TREEAI_SOURCE_ARCHIVE_URL && process.env.TREEAI_SOURCE_ARCHIVE_SHA256
-			? { url: process.env.TREEAI_SOURCE_ARCHIVE_URL, sha256: process.env.TREEAI_SOURCE_ARCHIVE_SHA256, format: "tar.gz" }
-			: null,
-		requiredLocalImages: process.env.TREEAI_FORCE_PACKAGE_ONLY === "1" ? [] : requiredLocalImages,
-	};
-	value.images = catalogImageEntries(release.images, imageManifest.images, imagePlan?.images, Number(value.generation), process.env.TREEAI_FORCE_PACKAGE_ONLY === "1", release.dockerNamespace);
+	if (process.env.TREEAI_FORCE_PACKAGE_ONLY !== "1") {
+		value.imagePolicy = {
+			mode: requiredLocalImages.length ? "local-images-required" : "package-only",
+			productionManifestVersion: imageManifest.version ?? release.version,
+			sourceRevision: process.env.TREEAI_SOURCE_REVISION ?? "release-source",
+			sourceBundle: process.env.TREEAI_SOURCE_ARCHIVE_URL && process.env.TREEAI_SOURCE_ARCHIVE_SHA256
+				? { url: process.env.TREEAI_SOURCE_ARCHIVE_URL, sha256: process.env.TREEAI_SOURCE_ARCHIVE_SHA256, format: "tar.gz" }
+				: null,
+			requiredLocalImages,
+		};
+		value.images = catalogImageEntries(release.images, imageManifest.images, imagePlan?.images, Number(value.generation), false, release.dockerNamespace);
+	} else if (value.images.length !== release.images.length || value.imagePolicy.mode !== "local-images-required") {
+		throw new Error("Package-only publication requires a complete full development catalog base.");
+	}
 	writeFileSync(resolve(base, "usr/share/treeseed-ai/release/catalog.json"), JSON.stringify(value, null, 2));
 	return finish("release-catalog", base);
 }
