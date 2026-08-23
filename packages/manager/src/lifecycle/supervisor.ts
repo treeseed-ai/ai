@@ -208,6 +208,9 @@ export function startSupervisor() {
 			}
 		},
 	);
-	server.listen(paths.socket, () => chmodSync(paths.socket, 0o660));
+	server.listen(paths.socket, () => {
+		execFileSync("chown", ["root:treeseed-ai-manager", paths.socket]);
+		chmodSync(paths.socket, 0o660);
+	});
 	return server;
 }
