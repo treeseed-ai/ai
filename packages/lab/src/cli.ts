@@ -52,10 +52,11 @@ function operator() {
 function client() {
 	return JSON.parse(readFileSync("/etc/treeseed-ai/treeai/config.json", "utf8")) as ClientConfiguration;
 }
-function call(path: string, method = "GET") {
+function call(path: string, method = "GET",body?:unknown) {
 	const config = client();
 	const values = ["--silent", "--show-error", "--fail-with-body", "--cacert", config.ca, "-H", `Authorization: Bearer ${operator()}`, "-H", "content-type: application/json", "-X", method];
 	if (method === "POST") values.push("-H", `Idempotency-Key: treeai-${path}-${Date.now()}`);
+	if(body!==undefined)values.push('--data',JSON.stringify(body));
 	const target = `${config.endpoints.lab}${path}`;
 	values.push(target);
 	try {
@@ -145,6 +146,16 @@ async function main() {
 		if (action === "rotate-password") return output(await supervisor("lab.hermes.password.rotate"));
 		throw new Error("Usage: treeai lab hermes <status|tools|sessions|verify|diagnostics|rotate-password>");
 	}
+	if(command==='libraries')return output(call('/v1/libraries'));
+	if(command==='library'){
+		const action=args.find(item=>!item.startsWith('--')),values=args.filter(item=>!item.startsWith('--')).slice(1),id=values[0];
+		if(action==='runs')return output(id?call(`/v1/library-cycles/${encodeURIComponent(id)}`):call('/v1/library-cycles'));
+		if(!id)throw new Error('A library or run ID is required.');
+		if(action==='show')return output(call(`/v1/libraries/${encodeURIComponent(id)}`));
+		if(action==='train'){const mode=option('--mode');if(!['smoke','standard'].includes(mode??''))throw new Error('--mode smoke|standard is required.');return output(call(`/v1/libraries/${encodeURIComponent(id)}/train`,'POST',{mode}));}
+		if(action==='watch'){for(;;){const value=call(`/v1/library-cycles/${encodeURIComponent(id)}`)as{state?:string};output(value);if(['succeeded','rejected','failed','cancelled'].includes(value.state??''))return;await new Promise(resolveWait=>setTimeout(resolveWait,2000));}}
+		throw new Error('Usage: treeai lab library <show|train|runs|watch> <id> [--mode smoke|standard]');
+	}
 	if (command === "build") {
 		requireRoot("build");
 		const settings = client();
@@ -174,12 +185,12 @@ async function main() {
 	}
 	if (command === "logs") {
 		requireRoot("logs");
-		const allowed = ["controller", "experience-proxy", "open-webui", "hermes-agent", "hermes-dashboard", "web-tool-proxy", "gateway"], service = args.find((item) => !item.startsWith("--"));
+		const allowed = ["controller", "experience-proxy",'library-bridge', "open-webui", "hermes-agent", "hermes-dashboard", "web-tool-proxy", "gateway"], service = args.find((item) => !item.startsWith("--"));
 		if (service && !allowed.includes(service)) throw new Error("Unsupported lab service.");
 		compose(["logs", "--follow", ...(service ? [service] : [])]);
 		return;
 	}
-	throw new Error("Usage: treeai lab <plan|configure|reset-webui|urls|open|hermes|build|start|stop|restart|status|verify|watch|logs|enable|pause|resume|cycle-now>");
+	throw new Error("Usage: treeai lab <plan|configure|reset-webui|urls|open|hermes|libraries|library|build|start|stop|restart|status|verify|watch|logs|enable|pause|resume|cycle-now>");
 }
 
 main().catch((error) => {

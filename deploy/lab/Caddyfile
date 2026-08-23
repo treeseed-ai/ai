@@ -3,11 +3,11 @@
 }
 :4791 {
   tls /tls/server.crt /tls/server.key
-  reverse_proxy open-webui:8080
+  reverse_proxy library-bridge:8082
 }
 chat.treeai.localhost:443 {
   tls /tls/server.crt /tls/server.key
-  reverse_proxy open-webui:8080
+  reverse_proxy library-bridge:8082
 }
 hermes.treeai.localhost:443 {
   tls /tls/server.crt /tls/server.key

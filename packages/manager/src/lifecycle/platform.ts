@@ -29,8 +29,7 @@ const products = {
 	training: ["postgres", "minio", "minio-init", "migrations", "artifact", "manager", "api"],
 } as const;
 function command(file: string, args: string[]) {
-	const result = spawnSync(file, args, { encoding: "utf8", timeout: 900_000 });
-	if (result.status !== 0) throw new Error(`${file} failed: ${(result.stderr || result.stdout).trim()}`);
+	const result = spawnSync(file, args, { encoding: "utf8", timeout: 900_000 }); if (result.status !== 0) throw new Error(`${file} failed: ${(result.stderr || result.stdout).trim()}`);
 	return result.stdout.trim();
 }
 function atomic(path: string, value: string, mode = 0o600) {
@@ -161,8 +160,7 @@ function ensureSigningMaterial() {
 }
 function ensureServiceCredentials(root: string) {
 	const path = `${root}/service-api-credentials.json`;
-	if (existsSync(path))
-		return JSON.parse(readFileSync(path, "utf8")) as Record<
+	const existing=existsSync(path)?JSON.parse(readFileSync(path,"utf8"))as Record<
 			string,
 			{
 				plain: string;
@@ -173,11 +171,13 @@ function ensureServiceCredentials(root: string) {
 					revoked: boolean;
 				};
 			}
-		>;
+		>:{};
 	const values = {
-		factory: credential("lab-factory", ["platform:read", "platform:mode"]),
-		inference: credential("lab-inference", ["*"]),
-		training: credential("lab-training", ["*"]),
+		factory: existing.factory??credential("lab-factory", ["platform:read", "platform:mode"]),
+		inference: existing.inference??credential("lab-inference", ["*"]),
+		training: existing.training??credential("lab-training", ["*"]),
+		libraryIngest:existing.libraryIngest??credential('lab-library-ingest',['libraries:read','libraries:write','libraries:train']),
+		libraryAction:existing.libraryAction??credential('lab-library-action',['lab:read','lab:write']),
 	};
 	atomic(path, JSON.stringify(values), 0o600);
 	return values;
@@ -211,7 +211,7 @@ function ensureProductConfiguration() {
 	const operator = JSON.parse(readFileSync("/etc/treeseed-ai/treeai/operator-record.json", "utf8")) as unknown,
 		common = (product: "inference" | "training") => ({
 			COMPOSE_PROFILES: "state",
-			AI_API_KEYS: `'${JSON.stringify([operator, service[product]!.record])}'`,
+			AI_API_KEYS: `'${JSON.stringify([operator, service[product]!.record,...product==='training'?[service.libraryIngest!.record]:[]])}'`,
 			DATABASE_URL: `postgresql://${product}:${stored[`${product}Db`]}@postgres:5432/${product}`,
 			POSTGRES_PASSWORD: stored[`${product}Db`]!,
 			S3_ENDPOINT: "http://minio:9000",
@@ -285,6 +285,8 @@ function ensureLabConfiguration() {
 		["factory-control-key", service.factory!.plain],
 		["factory-inference-key", service.inference!.plain],
 		["factory-training-key", service.training!.plain],
+		['training-ingest-key',service.libraryIngest!.plain],
+		['lab-library-action-key',service.libraryAction!.plain],
 	] as const)
 		atomic(`${secrets}/${name}`, `${value}\n`);
 	if (existsSync(`${factory}/training-local-source.json`)) copyFileSync(`${factory}/training-local-source.json`, `${root}/training-source.json`);
@@ -300,13 +302,13 @@ function ensureLabConfiguration() {
 		rmSync(passwordPath);
 		event("lab.hermes.plaintext-password-removed", {});
 	}
-	for (const name of ["factory-control-key", "factory-inference-key", "factory-training-key", "hermes-password-hash", "hermes-session-secret", "hermes-api-key"])
+	for (const name of ["factory-control-key", "factory-inference-key", "factory-training-key",'training-ingest-key','lab-library-action-key', "hermes-password-hash", "hermes-session-secret", "hermes-api-key"])
 		secureLabSecret(`${secrets}/${name}`);
 	if (existsSync(`${root}/training-source.json`)) secureLabSecret(`${root}/training-source.json`);
 	environment(
 		`${root}/environment`,
 		{
-			AI_LAB_API_KEYS: `'${JSON.stringify([operator])}'`,
+			AI_LAB_API_KEYS: `'${JSON.stringify([operator,service.libraryAction!.record])}'`,
 			FACTORY_URL: "https://host.docker.internal:4790",
 			TRAINING_URL: "http://training-api:4780",
 			INFERENCE_CONTROL_URL: "http://inference-api:4770",
@@ -316,6 +318,7 @@ function ensureLabConfiguration() {
 			HERMES_MODEL_CONTEXT_LENGTH: "16384",
 			LAB_CONTROLLER_IMAGE: image("lab-controller"),
 			LAB_PROXY_IMAGE: image("lab-experience-proxy"),
+			LAB_LIBRARY_BRIDGE_IMAGE:image('lab-library-bridge'),
 			LAB_WEB_TOOL_IMAGE: image("lab-web-tool-proxy"),
 			HERMES_IMAGE: image("hermes-agent"),
 			OPEN_WEBUI_IMAGE: runtimeImage("open-webui"),
@@ -358,9 +361,7 @@ function active(path: string) {
 			activeGpuJobs?: number;
 		};
 		return Number(value.active ?? value.activeGpuJobs ?? 0);
-	} catch {
-		return 0;
-	}
+		} catch { return 0; }
 }
 async function waitIdle(path: string, seconds: number) {
 	for (let elapsed = 0; elapsed < seconds; elapsed++) {
