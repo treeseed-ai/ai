@@ -7,7 +7,6 @@ import {
 	rmSync,
 	writeFileSync,
 } from "node:fs";
-import { createServer } from "node:net";
 import { dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 import {
@@ -26,6 +25,7 @@ import { event, setSetting, setting } from "../core/store.js";
 import { paths } from "../core/paths.js";
 import { securePlatformConfiguration } from "../core/configuration-file.js";
 import { supervisorOperations, type SupervisorRequest } from "./socket.js";
+import { createSupervisorTransport } from "./supervisor-transport.js";
 import { rotateOperatorCredential } from "./credentials.js";
 import {
 	reconcilePlatform,
@@ -183,39 +183,25 @@ export function startSupervisor() {
 	rootOnly();
 	mkdirSync(dirname(paths.socket), { recursive: true, mode: 0o750 });
 	rmSync(paths.socket, { force: true });
-	const server = createServer((socket) => {
-		let input = "";
-		socket.setEncoding("utf8");
-		socket.on("data", (chunk) => {
-			input += chunk;
-			if (input.length > 65536) socket.destroy(new Error("Request too large."));
-		});
-		socket.on("end", async () => {
+	const server = createSupervisorTransport(
+		execute,
+		(error) =>
+			event("supervisor.socket-error", {
+				code: error.name,
+				message: error.message,
+			}),
+		(request) => {
+			if (request.operation !== "update.channel.set") return;
 			try {
-				const request = JSON.parse(input.trim()) as SupervisorRequest;
-				if (!request.idempotencyKey)
-					throw new Error("idempotencyKey is required.");
-				const result = await execute(request);
-				socket.end(`${JSON.stringify({ ok: true, result })}\n`, () => {
-					if (request.operation === "update.channel.set") {
-						try {
-							activateChannelTimer(request.parameters?.channel);
-						} catch (error) {
-							event("update.timer-activation-failed", {
-								channel: request.parameters?.channel,
-								error:
-									error instanceof Error ? error.message : String(error),
-							});
-						}
-					}
-				});
+				activateChannelTimer(request.parameters?.channel);
 			} catch (error) {
-				socket.end(
-					`${JSON.stringify({ ok: false, error: { code: "operation_failed", message: error instanceof Error ? error.message : String(error) } })}\n`,
-				);
+				event("update.timer-activation-failed", {
+					channel: request.parameters?.channel,
+					error: error instanceof Error ? error.message : String(error),
+				});
 			}
-		});
-	});
+		},
+	);
 	server.listen(paths.socket, () => chmodSync(paths.socket, 0o660));
 	return server;
 }

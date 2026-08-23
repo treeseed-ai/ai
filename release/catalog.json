@@ -1,8 +1,8 @@
 {
   "schemaVersion": "treeai.release-catalog/v1",
-  "release": "0.7.0",
+  "release": "0.7.1",
   "channel": "stable",
-  "generation": 7000000,
+  "generation": 7001000,
   "compatibilityId": "linux-amd64-nvidia-v1",
   "classification": "breaking",
   "automatic": false,
@@ -13,7 +13,7 @@
   "images": [],
   "imagePolicy": {
     "mode": "package-only",
-    "productionManifestVersion": "0.7.0",
+    "productionManifestVersion": "0.7.1",
     "sourceRevision": "release-source",
     "sourceBundle": null,
     "requiredLocalImages": []
@@ -33,7 +33,7 @@
   "evidence": {
     "cosignIssuer": "https://token.actions.githubusercontent.com",
     "cosignIdentity": "https://github.com/treeseed-ai/ai/.github/workflows/release.yml@refs/heads/main",
-    "githubRelease": "https://github.com/treeseed-ai/ai/releases/tag/0.7.0",
+    "githubRelease": "https://github.com/treeseed-ai/ai/releases/tag/0.7.1",
     "sbomAssetPattern": "<role>.spdx.json",
     "vulnerabilityAssetPattern": "<role>.json"
   }

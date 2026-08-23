@@ -22,10 +22,15 @@ describe("manager scheduling and privilege split", () => {
 			"packages/manager/src/lifecycle/update.ts",
 			"utf8",
 		);
-		expect(supervisor).toContain(
-			'request.operation === "update.channel.set"',
+		expect(supervisor).toMatch(
+			/request\.operation\s+!={1,2}\s+"update\.channel\.set"/u,
 		);
-		expect(supervisor).toMatch(/socket\.end\([\s\S]+activateChannelTimer/u);
+		const transport = readFileSync(
+			"packages/manager/src/lifecycle/supervisor-transport.ts",
+			"utf8",
+		);
+		expect(transport).toMatch(/socket\.end\([\s\S]+afterReply/u);
+		expect(supervisor).toMatch(/createSupervisorTransport\([\s\S]+activateChannelTimer/u);
 		expect(update).toContain('"enable",');
 		expect(update).not.toMatch(
 			/name === channel \? "enable" : "disable", "--now"/u,
