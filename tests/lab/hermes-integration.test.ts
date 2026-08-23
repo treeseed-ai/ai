@@ -43,7 +43,8 @@ describe("tight Hermes integration", () => {
 	});
 
 	it("normalizes Hermes timestamps and workspace paths for durable evidence", () => {
-		const events = normalizeEvents([{ id: 7, role: "tool", timestamp: 1_787_491_030.5, content: { resolved_path: "/workspace/result.md" }, tool_calls: [{ function: { arguments: '{"path":"/workspace/result.md"}' } }] }]);
+		const events = normalizeEvents([{ role: "user", content: "[CONTEXT COMPACTION — REFERENCE ONLY] internal" }, { id: 7, role: "tool", timestamp: 1_787_491_030.5, content: { resolved_path: "/workspace/result.md" }, tool_calls: [{ function: { arguments: '{"path":"/workspace/result.md"}' } }] }]);
+		expect(events).toHaveLength(1);
 		expect(events[0]).toMatchObject({ id: "7", timestamp: "2026-08-23T13:17:10.500Z", content: { resolved_path: "result.md" } });
 		expect(JSON.stringify(events)).not.toContain("/workspace/");
 		expect(sanitizeEvidence("opened /etc/shadow")).toBe("opened [REDACTED_PATH]");

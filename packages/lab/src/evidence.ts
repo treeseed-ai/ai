@@ -28,6 +28,7 @@ export function normalizeEvents(messages: HermesMessage[]): AgentTrajectoryEvent
 	return messages.flatMap((message, index) => {
 		const role = message.role;
 		if (!role || !["system", "user", "assistant", "tool"].includes(role)) return [];
+		if (role === "user" && typeof message.content === "string" && message.content.startsWith("[CONTEXT COMPACTION — REFERENCE ONLY]")) return [];
 		const value: AgentTrajectoryEvent = { id: String(message.id ?? `event-${index}`), role: role as AgentTrajectoryEvent["role"], content: sanitizeEvidence(message.content) };
 		if (message.tool_name) value.toolName = message.tool_name;
 		if (message.tool_call_id) value.toolCallId = message.tool_call_id;

@@ -22,6 +22,8 @@ print('ready')
 
 	it("attaches bounded retrieval provenance to discovered results", () => {
 		const source = readFileSync("workers/lab_web_tool/worker.py", "utf8");
+		expect(source).toContain('connection.request("POST" if body is not None else "GET"');
+		expect(source).toContain('urlencode({"q": query}).encode()');
 		for (const field of ["requestedUrl", "finalUrl", "retrievedAt", "mimeType", "status", "sha256"])
 			expect(source).toContain(`\"${field}\"`);
 	});
