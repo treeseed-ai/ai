@@ -46,6 +46,7 @@ function openapi() {
 			"/v1/version": { get: secured },
 			"/v1/status": { get: secured },
 			"/v1/components": { get: secured },
+			"/v1/diagnostics/hermes": { get: secured },
 			"/v1/mode": { get: secured, post: secured },
 			"/v1/transitions/{id}": { get: secured },
 			"/v1/updates": { get: secured },
@@ -132,6 +133,14 @@ export function createManagerApp() {
 	);
 	app.get("/v1/components", requireScope("platform:read"), (c) =>
 		c.json({ components: components() }),
+	);
+	app.get("/v1/diagnostics/hermes", requireScope("platform:read"), async (c) =>
+		c.json(
+			await callSupervisor({
+				operation: "lab.hermes.diagnostics",
+				idempotencyKey: crypto.randomUUID(),
+			}),
+		),
 	);
 	app.get("/v1/mode", requireScope("platform:read"), (c) =>
 		c.json({ mode: setting("mode", "awake") }),
