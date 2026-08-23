@@ -106,7 +106,7 @@ describe("manager scheduling and privilege split", () => {
 			"systemctl is-active --quiet treeseed-ai-manager-api.service",
 		);
 		expect(postinst).toContain(
-			"systemctl start --no-block treeseed-ai-manager-update-helper.timer",
+			"systemctl restart --no-block treeseed-ai-manager-update-helper.timer",
 		);
 		expect(timer).toContain("OnActiveSec=30s");
 		expect(timer).toContain("treeseed-ai-manager-update-helper.service");
