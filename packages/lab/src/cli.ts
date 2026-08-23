@@ -100,7 +100,7 @@ function verify(deep = false) {
 	const controller = call("/v1/status"), settings = client(), webui = settings.interfaces?.openWebUi;
 	if (!webui) return { status: "warning", controller, openWebUi: "not-configured" };
 	const health = run("curl", ["--silent", "--show-error", "--fail", "--cacert", settings.ca, `${webui.browserUrl}/health`]);
-	const providerModels = JSON.parse(run("curl", ["--silent", "--show-error", "--fail", "--cacert", settings.ca, `${webui.browserUrl}/api/models`])) as unknown;
+	const providerModels = call("/v1/provider/models");
 	const serialized = JSON.stringify(providerModels);
 	if (!serialized.includes("hermes-agent")) throw new Error("Open WebUI model discovery does not include hermes-agent.");
 	for (const port of [4792, 8642]) {

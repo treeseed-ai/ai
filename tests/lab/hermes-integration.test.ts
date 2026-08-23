@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { actionSequences, ktoLabel, normalizeEvents } from "../../packages/lab/src/evidence.js";
 import { createExperienceProxy } from "../../packages/lab/src/proxy.js";
+import { discoverProviderModels } from "../../packages/lab/src/controller.js";
+import { readFileSync } from "node:fs";
 
 describe("tight Hermes integration", () => {
 	it("merges discovery and routes only the fixed Hermes model", async () => {
@@ -57,5 +59,15 @@ describe("tight Hermes integration", () => {
 		const response = await app.request("/v1/chat/completions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: "hermes-agent", messages: [] }) });
 		expect(response.status).toBe(503);
 		expect(await response.json()).toEqual({ error: { code: "agent_unavailable", message: "Hermes Agent is unavailable." } });
+	});
+
+	it("verifies merged provider models through the authenticated controller", async () => {
+		const request = (async (input: string | URL | Request) => String(input).endsWith("/v1/models")
+			? Response.json({ object: "list", data: [{ id: "local-model" }, { id: "hermes-agent" }] })
+			: Response.json({ status: "ok" })) as typeof fetch;
+		expect(await discoverProviderModels(request, "http://experience-proxy:8080")).toMatchObject({ data: [{ id: "local-model" }, { id: "hermes-agent" }] });
+		const controller = readFileSync("packages/lab/src/controller.ts", "utf8");
+		expect(controller).toContain('{ method: "GET", path: "/v1/provider/models"');
+		expect(controller).toContain('app.get("/v1/provider/models", requireScope("lab:read")');
 	});
 });
