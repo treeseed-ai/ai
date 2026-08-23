@@ -34,6 +34,12 @@ printf '%s\n' \
   '    - clarify' \
   '    - memory' \
   '    - session_search' \
+  'platforms:' \
+  '  api_server:' \
+  '    enabled: true' \
+  '    extra:' \
+  '      host: 0.0.0.0' \
+  '      port: 8642' \
   'gateway:' \
   '  api_server:' \
   '    max_concurrent_runs: 2' > "$config"

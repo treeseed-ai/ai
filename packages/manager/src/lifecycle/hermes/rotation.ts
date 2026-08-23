@@ -13,6 +13,8 @@ const compose = [
 	"/etc/treeseed-ai/lab/environment",
 	"-f",
 	"/usr/lib/treeseed-ai/lab/compose.yml",
+	"-f",
+	"/etc/treeseed-ai/lab/ports.override.yml",
 ];
 
 function replaceHash(value: string) {

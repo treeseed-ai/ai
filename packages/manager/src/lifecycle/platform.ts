@@ -8,12 +8,9 @@ import { localImageReadiness } from "./local-build.js";
 import { event, setSetting, setting } from "../core/store.js";
 import { paths } from "../core/paths.js";
 import { hashHermesPassword } from "./hermes/password.js";
+import { ensurePlatformTls } from "./certificates/tls.js";
 import { imageVariables } from "../core/image-variables.js";
-import {
-	summarizeComposeStatus,
-	type ProductStatus,
-} from "./status.js";
-
+import { summarizeComposeStatus, type ProductStatus } from "./status.js";
 const products = {
 	inference: {
 		compose: "/usr/lib/treeseed-ai/inference/compose.yml",
@@ -25,8 +22,8 @@ const products = {
 		overlay: "/usr/lib/treeseed-ai/training/factory.override.yml",
 		environment: "/etc/treeseed-ai/training/environment",
 	},
-} as const;
-const bases = {
+} as const,
+	bases = {
 	inference: ["postgres", "minio", "minio-init", "migrations", "evaluator", "manager", "api"],
 	training: ["postgres", "minio", "minio-init", "migrations", "artifact", "manager", "api"],
 } as const;
@@ -42,9 +39,7 @@ function atomic(path: string, value: string, mode = 0o600) {
 	renameSync(next, path);
 	chmodSync(path, mode);
 }
-function secret(bytes = 32) {
-	return randomBytes(bytes).toString("hex");
-}
+function secret(bytes = 32) { return randomBytes(bytes).toString("hex"); }
 function credential(id: string, scopes: string[]) {
 	const value = randomBytes(32).toString("base64url");
 	return {
@@ -332,18 +327,23 @@ function ensureLabConfiguration() {
 			OPEN_WEBUI_BYPASS_MODEL_ACCESS_CONTROL: localSingleUser ? "true" : "false",
 			OPEN_WEBUI_URL: webui.browserUrl,
 			OPEN_WEBUI_CORS_ALLOW_ORIGIN: webui.browserUrl,
-			OPEN_WEBUI_PUBLISH: localSingleUser
-				? "127.0.0.1:443:443"
-				: `${webui.binding}:4791`,
 			LAB_MIN_TRAJECTORIES: "100",
 			LAB_IDLE_MINUTES: "15",
 			LAB_COOLDOWN_HOURS: "6",
 		},
 		"treeseed-ai-lab",
 	);
+	const webuiPort = localSingleUser ? "127.0.0.1:443:443" : `${webui.binding}:4791`,
+		controlHost = localSingleUser ? "127.0.0.1" : "0.0.0.0";
+	atomic(
+		`${root}/ports.override.yml`,
+		`services:\n  gateway:\n    ports:\n      - "${webuiPort}"\n      - "${controlHost}:4793:4793"\n`,
+		0o640,
+	);
+	command("chown", ["root:treeseed-ai-lab", `${root}/ports.override.yml`]);
 }
 function lab(args: string[]) {
-	return command("docker", ["compose", "-p", "treeseed-ai-lab", "--env-file", "/etc/treeseed-ai/lab/environment", "-f", "/usr/lib/treeseed-ai/lab/compose.yml", ...args]);
+	return command("docker", ["compose", "-p", "treeseed-ai-lab", "--env-file", "/etc/treeseed-ai/lab/environment", "-f", "/usr/lib/treeseed-ai/lab/compose.yml", "-f", "/etc/treeseed-ai/lab/ports.override.yml", ...args]);
 }
 export function stopManagedProduct(product: unknown) {
 	if (product === "lab") lab(["down"]);
@@ -417,12 +417,13 @@ export function serviceStatus() {
 		}
 	return result;
 }
-
 export async function reconcilePlatform() {
 	ensureRuntime();
 	ensureNetwork();
 	ensureProductConfiguration();
 	ensureLabConfiguration();
+	const configuration = validatePlatformConfiguration(JSON.parse(readFileSync(paths.configuration, "utf8"))),
+		certificate = ensurePlatformTls(configuration);
 	const mode = setting<string>("mode", "awake"),
 		enabled = enabledProducts();
 	if (!existsSync(paths.mode)) writeMode(mode);
@@ -443,7 +444,13 @@ export async function reconcilePlatform() {
 		if (enabled.has("training")) compose("training", ["up", "-d", "--wait", "--wait-timeout", "900", ...bases.training, "marker", "axolotl"]);
 	} else throw new Error(`Unsafe persisted mode ${mode}; manual recovery is required.`);
 	if (enabled.has("inference") || enabled.has("training")) gateway(["up", "-d", "--wait"]);
-	if (enabled.has("lab")) lab(["up", "-d", "--wait", "--wait-timeout", "900"]);
+	try {
+		if (enabled.has("lab")) lab(["up", "-d", "--wait", "--wait-timeout", "900"]);
+		certificate.commit();
+	} catch (error) {
+		certificate.rollback();
+		throw error;
+	}
 	const services = serviceStatus();
 	setSetting("components", services);
 	event("components.reconciled", { mode });
