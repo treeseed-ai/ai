@@ -16,6 +16,8 @@ describe('selective image build identities',()=>{
     expect(workflow).toContain('publishedDevelopmentImages:0');
     expect(workflow).toContain('TREEAI_IMAGE_PLAN');
     expect(workflow).toContain('TREEAI_DEVELOPMENT_BASE');
+    expect(workflow).not.toContain('validate-image-metadata.ts prior');
+    expect(workflow).toContain('(cd prior && sha256sum -c SHA256SUMS)');
   });
 
   it('covers every coordinated role with explicit inputs',()=>{
