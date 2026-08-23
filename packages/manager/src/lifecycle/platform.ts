@@ -8,7 +8,7 @@ import { localImageReadiness } from "./local-build.js";
 import { event, setSetting, setting } from "../core/store.js";
 import { paths } from "../core/paths.js";
 import { hashHermesPassword } from "./hermes/password.js";
-import { ensurePlatformTls } from "./certificates/tls.js";
+import { ensurePlatformTls } from "./certificates/tls.js";import { activateManagerCertificate } from "./certificates/activation.js";
 import { imageVariables } from "../core/image-variables.js";
 import { summarizeComposeStatus, type ProductStatus } from "./status.js";
 import { reconcileLabEdge } from "./lab/edge.js";
@@ -446,11 +446,11 @@ export async function reconcilePlatform() {
 	if (enabled.has("inference") || enabled.has("training")) gateway(["up", "-d", "--wait"]);
 	try {
 		if (enabled.has("lab")) reconcileLabEdge(lab, command, event);
-		certificate.commit();
 	} catch (error) {
 		certificate.rollback();
 		throw error;
 	}
+	activateManagerCertificate(certificate, command);
 	const services = serviceStatus();
 	setSetting("components", services);
 	event("components.reconciled", { mode });
