@@ -5,6 +5,7 @@ import {
 	finalizeConfiguration,
 	validatePlatformConfiguration,
 } from "../../packages/common/src/platform/index.js";
+import { assertWebUiAuthenticationDisabled } from "../../packages/manager/src/lifecycle/lab-webui.js";
 
 function defaultConfiguration() {
 	return JSON.parse(
@@ -55,6 +56,21 @@ describe("Open WebUI local single-user integration", () => {
 		expect(environment.ENABLE_OLLAMA_API).toBe("false");
 		expect(environment.WEBUI_SESSION_COOKIE_SECURE).toBe("true");
 		expect(environment.WEBUI_AUTH).toBe("${OPEN_WEBUI_AUTH:-true}");
+	});
+
+	it("reads authentication state from the Open WebUI API response shape", () => {
+		expect(() =>
+			assertWebUiAuthenticationDisabled({ features: { auth: false } }),
+		).not.toThrow();
+		for (const response of [
+			{ features: { auth: true } },
+			{ auth: false },
+			{},
+			null,
+		])
+			expect(() => assertWebUiAuthenticationDisabled(response)).toThrow(
+				/authentication enabled/u,
+			);
 	});
 
 	it("stages configuration and backs up only the Open WebUI volume", () => {
