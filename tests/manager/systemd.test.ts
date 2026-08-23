@@ -109,6 +109,8 @@ describe("manager scheduling and privilege split", () => {
 		const postinst = readFileSync("debian/bootstrap/postinst", "utf8");
 		expect(postinst).not.toContain("apt-get");
 		expect(postinst).toContain("start --no-block");
+		expect(postinst).toContain("treeseed-ai-manager-update.service");
+		expect(postinst).toContain("active|activating|reloading");
 		expect(postinst).toContain("migrate-0.4.sh apply --confirm");
 		expect(readFileSync("scripts/bootstrap/bootstrap.sh", "utf8")).toContain(
 			"DPkg::Lock::Timeout=600",

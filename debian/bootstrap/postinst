@@ -17,7 +17,11 @@ if [ "$legacy_04" = true ]; then
   printf '%s\n' '  sudo /usr/lib/treeseed-ai/bootstrap/migrate-0.4.sh plan'
   printf '%s\n' '  sudo /usr/lib/treeseed-ai/bootstrap/migrate-0.4.sh apply --confirm'
 elif systemctl cat treeseed-ai-manager-reconcile.service >/dev/null 2>&1; then
-  systemctl start --no-block treeseed-ai-manager-reconcile.service || true
+  update_state=$(systemctl show treeseed-ai-manager-update.service --property=ActiveState --value 2>/dev/null || true)
+  case "$update_state" in
+    active|activating|reloading) : ;;
+    *) systemctl start --no-block treeseed-ai-manager-reconcile.service || true ;;
+  esac
 else
   systemctl start --no-block treeseed-ai-bootstrap.service || true
 fi
