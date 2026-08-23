@@ -1,5 +1,5 @@
 Package: treeseed-ai-cli
-Version: 0.6.1-1
+Version: 0.6.2-1
 Section: utils
 Priority: optional
 Architecture: amd64

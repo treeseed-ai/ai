@@ -23,6 +23,9 @@ restore_legacy(){
     systemctl daemon-reload
     if [ -f "$legacy/was-enabled" ]; then systemctl enable treeseed-ai-factory.service || true; fi
     if [ -f "$legacy/was-active" ]; then systemctl start treeseed-ai-factory.service || true; fi
+	if [ -f "$legacy/gateway-was-running" ] && [ -f "$legacy/factory-compose/compose.yml" ]; then
+		docker compose -p treeseed-ai-factory-gateway -f "$legacy/factory-compose/compose.yml" up -d || true
+	fi
   fi
 }
 trap 'code=$?; if [ "$code" -ne 0 ]; then restore_legacy; fi' EXIT
@@ -73,6 +76,11 @@ if ! installed treeseed-ai-host-runtime && [ -f "$seed" ] && grep -Eq '"manageme
 if [ "$legacy_04" = true ]; then
   log 'stopping legacy coordinator at package handoff boundary'
   systemctl disable --now treeseed-ai-factory.service
+	if docker inspect treeseed-ai-factory-gateway-gateway-1 >/dev/null 2>&1; then
+		: >"$legacy/gateway-was-running"
+		log 'stopping legacy TLS gateway at package handoff boundary'
+		docker compose -p treeseed-ai-factory-gateway -f "$legacy/factory-compose/compose.yml" down --remove-orphans
+	fi
 fi
 phase=installing
 apt-get -o DPkg::Lock::Timeout=600 --no-remove --no-install-recommends install -y $packages

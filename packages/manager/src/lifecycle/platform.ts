@@ -6,6 +6,10 @@ import { hashApiKey } from "@ai-platform/common";
 import { readCatalog } from "../core/catalog.js";
 import { event, setSetting, setting } from "../core/store.js";
 import { paths } from "../core/paths.js";
+import {
+	summarizeComposeStatus,
+	type ProductStatus,
+} from "./status.js";
 
 const products = {
 	inference: {
@@ -349,19 +353,40 @@ function warmInference() {
 	command("docker", ["compose", "-p", "treeseed-ai-inference", "--env-file", products.inference.environment, "-f", products.inference.compose, "-f", products.inference.overlay, "exec", "-T", "vllm", "python3", "-c", "import json,urllib.request; b=json.dumps({'model':'Qwen/Qwen3.5-4B','messages':[{'role':'user','content':'Reply ready.'}],'max_tokens':8}).encode(); r=urllib.request.Request('http://127.0.0.1:8000/v1/chat/completions',data=b,headers={'content-type':'application/json'}); urllib.request.urlopen(r,timeout=120).read()"]);
 }
 export function serviceStatus() {
-	const result: Record<string, unknown> = {},
+	const result: Record<string, ProductStatus> = {},
 		enabled = enabledProducts();
 	for (const product of ["inference", "training"] as const)
 		if (enabled.has(product))
 			try {
-				result[product] = JSON.parse(`[${compose(product, ["ps", "--format", "json"]).split("\n").filter(Boolean).join(",")}]`);
-			} catch (error) {
+				result[product] = summarizeComposeStatus(
+					product,
+					compose(product, ["ps", "--format", "json"]),
+				);
+			} catch {
 				result[product] = {
-					error: error instanceof Error ? error.message : String(error),
+					product,
+					state: "degraded",
+					services: [],
+					error: "status_unavailable",
 				};
 			}
+	if (enabled.has("lab"))
+		try {
+			result.lab = summarizeComposeStatus(
+				"lab",
+				lab(["ps", "--format", "json"]),
+			);
+		} catch {
+			result.lab = {
+				product: "lab",
+				state: "degraded",
+				services: [],
+				error: "status_unavailable",
+			};
+		}
 	return result;
 }
+
 export async function reconcilePlatform() {
 	ensureRuntime();
 	ensureNetwork();
@@ -389,7 +414,6 @@ export async function reconcilePlatform() {
 	if (enabled.has("inference") || enabled.has("training")) gateway(["up", "-d", "--wait"]);
 	if (enabled.has("lab")) lab(["up", "-d", "--wait", "--wait-timeout", "900"]);
 	const services = serviceStatus();
-	if (enabled.has("lab")) services.lab = { state: "managed", composeProject: "treeseed-ai-lab" };
 	setSetting("components", services);
 	event("components.reconciled", { mode });
 	return { mode, services };

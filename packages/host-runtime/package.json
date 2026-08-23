@@ -1,6 +1,6 @@
 {
   "name": "@ai-platform/host-runtime",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "private": true,
   "type": "module",
   "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },

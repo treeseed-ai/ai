@@ -1,7 +1,7 @@
 variable "AI_SOURCE_REVISION" { default = "unknown" }
 variable "AI_SOURCE_DIGEST" { default = "unknown" }
 variable "AI_BUILD_DATE" { default = "unknown" }
-variable "AI_VERSION" { default = "0.6.1" }
+variable "AI_VERSION" { default = "0.6.2" }
 
 group "default" {
   targets = ["lab-controller", "lab-experience-proxy", "hermes-agent"]

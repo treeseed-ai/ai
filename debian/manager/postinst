@@ -3,8 +3,17 @@ set -eu
 getent group treeseed-ai-manager >/dev/null || addgroup --system treeseed-ai-manager
 getent passwd treeseed-ai-manager >/dev/null || adduser --system --ingroup treeseed-ai-manager --home /var/lib/treeseed-ai/manager --no-create-home treeseed-ai-manager
 getent group treeseed-ai-operators >/dev/null || addgroup --system treeseed-ai-operators
+install -d -o root -g root -m 0711 /etc/treeseed-ai
 install -d -o root -g treeseed-ai-manager -m 0750 /etc/treeseed-ai/manager /etc/treeseed-ai/manager/tls
 install -d -o treeseed-ai-manager -g treeseed-ai-manager -m 2770 /var/lib/treeseed-ai/manager
 install -d -o root -g root -m 0755 /var/lib/treeseed-ai/platform
+if [ -f /etc/treeseed-ai/platform.json ]; then
+  chown root:treeseed-ai-manager /etc/treeseed-ai/platform.json
+  chmod 0640 /etc/treeseed-ai/platform.json
+fi
+find /var/lib/treeseed-ai/manager -maxdepth 1 -type f -name 'lifecycle.db*' -exec chown root:treeseed-ai-manager {} + -exec chmod 0660 {} +
 systemctl daemon-reload
+if systemctl is-active --quiet treeseed-ai-manager-api.service || systemctl is-active --quiet treeseed-ai-manager-supervisor.service; then
+  systemctl start --no-block treeseed-ai-manager-update-helper.timer
+fi
 exit 0

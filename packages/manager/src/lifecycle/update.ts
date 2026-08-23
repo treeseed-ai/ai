@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -6,6 +6,7 @@ import { finalizeConfiguration, validatePlatformConfiguration } from "@ai-platfo
 import { validateCatalog, type ReleaseCatalog } from "../core/catalog.js";
 import { event, setSetting, setting } from "../core/store.js";
 import { paths } from "../core/paths.js";
+import { securePlatformConfiguration } from "../core/configuration-file.js";
 import { ensureManagedRuntime, persistMode, reconcilePlatform } from "./platform.js";
 const allowedPackages = new Set(["treeseed-ai", "treeseed-ai-archive-keyring", "treeseed-ai-development-archive-keyring", "treeseed-ai-host-js-runtime", "treeseed-ai-manager", "treeseed-ai-cli", "treeseed-ai-release-catalog", "treeseed-ai-host-runtime", "treeseed-ai-inference", "treeseed-ai-training", "treeseed-ai-lab", "treeseed-ai-factory"]);
 function configuration() {
@@ -199,10 +200,39 @@ function receipt(catalog: ReleaseCatalog, packages: string[], state: string) {
 	setSetting("catalogGeneration", catalog.generation);
 	return target;
 }
-function acquireImages(catalog: ReleaseCatalog) {
+async function pullImage(role: string, reference: string) {
+	process.stdout.write(`[image:${role}] pull started\n`);
+	const child = spawn("docker", ["pull", "--quiet", reference], {
+		stdio: ["ignore", "ignore", "pipe"],
+	});
+	let error = "";
+	child.stderr.setEncoding("utf8");
+	child.stderr.on("data", (chunk: string) => {
+		error = `${error}${chunk}`.slice(-65_536);
+	});
+	const started = Date.now(),
+		progress = setInterval(() => {
+			const seconds = Math.floor((Date.now() - started) / 1000);
+			process.stdout.write(`[image:${role}] pull waiting ${seconds}s\n`);
+		}, 15_000);
+	try {
+		const code = await new Promise<number | null>((resolve, reject) => {
+			child.once("error", reject);
+			child.once("close", resolve);
+		});
+		if (code !== 0)
+			throw new Error(
+				`docker pull failed for ${role}: ${error.trim() || `exit ${code}`}`,
+			);
+	} finally {
+		clearInterval(progress);
+	}
+	process.stdout.write(`[image:${role}] pull completed\n`);
+}
+async function acquireImages(catalog: ReleaseCatalog) {
 	for (const image of changedImages(catalog)) {
 		const reference = `treeseed/${image.role}@${image.digest}`;
-		command("docker", ["pull", reference]);
+		await pullImage(image.role, reference);
 		const actual = command("docker", ["image", "inspect", "--format", "{{index .RepoDigests 0}}", reference]).trim();
 		if (!actual.endsWith(`@${image.digest}`)) throw new Error(`Pulled digest differs for ${image.role}.`);
 		event("image.verified", {
@@ -212,7 +242,7 @@ function acquireImages(catalog: ReleaseCatalog) {
 		});
 	}
 	for (const image of changedRuntimeImages(catalog)) {
-		command("docker", ["pull", image.reference]);
+		await pullImage(image.id, image.reference);
 		const actual = command("docker", ["image", "inspect", "--format", "{{index .RepoDigests 0}}", image.reference]).trim();
 		if (!actual.endsWith(`@${image.digest}`)) throw new Error(`Pulled digest differs for runtime image ${image.id}.`);
 		event("image.verified", {
@@ -237,7 +267,7 @@ export async function applyUpdate() {
 	event("update.acquiring", { generation: catalog.generation });
 	command("apt-get", [...aptOptions(config.updates.channel), "--download-only", "--no-remove", "--no-install-recommends", "install", ...packages]);
 	ensureManagedRuntime();
-	acquireImages(catalog);
+	await acquireImages(catalog);
 	if (activeWork()) {
 		setSetting("stagedGeneration", catalog.generation);
 		event("update.postponed", {
@@ -312,6 +342,7 @@ export function setChannel(channel: unknown, approveDowngrade = false) {
 		current.generation += 1;
 		current.provenance.generator = "treeai-manager-channel";
 		writeFileSync(paths.configuration, JSON.stringify(finalizeConfiguration(current), null, 2), { mode: 0o600 });
+		securePlatformConfiguration();
 		for (const name of ["stable", "development"])
 			try {
 				execFileSync("systemctl", [name === channel ? "enable" : "disable", "--now", `treeseed-ai-manager-${name}.timer`]);
@@ -358,6 +389,7 @@ export async function restoreGeneration(value: unknown) {
 	};
 	if (!receipt.rollback?.compatible || !receipt.knownGood || !existsSync(receipt.knownGood)) throw new Error("Generation does not have a compatible recovery snapshot.");
 	copyFileSync(join(receipt.knownGood, "platform.json"), paths.configuration);
+	securePlatformConfiguration();
 	for (const product of ["inference", "training", "lab"]) {
 		const source = join(receipt.knownGood, `${product}.environment`),
 			target = `/etc/treeseed-ai/${product}/environment`;

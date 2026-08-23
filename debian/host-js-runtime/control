@@ -1,5 +1,5 @@
 Package: treeseed-ai-host-js-runtime
-Version: 0.6.1-1
+Version: 0.6.2-1
 Section: interpreters
 Priority: optional
 Architecture: amd64

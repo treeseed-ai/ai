@@ -1,3 +1,13 @@
+treeseed-ai (0.6.2-1) stable; urgency=medium
+
+  * Compact platform status into stable per-product service summaries.
+  * Repair manager configuration and lifecycle database permissions on upgrade.
+  * Stop and restore the legacy TLS gateway transactionally during 0.4 takeover.
+  * Report progress while acquiring large container images.
+  * Correct the bootstrap systemd start-limit directive placement.
+
+ -- TreeSeed AI Releases <releases@treeseed.ai>  Sat, 22 Aug 2026 19:50:36 -0400
+
 treeseed-ai (0.6.1-1) stable; urgency=medium
 
   * Add an explicit, guarded takeover migration for TreeAI 0.4 factories.

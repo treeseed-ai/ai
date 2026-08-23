@@ -20,7 +20,7 @@ import {
 	setting,
 } from "../core/store.js";
 import { updateStatus } from "../lifecycle/update.js";
-const VERSION = "0.6.1";
+const VERSION = "0.6.2";
 function keys(): ApiKeyRecord[] {
 	try {
 		return JSON.parse(readFileSync(paths.apiKeys, "utf8")) as ApiKeyRecord[];
@@ -72,10 +72,11 @@ function components() {
 			return { name, state: "inactive" };
 		}
 	});
-	return [
-		...manager,
-		{ name: "managed-products", state: setting("components", {}) },
-	];
+	const products = setting<Record<string, { product: string }>>(
+		"components",
+		{},
+	);
+	return [...manager, ...Object.values(products)];
 }
 function queue(
 	kind: "transition" | "update-check" | "update-plan" | "reconcile",

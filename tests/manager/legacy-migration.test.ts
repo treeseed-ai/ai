@@ -85,7 +85,7 @@ describe("explicit TreeAI 0.4 migration", () => {
 			updates: { channel: "stable", policy: "manual" },
 			network: { bindings: { manager: "0.0.0.0:4790", lab: "0.0.0.0:4793" } },
 		});
-		expect(config.provenance.generator).toBe("treeai-migrate-0.4/0.6.1");
+		expect(config.provenance.generator).toBe("treeai-migrate-0.4/0.6.2");
 		expect(() =>
 			assertLegacyServiceEnvironment(
 				"inference",
