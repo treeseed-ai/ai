@@ -43,6 +43,12 @@ describe("Open WebUI local single-user integration", () => {
 			"lab-open-webui",
 		);
 		expect(compose.services["open-webui"].secrets).toBeUndefined();
+		expect(compose.services["experience-proxy"].group_add).toEqual([
+			"${RUNTIME_GID:?RUNTIME_GID is required}",
+		]);
+		expect(compose.services.controller.group_add).toEqual([
+			"${RUNTIME_GID:?RUNTIME_GID is required}",
+		]);
 		expect(compose.services.gateway.ports[0]).toBe(
 			"${OPEN_WEBUI_PUBLISH:-0.0.0.0:4791:4791}",
 		);
@@ -83,6 +89,12 @@ describe("Open WebUI local single-user integration", () => {
 		expect(lifecycle).toContain("reset-webui requires --confirm");
 		expect(lifecycle).toContain("reset-rolled-back");
 		expect(lifecycle).not.toContain("hermes-home");
+		const platform = readFileSync(
+			"packages/manager/src/lifecycle/platform.ts",
+			"utf8",
+		);
+		expect(platform).toContain('command("chown", ["root:treeseed-ai-lab"');
+		expect(platform).toContain('RUNTIME_GID: productGroup("lab")');
 	});
 
 	it("attributes proxy traffic by its non-secret provider identity", () => {

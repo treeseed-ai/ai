@@ -150,7 +150,7 @@ function runtimeImage(id: string) {
 	if (!item) throw new Error(`Catalog runtime image ${id} is missing.`);
 	return item.reference;
 }
-function productGroup(product: "inference" | "training") {
+function productGroup(product: "inference" | "training" | "lab") {
 	const group = `treeseed-ai-${product}`,
 		record = command("getent", ["group", group]),
 		gid = record.split(":")[2];
@@ -161,6 +161,7 @@ function productGroup(product: "inference" | "training") {
 	command("chown", [`root:${group}`, runtime]);
 	return gid;
 }
+function secureLabSecret(path: string) { chmodSync(path, 0o640); command("chown", ["root:treeseed-ai-lab", path]); }
 function ensureSigningMaterial() {
 	const root = "/etc/treeseed-ai/manager/factory";
 	mkdirSync(root, { recursive: true, mode: 0o750 });
@@ -312,6 +313,8 @@ function ensureLabConfiguration() {
 		atomic(`${secrets}/hermes-password-hash`, `${hash}\n`);
 		atomic(`${secrets}/hermes-session-secret`, `${randomBytes(32).toString("base64")}\n`);
 	}
+	for (const name of ["factory-control-key", "factory-inference-key", "factory-training-key", "hermes-password-hash", "hermes-session-secret"]) secureLabSecret(`${secrets}/${name}`);
+	if (existsSync(`${root}/training-source.json`)) secureLabSecret(`${root}/training-source.json`);
 	environment(
 		`${root}/environment`,
 		{
@@ -326,6 +329,7 @@ function ensureLabConfiguration() {
 			LAB_PROXY_IMAGE: image("lab-experience-proxy"),
 			HERMES_IMAGE: image("hermes-agent"),
 			OPEN_WEBUI_IMAGE: runtimeImage("open-webui"),
+			RUNTIME_GID: productGroup("lab"),
 			OPEN_WEBUI_AUTH: localSingleUser ? "false" : "true",
 			OPEN_WEBUI_ENABLE_SIGNUP: "false",
 			OPEN_WEBUI_ENABLE_LOGIN_FORM: localSingleUser ? "false" : "true",

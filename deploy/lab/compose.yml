@@ -13,6 +13,7 @@ services:
   experience-proxy:
     image: ${LAB_PROXY_IMAGE:?LAB_PROXY_IMAGE is required}
     restart: unless-stopped
+    group_add: ["${RUNTIME_GID:?RUNTIME_GID is required}"]
     environment: { INFERENCE_URL: "http://inference-api:4771", AI_FACTORY_INFERENCE_KEY_FILE: /run/secrets/factory-inference-key, LAB_STATE_DIR: /state }
     secrets: [factory-inference-key]
     volumes: [lab-state:/state]
@@ -21,6 +22,7 @@ services:
   controller:
     image: ${LAB_CONTROLLER_IMAGE:?LAB_CONTROLLER_IMAGE is required}
     restart: unless-stopped
+    group_add: ["${RUNTIME_GID:?RUNTIME_GID is required}"]
     depends_on: { experience-proxy: { condition: service_healthy } }
     volumes: [lab-state:/state, hermes-workspace:/workspace:ro, "/etc/ssl/certs/treeseed-ai-ca.pem:/factory-ca.pem:ro"]
     secrets: [training-source,factory-control-key,factory-inference-key,factory-training-key]
