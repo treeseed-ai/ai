@@ -24,6 +24,11 @@ export interface PlatformConfiguration {
 			browserUrl: string;
 			binding: string;
 		};
+		hermes?: {
+			dashboardUrl: string;
+			binding: string;
+			authentication: "local-password";
+		};
 	};
 	network: {
 		bindings: Record<string, string>;
@@ -126,6 +131,17 @@ function assertRelationships(value: PlatformConfiguration) {
 		)
 			throw new Error(
 				"Authentication-disabled Open WebUI requires https://chat.treeai.localhost on 127.0.0.1:443.",
+			);
+		const hermes = value.lab.hermes;
+		if (
+			hermes &&
+			(hermes.authentication !== "local-password" ||
+				!/^https:\/\//u.test(hermes.dashboardUrl) ||
+				hermes.binding !== "127.0.0.1:443" ||
+				new URL(hermes.dashboardUrl).hostname !== "hermes.treeai.localhost")
+		)
+			throw new Error(
+				"The Hermes dashboard requires password authentication at https://hermes.treeai.localhost on 127.0.0.1:443.",
 			);
 	}
 }

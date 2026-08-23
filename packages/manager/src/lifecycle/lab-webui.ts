@@ -51,14 +51,15 @@ function desiredConfiguration() {
 		throw new Error("The lab component is not enabled in platform desired state.");
 	const desired = structuredClone(current);
 	desired.lab = {
+		...desired.lab,
 		webui: {
 			authentication: "disabled",
 			browserUrl,
 			binding: "127.0.0.1:443",
 		},
 	};
-	if (!desired.network.sans.includes("chat.treeai.localhost"))
-		desired.network.sans.push("chat.treeai.localhost");
+	for (const hostname of ["chat.treeai.localhost", "hermes.treeai.localhost"])
+		if (!desired.network.sans.includes(hostname)) desired.network.sans.push(hostname);
 	desired.generation += 1;
 	desired.provenance.generator = "treeai-lab-local-single-user";
 	desired.provenance.generatedAt = new Date().toISOString();
@@ -124,6 +125,8 @@ function compose(args: string[], allowFailure = false) {
 			"/etc/treeseed-ai/lab/environment",
 			"-f",
 			"/usr/lib/treeseed-ai/lab/compose.yml",
+			"-f",
+			"/etc/treeseed-ai/lab/ports.override.yml",
 			...args,
 		],
 		{ encoding: "utf8", timeout: 900_000 },
@@ -155,6 +158,19 @@ function createVolume() {
 	]);
 }
 
+export function assertWebUiAuthenticationDisabled(configuration: unknown) {
+	if (
+		typeof configuration !== "object" ||
+		configuration === null ||
+		!("features" in configuration) ||
+		typeof configuration.features !== "object" ||
+		configuration.features === null ||
+		!("auth" in configuration.features) ||
+		configuration.features.auth !== false
+	)
+		throw new Error("Open WebUI still reports authentication enabled.");
+}
+
 function validateLocalWebUi() {
 	command("curl", [
 		"--silent",
@@ -168,7 +184,7 @@ function validateLocalWebUi() {
 		"/etc/ssl/certs/treeseed-ai-ca.pem",
 		`${browserUrl}/health`,
 	]);
-	const configuration = JSON.parse(
+	const configuration: unknown = JSON.parse(
 		command("curl", [
 			"--silent",
 			"--show-error",
@@ -177,9 +193,8 @@ function validateLocalWebUi() {
 			"/etc/ssl/certs/treeseed-ai-ca.pem",
 			`${browserUrl}/api/config`,
 		]),
-	) as { auth?: boolean };
-	if (configuration.auth !== false)
-		throw new Error("Open WebUI still reports authentication enabled.");
+	);
+	assertWebUiAuthenticationDisabled(configuration);
 	const models = compose([
 		"exec",
 		"-T",

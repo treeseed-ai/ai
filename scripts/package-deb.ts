@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import { basename, resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 import { canonicalJson, finalizeConfiguration, validatePlatformConfiguration, type PlatformConfiguration } from "../packages/common/src/platform/index.js";
+import { catalogImageEntries } from "./release/catalog-images.js";
 type Release = {
 	version: string;
 	debianVersion: string;
@@ -132,6 +133,7 @@ function catalog(base: string) {
 		value.signingKeyFingerprint = readFileSync(resolve(root, "release/apt-development/RELEASE_KEY_FINGERPRINT"), "utf8").trim();
 	}
 	value.packages = packages;
+	value.packageSet = process.env.TREEAI_CATALOG_PACKAGE_SET === "management" ? "management" : "all";
 	if (process.env.TREEAI_CATALOG_PACKAGE_SET === "management") {
 		value.migrations = [];
 		value.gates = ["manager-health"];
@@ -141,31 +143,31 @@ function catalog(base: string) {
 		const planned = imagePlan?.images?.[role];
 		return planned?.action === "built" ? [{ role, buildIdentity: planned.buildIdentity }] : [];
 	});
-	value.imagePolicy = {
-		mode: requiredLocalImages.length && process.env.TREEAI_FORCE_PACKAGE_ONLY !== "1" ? "local-images-required" : "package-only",
-		productionManifestVersion: imageManifest.version ?? release.version,
-		sourceRevision: process.env.TREEAI_SOURCE_REVISION ?? "release-source",
-		sourceBundle: process.env.TREEAI_SOURCE_ARCHIVE_URL && process.env.TREEAI_SOURCE_ARCHIVE_SHA256
-			? { url: process.env.TREEAI_SOURCE_ARCHIVE_URL, sha256: process.env.TREEAI_SOURCE_ARCHIVE_SHA256, format: "tar.gz" }
-			: null,
-		requiredLocalImages: process.env.TREEAI_FORCE_PACKAGE_ONLY === "1" ? [] : requiredLocalImages,
-	};
-	value.images = release.images.flatMap((role, index) => {
-		const image = imageManifest.images?.[role], planned = imagePlan?.images?.[role], digest = image?.digest;
-		return /^sha256:[a-f0-9]{64}$/u.test(digest ?? "")
-			? [
-					{
-						role,
-						repository: image!.repository,
-						digest,
-						buildIdentity: planned?.action === "built" ? planned.buildIdentity : image!.buildIdentity,
-						consumers: [role.split("-")[0]],
-						restartImpact: role,
-						firstBuildGeneration: Number(value.generation) + index,
-					},
-				]
-			: [];
-	});
+	if (process.env.TREEAI_FORCE_PACKAGE_ONLY !== "1") {
+		value.imagePolicy = {
+			mode: requiredLocalImages.length ? "local-images-required" : "package-only",
+			productionManifestVersion: imageManifest.version ?? release.version,
+			sourceRevision: process.env.TREEAI_SOURCE_REVISION ?? "release-source",
+			sourceBundle: process.env.TREEAI_SOURCE_ARCHIVE_URL && process.env.TREEAI_SOURCE_ARCHIVE_SHA256
+				? { url: process.env.TREEAI_SOURCE_ARCHIVE_URL, sha256: process.env.TREEAI_SOURCE_ARCHIVE_SHA256, format: "tar.gz" }
+				: null,
+			requiredLocalImages,
+		};
+		value.images = catalogImageEntries(release.images, imageManifest.images, imagePlan?.images, Number(value.generation), false, release.dockerNamespace);
+	} else if (value.images.length !== release.images.length || value.imagePolicy.mode !== "local-images-required") {
+		throw new Error("Package-only publication requires a complete full development catalog base.");
+	} else {
+		// The installed pre-packageSet manager must also recognize this bridge as
+		// image-inert. Its known-good receipt preserves local-only image IDs; omit
+		// their non-pullable sentinel records from this compatibility catalog.
+		value.images = (value.images as Array<{ localBuildOnly?: boolean }>).filter((image) => image.localBuildOnly !== true);
+		value.imagePolicy = {
+			...value.imagePolicy,
+			mode: "package-only",
+			sourceBundle: null,
+			requiredLocalImages: [],
+		};
+	}
 	writeFileSync(resolve(base, "usr/share/treeseed-ai/release/catalog.json"), JSON.stringify(value, null, 2));
 	return finish("release-catalog", base);
 }
