@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { actionSequences, ktoLabel, normalizeEvents, observeArtifacts, sanitizeEvidence } from "../../packages/lab/src/evidence.js";
 import { createExperienceProxy } from "../../packages/lab/src/proxy.js";
-import { discoverProviderModels } from "../../packages/lab/src/controller.js";
+import { discoverProviderModels, hasSuccessfulWebEvidence } from "../../packages/lab/src/controller.js";
 import { chmodSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -94,5 +94,11 @@ describe("tight Hermes integration", () => {
 		const controller = readFileSync("packages/lab/src/controller.ts", "utf8");
 		expect(controller).toContain('{ method: "GET", path: "/v1/provider/models"');
 		expect(controller).toContain('app.get("/v1/provider/models", requireScope("lab:read")');
+	});
+
+	it("rejects error-bearing extraction output as web evidence", () => {
+		const search = { role: "tool", toolName: "web_search", content: '{"data":{"web":[{"provenance":{}}]}}' };
+		expect(hasSuccessfulWebEvidence([search, { role: "tool", toolName: "web_extract", content: '{"results":[{"error":"blocked"}]}' }])).toBe(false);
+		expect(hasSuccessfulWebEvidence([search, { role: "tool", toolName: "web_extract", content: '{"results":[{"metadata":{"status":200}}]}' }])).toBe(true);
 	});
 });

@@ -6,7 +6,8 @@ RUN pip install --no-cache-dir --no-deps --require-hashes -r /tmp/hermes-api-req
 COPY containers/lab/hermes-password-auth.patch /tmp/hermes-password-auth.patch
 COPY containers/lab/hermes-small-context.patch /tmp/hermes-small-context.patch
 COPY containers/lab/hermes-artifact-permissions.patch /tmp/hermes-artifact-permissions.patch
-RUN patch -d /usr/local/lib/python3.12/site-packages -p1 < /tmp/hermes-password-auth.patch && patch -d /usr/local/lib/python3.12/site-packages -p1 < /tmp/hermes-small-context.patch && patch -d /usr/local/lib/python3.12/site-packages -p1 < /tmp/hermes-artifact-permissions.patch && rm /tmp/hermes-password-auth.patch /tmp/hermes-small-context.patch /tmp/hermes-artifact-permissions.patch
+COPY containers/lab/hermes-treeai-web-policy.patch /tmp/hermes-treeai-web-policy.patch
+RUN patch -d /usr/local/lib/python3.12/site-packages -p1 < /tmp/hermes-password-auth.patch && patch -d /usr/local/lib/python3.12/site-packages -p1 < /tmp/hermes-small-context.patch && patch -d /usr/local/lib/python3.12/site-packages -p1 < /tmp/hermes-artifact-permissions.patch && patch -d /usr/local/lib/python3.12/site-packages -p1 < /tmp/hermes-treeai-web-policy.patch && rm /tmp/hermes-password-auth.patch /tmp/hermes-small-context.patch /tmp/hermes-artifact-permissions.patch /tmp/hermes-treeai-web-policy.patch
 COPY containers/lab/treeai-web-plugin /usr/local/lib/python3.12/site-packages/plugins/web/treeai
 COPY containers/lab/hermes-entrypoint.sh /usr/local/bin/hermes-entrypoint
 RUN chmod 0755 /usr/local/bin/hermes-entrypoint

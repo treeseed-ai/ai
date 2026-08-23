@@ -17,6 +17,11 @@ export async function discoverProviderModels(requestFetch: typeof fetch, experie
 	return sanitize(value);
 }
 
+export function hasSuccessfulWebEvidence(events: Array<{ role?: string; toolName?: string; content?: unknown }>) {
+	const successful = events.filter((event) => event.role === "tool" && ["web_search", "web_extract"].includes(event.toolName ?? "") && !String(event.content ?? "").includes('"error"'));
+	return successful.some((event) => event.toolName === "web_search") && successful.some((event) => event.toolName === "web_extract");
+}
+
 function migrateCaptureV1() {
 	const receipt = `${stateRoot}/capture-v1-migration.json`;
 	if (existsSync(receipt)) return;
@@ -94,8 +99,7 @@ export function createLabController(options: ControllerOptions = {}) {
 		if (!webAgent.sessionId) throw new Error("Hermes web verification did not return a session identifier");
 		const webTrajectory = await finalize(webAgent.sessionId), webObservations = lines(`${stateRoot}/artifact-observations.jsonl`), webCorrelated = webObservations.find((item) => webTrajectory.artifactObservationIds.includes(String(item.id)) && item.relativePath === webArtifactName);
 		if (!webCorrelated) throw new Error("Hermes web verification did not produce the expected correlated workspace artifact");
-		const successfulWebTools = webTrajectory.events.filter((event) => event.role === "tool" && ["web_search", "web_extract"].includes(event.toolName ?? "") && !JSON.stringify(event.content).includes('"error"'));
-		if (!successfulWebTools.some((event) => event.toolName === "web_search") || !successfulWebTools.some((event) => event.toolName === "web_extract")) throw new Error("Hermes web verification did not retain successful search and extraction evidence");
+		if (!hasSuccessfulWebEvidence(webTrajectory.events)) throw new Error("Hermes web verification did not retain successful search and extraction evidence");
 		return { status: "ready", direct: true, streaming: true, hermes: true, web: true, trajectoryId: trajectory.id, webTrajectoryId: webTrajectory.id, artifacts: [...trajectory.artifactObservationIds, ...webTrajectory.artifactObservationIds] };
 	}
 	async function idempotent(context: Context, action: string, operation: () => Promise<unknown>) {
