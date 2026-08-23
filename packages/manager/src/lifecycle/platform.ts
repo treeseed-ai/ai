@@ -4,6 +4,7 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSyn
 import { dirname } from "node:path";
 import { hashApiKey } from "@ai-platform/common";
 import { readCatalog } from "../core/catalog.js";
+import { localImageReadiness } from "./local-build.js";
 import { event, setSetting, setting } from "../core/store.js";
 import { paths } from "../core/paths.js";
 import {
@@ -120,12 +121,15 @@ function imageValues(product: "inference" | "training") {
 			imageSource: string;
 		},
 		catalog = readCatalog(),
+		local = localImageReadiness(catalog),
 		values: Record<string, string> = {};
 	for (const image of catalog.images) {
 		const variable = imageVariables[image.role],
 			owned = image.role.startsWith(`${product}-`) || (product === "training" && ["axolotl-worker", "marker-worker", "artifact-worker"].includes(image.role));
 		if (!variable || !owned) continue;
-		values[variable] = config.imageSource === "local-build" ? `local/${image.role}:${catalog.release}` : `treeseed/${image.role}@${image.digest}`;
+		const localId = local.images.get(image.role);
+		if (catalog.imagePolicy.requiredLocalImages.some((item) => item.role === image.role) && !localId) throw new Error(`Required local image ${image.role} is not ready.`);
+		values[variable] = localId ?? (config.imageSource === "local-build" && catalog.channel === "stable" ? `local/${image.role}:${catalog.release}` : `${image.repository}@${image.digest}`);
 	}
 	return values;
 }
@@ -134,9 +138,12 @@ function image(role: string) {
 			imageSource: string;
 		},
 		catalog = readCatalog(),
-		item = catalog.images.find((value) => value.role === role);
+		item = catalog.images.find((value) => value.role === role),
+		local = localImageReadiness(catalog),
+		localId = local.images.get(role);
 	if (!item) throw new Error(`Catalog image ${role} is missing.`);
-	return config.imageSource === "local-build" ? `local/${role}:${catalog.release}` : `treeseed/${role}@${item.digest}`;
+	if (catalog.imagePolicy.requiredLocalImages.some((value) => value.role === role) && !localId) throw new Error(`Required local image ${role} is not ready.`);
+	return localId ?? (config.imageSource === "local-build" && catalog.channel === "stable" ? `local/${role}:${catalog.release}` : `${item.repository}@${item.digest}`);
 }
 function productGroup(product: "inference" | "training") {
 	const group = `treeseed-ai-${product}`,

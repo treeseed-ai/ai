@@ -11,6 +11,12 @@
   "platform": { "architecture": "amd64", "operatingSystems": ["debian:12", "debian:13", "ubuntu:22.04", "ubuntu:24.04", "ubuntu:26.04"], "manager": ">=0.6.0 <0.7.0", "nodeRuntime": "24.6.0", "nvidiaDriver": ">=570" },
   "packages": [],
   "images": [],
+  "imagePolicy": {
+    "mode": "package-only",
+    "productionManifestVersion": "0.6.2",
+    "sourceRevision": "release-source",
+    "requiredLocalImages": []
+  },
   "runtimeImages": [
     { "id": "caddy", "reference": "caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d", "digest": "sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d", "consumers": ["manager", "lab"], "restartImpact": "gateway" },
     { "id": "postgres", "reference": "postgres:17.11-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73", "digest": "sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73", "consumers": ["inference", "training"], "restartImpact": "state" },

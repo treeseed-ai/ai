@@ -1,4 +1,5 @@
 import{createHash}from'node:crypto';
+import{spawnSync}from'node:child_process';
 import{existsSync,lstatSync,readFileSync,readdirSync,writeFileSync}from'node:fs';
 import{matchesGlob,relative,resolve,sep}from'node:path';
 import{fileURLToPath}from'node:url';
@@ -43,9 +44,11 @@ function main(){
   if(JSON.stringify(Object.keys(builds.images).sort())!==JSON.stringify([...release.images].sort()))throw new Error('Image-build roles do not match the release manifest.');
   const images:Record<string,Record<string,unknown>>={};
   const cache=new Map<string,string>();
+  const developmentBase=process.env.TREEAI_DEVELOPMENT_BASE;
   for(const role of release.images){
     const build=builds.images[role],buildIdentity=computeBuildIdentity(role,build,builds.platform,process.cwd(),cache),previous=prior?.schemaVersion==='treeai.images/v2'?prior.images[role]:undefined;
-    const reuse=previous?.buildIdentity===buildIdentity&&previous.repository===`${release.dockerNamespace}/${role}`&&/^sha256:[a-f0-9]{64}$/u.test(previous.digest);
+    const inputsUnchanged=developmentBase?spawnSync('git',['diff','--quiet',developmentBase,'HEAD','--',...build.inputs]).status===0:false;
+    const reuse=(previous?.buildIdentity===buildIdentity||inputsUnchanged)&&previous?.repository===`${release.dockerNamespace}/${role}`&&/^sha256:[a-f0-9]{64}$/u.test(previous.digest);
     const tag=process.env.TREEAI_IMAGE_TAG??release.version;images[role]={role,action:reuse?'reused':'built',buildIdentity,dockerfile:build.dockerfile,buildArgs:Object.entries(build.buildArgs??{}).map(([key,value])=>`${key}=${value}`).join('\n'),platform:builds.platform,repository:`${release.dockerNamespace}/${role}`,...reuse?{digest:previous.digest,tag:previous.tag,firstBuiltVersion:previous.firstBuiltVersion??previous.tag}:{tag,firstBuiltVersion:release.version}};
   }
   writeFileSync(output,`${JSON.stringify({schemaVersion:'treeai.image-build-plan/v1',version:release.version,previousVersion:prior?.version??null,images},null,2)}\n`);

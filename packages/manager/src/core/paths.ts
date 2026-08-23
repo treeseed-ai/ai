@@ -16,4 +16,7 @@ export const paths = {
 		"/etc/treeseed-ai/manager/api-keys.json",
 	mode:
 		process.env.TREEAI_MODE_STATE ?? "/var/lib/treeseed-ai/platform/mode.json",
+	localBuildReceipt:
+		process.env.TREEAI_LOCAL_BUILD_RECEIPT ??
+		"/var/lib/treeseed-ai/manager/local-build-receipt.json",
 };
