@@ -43,6 +43,7 @@ export function createLabController(options: ControllerOptions = {}) {
 	const requestFetch = options.fetch ?? fetch, now = options.now ?? Date.now;
 	const hermesUrl = process.env.HERMES_URL ?? "http://hermes-agent:8642";
 	const experienceUrl = process.env.EXPERIENCE_PROXY_URL ?? "http://experience-proxy:8080";
+	const webToolUrl = process.env.WEB_TOOL_URL ?? "http://web-tool-proxy:8090";
 	const keys = parseBootstrapKeys(process.env.AI_LAB_API_KEYS ?? "");
 	async function hermes(path: string, method = "GET") {
 		const response = await requestFetch(`${hermesUrl}${path}`, { method, headers: { authorization: `Bearer ${required("HERMES_API_KEY")}`, "content-type": "application/json" } });
@@ -52,6 +53,12 @@ export function createLabController(options: ControllerOptions = {}) {
 	}
 	async function providerModels() {
 		return discoverProviderModels(requestFetch, experienceUrl);
+	}
+	async function webTool(path: "/search" | "/extract", body: Record<string, unknown>) {
+		const response = await requestFetch(`${webToolUrl}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+		const value = await response.json().catch(() => ({})) as Record<string, unknown>;
+		if (!response.ok) throw new Error(`Safe web tool ${path} returned ${response.status}`);
+		return value;
 	}
 	async function finalize(id: string) {
 		if (!sessionPattern.test(id)) throw new Error("Invalid Hermes session identifier");
@@ -73,16 +80,22 @@ export function createLabController(options: ControllerOptions = {}) {
 		}
 		await completion("local-model", false, "Reply with DIRECT_READY only.");
 		await completion("local-model", true, "Reply with STREAM_READY only.");
+		const search = await webTool("/search", { query: "IANA example domains", limit: 3 }), searchResults = extractItems(search, "results") as Array<Record<string, unknown>>;
+		if (!searchResults.length || !searchResults.some((item) => (item.provenance as Record<string, unknown> | undefined)?.sha256)) throw new Error("Safe web search returned no provenance-bearing results");
+		const extraction = await webTool("/extract", { urls: ["https://www.iana.org/help/example-domains"] }), extractionResults = extractItems(extraction, "results") as Array<Record<string, unknown>>;
+		if (!extractionResults.some((item) => item.status === 200 && typeof item.sha256 === "string" && String(item.text ?? "").includes("Example Domains"))) throw new Error("Safe web extraction returned no verified IANA provenance");
 		const agent = await completion("hermes-agent", false, `Use the file tool to create /workspace/${artifactName} containing exactly ${artifactContent}, read it back, then reply with HERMES_READY.`);
 		await completion("hermes-agent", true, "Reply with HERMES_STREAM_READY only.");
 		if (!agent.sessionId) throw new Error("Hermes verification did not return a session identifier");
 		const trajectory = await finalize(agent.sessionId);
 		const observations = lines(`${stateRoot}/artifact-observations.jsonl`), correlated = observations.find((item) => trajectory.artifactObservationIds.includes(String(item.id)) && item.relativePath === artifactName);
 		if (!correlated) throw new Error("Hermes verification did not produce the expected correlated workspace artifact");
-		const webAgent = await completion("hermes-agent", false, `Use web_search to search for IANA Example Domain, use web_extract on https://example.com/, then create /workspace/${webArtifactName} with a concise sourced summary containing the words Example Domain. Reply WEB_READY.`);
+		const webAgent = await completion("hermes-agent", false, `Use web_search to search for IANA Example Domains, use web_extract on https://www.iana.org/help/example-domains, then create /workspace/${webArtifactName} with a concise sourced summary containing the words Example Domain. Reply WEB_READY.`);
 		if (!webAgent.sessionId) throw new Error("Hermes web verification did not return a session identifier");
 		const webTrajectory = await finalize(webAgent.sessionId), webObservations = lines(`${stateRoot}/artifact-observations.jsonl`), webCorrelated = webObservations.find((item) => webTrajectory.artifactObservationIds.includes(String(item.id)) && item.relativePath === webArtifactName);
 		if (!webCorrelated) throw new Error("Hermes web verification did not produce the expected correlated workspace artifact");
+		const successfulWebTools = webTrajectory.events.filter((event) => event.role === "tool" && ["web_search", "web_extract"].includes(event.toolName ?? "") && !JSON.stringify(event.content).includes('"error"'));
+		if (!successfulWebTools.some((event) => event.toolName === "web_search") || !successfulWebTools.some((event) => event.toolName === "web_extract")) throw new Error("Hermes web verification did not retain successful search and extraction evidence");
 		return { status: "ready", direct: true, streaming: true, hermes: true, web: true, trajectoryId: trajectory.id, webTrajectoryId: webTrajectory.id, artifacts: [...trajectory.artifactObservationIds, ...webTrajectory.artifactObservationIds] };
 	}
 	async function idempotent(context: Context, action: string, operation: () => Promise<unknown>) {

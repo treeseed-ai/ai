@@ -12,7 +12,7 @@ import ssl
 import zlib
 from html.parser import HTMLParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlsplit
+from urllib.parse import parse_qs, quote_plus, unquote, urlencode, urljoin, urlsplit
 
 MAX_BODY = 5 * 1024 * 1024
 MAX_COMPRESSED_BODY = 2 * 1024 * 1024
@@ -95,7 +95,7 @@ def public_addresses(host: str) -> list[str]:
 	return addresses
 
 
-def fetch(url: str, redirects: int = 0) -> tuple[str, bytes, str, int]:
+def fetch(url: str, redirects: int = 0, body: bytes | None = None) -> tuple[str, bytes, str, int]:
 	if redirects > MAX_REDIRECTS:
 		raise ValueError("redirect limit exceeded")
 	parsed = urlsplit(url)
@@ -112,14 +112,17 @@ def fetch(url: str, redirects: int = 0) -> tuple[str, bytes, str, int]:
 	path = parsed.path or "/"
 	if parsed.query:
 		path += f"?{parsed.query}"
-	connection.request("GET", path, headers={"Host": parsed.netloc, "User-Agent": "TreeAI-WebTool/0.8.0", "Accept": "text/html,text/plain,application/xhtml+xml"})
+	headers = {"Host": parsed.netloc, "User-Agent": "TreeAI-WebTool/0.8.0", "Accept": "text/html,text/plain,application/xhtml+xml"}
+	if body is not None:
+		headers.update({"Content-Type": "application/x-www-form-urlencoded", "Content-Length": str(len(body))})
+	connection.request("POST" if body is not None else "GET", path, body=body, headers=headers)
 	response = connection.getresponse()
 	if response.status in {301, 302, 303, 307, 308}:
 		location = response.getheader("Location")
 		connection.close()
 		if not location:
 			raise ValueError("redirect is missing Location")
-		return fetch(urljoin(url, location), redirects + 1)
+		return fetch(urljoin(url, location), redirects + 1, body if response.status in {307, 308} else None)
 	content_type = (response.getheader("Content-Type") or "").split(";", 1)[0].lower()
 	if not any(content_type.startswith(prefix) for prefix in TEXT_TYPES):
 		connection.close()
@@ -160,8 +163,11 @@ def extract(url: str) -> dict[str, object]:
 
 
 def search(query: str, limit: int) -> list[dict[str, object]]:
-	requested_url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
-	final_url, body, content_type, status = fetch(requested_url)
+	endpoint = "https://html.duckduckgo.com/html/"
+	requested_url = f"{endpoint}?q={quote_plus(query)}"
+	final_url, body, content_type, status = fetch(endpoint, body=urlencode({"q": query}).encode())
+	if status != 200:
+		raise ValueError(f"search provider returned HTTP {status}")
 	parser = SearchExtractor()
 	parser.feed(body.decode("utf-8", errors="replace"))
 	results = []

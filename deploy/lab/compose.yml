@@ -46,6 +46,7 @@ services:
       NODE_EXTRA_CA_CERTS: /factory-ca.pem
       LAB_STATE_DIR: /state
       HERMES_WORKSPACE: /workspace
+      WEB_TOOL_URL: http://web-tool-proxy:8090
       EXPERIENCE_PROXY_URL: http://experience-proxy:8080
       TRAINING_SOURCE_FILE: /run/secrets/training-source
     networks: [lab-private, ai-shared]
