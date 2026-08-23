@@ -64,8 +64,8 @@ function call(path: string, method = "GET") {
 		throw transportFailure(error, target);
 	}
 }
-function supervisor(operation: "lab.webui.configure" | "lab.webui.reset" | "lab.hermes.password.rotate", parameters?: Record<string, unknown>) {
-	requireRoot(operation);
+function supervisor(operation: "lab.webui.configure" | "lab.webui.reset" | "lab.hermes.password.rotate" | "lab.hermes.diagnostics", parameters?: Record<string, unknown>) {
+	if (operation !== "lab.hermes.diagnostics") requireRoot(operation);
 	return new Promise<unknown>((resolveRequest, reject) => {
 		const socket = connect("/run/treeseed-ai/manager/control.sock");
 		let response = "";
@@ -141,8 +141,9 @@ async function main() {
 		if (action === "tools") return output(call("/v1/hermes/tools"));
 		if (action === "sessions") return output(call("/v1/hermes/sessions"));
 		if (action === "verify") return output({ status: "ready", statusCheck: call("/v1/hermes/status"), capabilities: call("/v1/hermes/capabilities"), tools: call("/v1/hermes/tools") });
+		if (action === "diagnostics") return output(await supervisor("lab.hermes.diagnostics"));
 		if (action === "rotate-password") return output(await supervisor("lab.hermes.password.rotate"));
-		throw new Error("Usage: treeai lab hermes <status|tools|sessions|verify|rotate-password>");
+		throw new Error("Usage: treeai lab hermes <status|tools|sessions|verify|diagnostics|rotate-password>");
 	}
 	if (command === "build") {
 		requireRoot("build");
