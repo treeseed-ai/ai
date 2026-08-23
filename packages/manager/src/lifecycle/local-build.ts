@@ -29,6 +29,8 @@ export interface LocalBuildReceipt {
 	sourceRevision: string;
 	sourceDirty: boolean;
 	sourceDigest: string;
+	authority?: "operator-source" | "signed-release-catalog";
+	sourceArchiveSha256?: string;
 	platform: "linux/amd64";
 	createdAt: string;
 	images: Array<{
@@ -157,12 +159,18 @@ function smoke(role: string, tag: string) {
 	run("docker", ["run", "--rm", "--entrypoint", check[0]!, tag, ...check.slice(1)]);
 	return detail;
 }
-export function planLocalBuild(requested: string) {
+interface TrustedSource {
+	revision: string;
+	archiveSha256: string;
+}
+export function planLocalBuild(requested: string, trusted?: TrustedSource) {
 	const source = sourceRoot(requested),
 		catalog = stagedCatalog(),
-		plan = sourcePlan(source, catalog),
+		plan: BuildPlan = trusted
+			? { images: Object.fromEntries(catalog.imagePolicy.requiredLocalImages.map((item) => [item.role, { action: "built", buildIdentity: item.buildIdentity }])) }
+			: sourcePlan(source, catalog),
 		required = requirements(catalog, plan),
-		revision = run("git", ["rev-parse", "HEAD"], source).trim();
+		revision = trusted?.revision ?? run("git", ["rev-parse", "HEAD"], source).trim();
 	if (catalog.imagePolicy.mode === "local-images-required" && revision !== catalog.imagePolicy.sourceRevision)
 		throw new Error(`Source revision ${revision} does not match required revision ${catalog.imagePolicy.sourceRevision}.`);
 	return {
@@ -175,14 +183,12 @@ export function planLocalBuild(requested: string) {
 		required,
 	};
 }
-export function buildLocalImages(requested: string) {
-	const planned = planLocalBuild(requested), catalog = stagedCatalog();
+export function buildLocalImages(requested: string, trusted?: TrustedSource) {
+	const planned = planLocalBuild(requested, trusted), catalog = stagedCatalog();
 	if (!planned.required.length)
 		throw new Error("The staged generation does not require local images.");
-	const revision = run("git", ["rev-parse", "HEAD"], planned.source).trim(),
-		dirty = Boolean(
-			run("git", ["status", "--porcelain"], planned.source).trim(),
-		),
+	const revision = trusted?.revision ?? run("git", ["rev-parse", "HEAD"], planned.source).trim(),
+		dirty = trusted ? false : Boolean(run("git", ["status", "--porcelain"], planned.source).trim()),
 		createdAt = new Date().toISOString(),
 		environment = {
 			...process.env,
@@ -230,6 +236,8 @@ export function buildLocalImages(requested: string) {
 		sourceRevision: revision,
 		sourceDirty: dirty,
 		sourceDigest: environment.AI_SOURCE_DIGEST,
+		authority: trusted ? "signed-release-catalog" : "operator-source",
+		...(trusted ? { sourceArchiveSha256: trusted.archiveSha256 } : {}),
 		platform: "linux/amd64",
 		createdAt,
 		images,
@@ -240,6 +248,60 @@ export function buildLocalImages(requested: string) {
 	});
 	renameSync(temporary, target);
 	return receipt;
+}
+
+function digest(path: string) {
+	return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+function safeArchive(path: string) {
+	const entries = run("tar", ["-tzf", path]).split("\n").filter(Boolean);
+	if (!entries.length || entries.some((entry) => entry.startsWith("/") || entry.split("/").includes("..")))
+		throw new Error("Release source bundle contains an unsafe path.");
+}
+export function buildCatalogLocalImages(catalog: ReleaseCatalog) {
+	const bundle = catalog.imagePolicy.sourceBundle;
+	if (catalog.channel !== "development" || catalog.imagePolicy.mode !== "local-images-required" || !bundle)
+		throw new Error("The signed catalog does not authorize an automatic local build.");
+	const bundles = join(paths.state, "source-bundles"),
+		sources = join(paths.state, "sources"),
+		archive = join(bundles, `${catalog.generation}-${bundle.sha256}.tar.gz`),
+		temporaryArchive = `${archive}.partial`,
+		source = join(sources, String(catalog.generation)),
+		temporarySource = `${source}.partial-${process.pid}`;
+	mkdirSync(bundles, { recursive: true, mode: 0o700 });
+	mkdirSync(sources, { recursive: true, mode: 0o700 });
+	if (!existsSync(archive) || digest(archive) !== bundle.sha256) {
+		rmSync(temporaryArchive, { force: true });
+		run("curl", ["--fail", "--location", "--silent", "--show-error", "--retry", "3", "--output", temporaryArchive, bundle.url]);
+		if (digest(temporaryArchive) !== bundle.sha256) {
+			rmSync(temporaryArchive, { force: true });
+			throw new Error("Release source bundle checksum mismatch.");
+		}
+		renameSync(temporaryArchive, archive);
+	}
+	safeArchive(archive);
+	rmSync(temporarySource, { recursive: true, force: true });
+	mkdirSync(temporarySource, { recursive: true, mode: 0o700 });
+	run("tar", ["-xzf", archive, "--strip-components=1", "--no-same-owner", "--no-same-permissions", "-C", temporarySource]);
+	rmSync(source, { recursive: true, force: true });
+	renameSync(temporarySource, source);
+	const startedAt = new Date().toISOString(),
+		receipt = buildLocalImages(source, { revision: catalog.imagePolicy.sourceRevision, archiveSha256: bundle.sha256 }),
+		capability = {
+			schemaVersion: "treeai.root-capability-receipt/v1",
+			operation: "development.local-images.build",
+			authority: "signed-release-catalog",
+			generation: catalog.generation,
+			sourceRevision: catalog.imagePolicy.sourceRevision,
+			sourceUrl: bundle.url,
+			sourceSha256: bundle.sha256,
+			requiredRoles: catalog.imagePolicy.requiredLocalImages.map((item) => item.role),
+			imageIds: receipt.images.map(({ role, imageId }) => ({ role, imageId })),
+			startedAt,
+			completedAt: new Date().toISOString(),
+		};
+	writeFileSync(join(paths.state, `root-capability-${catalog.generation}.json`), `${JSON.stringify(capability, null, 2)}\n`, { mode: 0o600 });
+	return { receipt, capability };
 }
 export function localImageReadiness(catalog: ReleaseCatalog): LocalImageReadiness {
 	if (catalog.imagePolicy.mode === "package-only")

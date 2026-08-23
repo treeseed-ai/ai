@@ -5,6 +5,7 @@ on:
     inputs:
       rc: { description: "Positive release-candidate number, e.g. 1", required: true, type: string }
       generation: { description: Monotonic numeric catalog generation, required: true, type: string }
+      package_only_bridge: { description: "Publish a one-time package-only manager capability bridge", required: false, default: false, type: boolean }
 
 permissions: { contents: read }
 
@@ -32,6 +33,13 @@ jobs:
         with: { node-version: 24.19.0, cache: pnpm }
       - run: pnpm install --frozen-lockfile && pnpm verify
       - uses: sigstore/cosign-installer@v3.9.2
+      - name: Create immutable development source bundle
+        run: |
+          mkdir -p assets
+          git archive --format=tar --prefix=treeai-source/ HEAD | gzip -n > assets/treeai-source.tar.gz
+          digest=$(sha256sum assets/treeai-source.tar.gz | awk '{print $1}')
+          echo "TREEAI_SOURCE_ARCHIVE_SHA256=$digest" >> "$GITHUB_ENV"
+          echo "TREEAI_SOURCE_ARCHIVE_URL=https://github.com/treeseed-ai/ai/releases/download/$TREEAI_RC_TAG/treeai-source.tar.gz" >> "$GITHUB_ENV"
       - name: Resolve production image identities and local build requirements
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
@@ -56,7 +64,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential debhelper lintian nodejs
           sed -i "1s/([^)]*)/($TREEAI_RC_DEBIAN_VERSION)/; 1s/) stable;/) development;/" debian/changelog
-          TREEAI_DEBIAN_VERSION="$TREEAI_RC_DEBIAN_VERSION" TREEAI_RELEASE_VERSION="$TREEAI_RC_TAG" TREEAI_RELEASE_CHANNEL=development TREEAI_RELEASE_GENERATION='${{ inputs.generation }}' TREEAI_IMAGE_MANIFEST="$PWD/assets/image-manifest.json" TREEAI_IMAGE_PLAN="$PWD/assets/development-image-plan.json" TREEAI_SOURCE_REVISION='${{ github.sha }}' dpkg-buildpackage -b -us -uc
+          TREEAI_DEBIAN_VERSION="$TREEAI_RC_DEBIAN_VERSION" TREEAI_RELEASE_VERSION="$TREEAI_RC_TAG" TREEAI_RELEASE_CHANNEL=development TREEAI_RELEASE_GENERATION='${{ inputs.generation }}' TREEAI_IMAGE_MANIFEST="$PWD/assets/image-manifest.json" TREEAI_IMAGE_PLAN="$PWD/assets/development-image-plan.json" TREEAI_SOURCE_REVISION='${{ github.sha }}' TREEAI_SOURCE_ARCHIVE_URL="$TREEAI_SOURCE_ARCHIVE_URL" TREEAI_SOURCE_ARCHIVE_SHA256="$TREEAI_SOURCE_ARCHIVE_SHA256" TREEAI_FORCE_PACKAGE_ONLY='${{ inputs.package_only_bridge && '1' || '0' }}' TREEAI_CATALOG_PACKAGE_SET='${{ inputs.package_only_bridge && 'management' || 'all' }}' dpkg-buildpackage -b -us -uc
           find .. -maxdepth 1 -type f -name 'treeseed-ai*.deb' -exec cp {} assets/ \;
           lintian --fail-on error assets/*.deb
       - name: Sign and publish immutable prerelease

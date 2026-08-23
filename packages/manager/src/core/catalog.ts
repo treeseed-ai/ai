@@ -46,6 +46,11 @@ export interface ReleaseCatalog {
 		mode: "package-only" | "local-images-required";
 		productionManifestVersion: string;
 		sourceRevision: string;
+		sourceBundle: {
+			url: string;
+			sha256: string;
+			format: "tar.gz";
+		} | null;
 		requiredLocalImages: Array<{ role: string; buildIdentity: string }>;
 	};
 	runtimeImages: RuntimeImage[];
@@ -110,6 +115,11 @@ export function validateCatalog(input: unknown): ReleaseCatalog {
 		!["package-only", "local-images-required"].includes(value.imagePolicy.mode) ||
 		!value.imagePolicy.productionManifestVersion ||
 		!(/^[a-f0-9]{40}$/u.test(value.imagePolicy.sourceRevision) || value.imagePolicy.sourceRevision === "release-source") ||
+		(value.imagePolicy.sourceBundle !== null &&
+			(!value.imagePolicy.sourceBundle ||
+				value.imagePolicy.sourceBundle.format !== "tar.gz" ||
+				!/^https:\/\/github\.com\/treeseed-ai\/ai\/releases\/download\/[a-zA-Z0-9._-]+\/treeai-source\.tar\.gz$/u.test(value.imagePolicy.sourceBundle.url) ||
+				!/^[a-f0-9]{64}$/u.test(value.imagePolicy.sourceBundle.sha256))) ||
 		!Array.isArray(value.imagePolicy.requiredLocalImages) ||
 		value.imagePolicy.requiredLocalImages.some(
 			(item) =>
@@ -121,7 +131,8 @@ export function validateCatalog(input: unknown): ReleaseCatalog {
 		(value.imagePolicy.mode === "package-only" &&
 			value.imagePolicy.requiredLocalImages.length > 0) ||
 		(value.imagePolicy.mode === "local-images-required" &&
-			value.imagePolicy.requiredLocalImages.length === 0)
+			(value.imagePolicy.requiredLocalImages.length === 0 ||
+				value.channel === "development" && !value.imagePolicy.sourceBundle))
 	)
 		throw new Error("Catalog contains an invalid image delivery policy.");
 	if (
