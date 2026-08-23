@@ -2,7 +2,7 @@
 
 Publication is manual. Merge a reviewed `staging` branch into `main`, configure
 the protected GitHub `production` environment, and dispatch **Publish coordinated
-TreeSeed AI release** with version `0.7.1`. The workflow refuses any other
+TreeSeed AI release** with version `0.8.0`. The workflow refuses any other
 branch/version and does not create a tag until images, scans, signatures, and
 packages succeed.
 
@@ -17,13 +17,19 @@ digest. Every coordinated release still emits a complete digest manifest for
 all roles. The first release after adopting image-manifest v2 builds every role
 once to establish trusted identities.
 
+For a feature release, `release/manifest.json.changedImages` is the reviewed
+declaration of roles whose image contents intentionally change. Every omitted
+role must have a verified prior digest or publication fails. This prevents
+coordinated Debian version changes from rebuilding large unchanged images such
+as vLLM while keeping the exception explicit in the release record.
+
 Required environment secrets are `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`,
 `APT_GPG_PRIVATE_KEY`, and `APT_GPG_PASSPHRASE`. Before dispatch, commit the
 matching public archive key and fingerprint as described in `release/apt`.
 Jobs that consume Docker Hub or APT signing credentials run in `production`.
 The final secret-free Pages deployment runs separately in `github-pages`.
 
-Release candidates use the manually dispatched **Publish protected TreeAI release candidate** workflow from `staging`. Tags omit a `v` prefix and follow `0.7.1-rc1`; Debian versions use `0.7.1~rc1-1` so the final `0.7.1-1` sorts newer. APT signing material is held only in the protected `staging` environment and differs from the stable key. The workflow never builds or publishes development containers. It verifies the latest stable image manifest and signatures, reuses those production digests, and records whether the candidate is `package-only` or `local-images-required`.
+Release candidates use the manually dispatched **Publish protected TreeAI release candidate** workflow from `staging`. Tags omit a `v` prefix and follow `0.8.0-rc1`; Debian versions use `0.8.0~rc1-1` so the final `0.8.0-1` sorts newer. APT signing material is held only in the protected `staging` environment and differs from the stable key. The workflow never builds or publishes development containers. It verifies the latest stable image manifest and signatures, reuses those production digests, and records whether the candidate is `package-only` or `local-images-required`.
 
 For `local-images-required`, the catalog names the exact roles, build identities, and source revision. The development host must explicitly build them from that checkout with `treeai local-build`; the manager verifies the atomic receipt and current Docker image IDs before it permits package installation. This keeps repository execution outside the automatic privileged update path. Unchanged roles continue to use their production digests.
 

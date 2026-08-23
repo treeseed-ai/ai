@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { connect } from "node:net";
 import { resolve } from "node:path";
@@ -20,6 +20,11 @@ interface ClientConfiguration {
 		openWebUi?: {
 			authentication: "disabled" | "local-users";
 			browserUrl: string;
+			binding: string;
+		};
+		hermes?: {
+			authentication: "local-password";
+			dashboardUrl: string;
 			binding: string;
 		};
 	};
@@ -52,7 +57,7 @@ function call(path: string, method = "GET") {
 	values.push(`${config.endpoints.lab}${path}`);
 	return JSON.parse(run("curl", values)) as unknown;
 }
-function supervisor(operation: "lab.webui.configure" | "lab.webui.reset", parameters?: Record<string, unknown>) {
+function supervisor(operation: "lab.webui.configure" | "lab.webui.reset" | "lab.hermes.password.rotate", parameters?: Record<string, unknown>) {
 	requireRoot(operation);
 	return new Promise<unknown>((resolveRequest, reject) => {
 		const socket = connect("/run/treeseed-ai/manager/control.sock");
@@ -74,18 +79,28 @@ function compose(values: string[], stdio: "pipe" | "inherit" = "inherit") {
 	return run("docker", ["compose", "-p", "treeseed-ai-lab", "--env-file", envFile, "-f", composeFile, ...values], stdio);
 }
 function urls() {
-	const settings = client(), webui = settings.interfaces?.openWebUi;
+	const settings = client(), webui = settings.interfaces?.openWebUi, hermes = settings.interfaces?.hermes;
+	const interfaces = [
+		...(webui ? [{ id: "open-webui", url: webui.browserUrl, binding: webui.binding, authentication: webui.authentication, certificateAuthority: settings.ca }] : []),
+		...(hermes ? [{ id: "hermes", url: hermes.dashboardUrl, binding: hermes.binding, authentication: hermes.authentication, certificateAuthority: settings.ca }] : []),
+	];
 	return {
-		status: webui ? "ready" : "warning",
-		interfaces: webui ? [{ id: "open-webui", url: webui.browserUrl, binding: webui.binding, authentication: webui.authentication, certificateAuthority: settings.ca }] : [],
+		status: webui && hermes ? "ready" : "warning",
+		interfaces,
 	};
 }
-function verify() {
+function verify(deep = false) {
 	const controller = call("/v1/status"), settings = client(), webui = settings.interfaces?.openWebUi;
 	if (!webui) return { status: "warning", controller, openWebUi: "not-configured" };
 	const health = run("curl", ["--silent", "--show-error", "--fail", "--cacert", settings.ca, `${webui.browserUrl}/health`]);
 	const providerModels = JSON.parse(run("curl", ["--silent", "--show-error", "--fail", "--cacert", settings.ca, `${webui.browserUrl}/api/models`])) as unknown;
-	return { status: "ready", controller, openWebUi: { url: webui.browserUrl, authentication: webui.authentication, health: health || "ok", models: providerModels } };
+	const serialized = JSON.stringify(providerModels);
+	if (!serialized.includes("hermes-agent")) throw new Error("Open WebUI model discovery does not include hermes-agent.");
+	for (const port of [4792, 8642]) {
+		const probe = spawnSync("curl", ["--silent", "--fail", "--max-time", "1", `http://127.0.0.1:${port}/`]);
+		if (probe.status === 0) throw new Error(`Private Hermes port ${port} is unexpectedly reachable from the host.`);
+	}
+	return { status: "ready", controller, isolation: { hostPortsClosed: [4792, 8642] }, openWebUi: { url: webui.browserUrl, authentication: webui.authentication, health: health || "ok", models: providerModels }, hermes: call("/v1/hermes/status"), ...(deep ? { deep: call("/v1/hermes/verify", "POST") } : {}) };
 }
 function imageReference(id: string) {
 	const catalog = JSON.parse(readFileSync("/usr/share/treeseed-ai/release/catalog.json", "utf8")) as { runtimeImages: Array<{ id: string; reference: string }> };
@@ -107,11 +122,20 @@ async function main() {
 	if (command === "urls") return output(urls());
 	if (command === "open") {
 		const targets = args.filter((item) => !item.startsWith("--"));
-		if (targets.length !== 1 || targets[0] !== "webui") throw new Error("Usage: treeai lab open webui");
-		const webui = client().interfaces?.openWebUi;
-		if (!webui) throw new Error("Open WebUI is not configured.");
-		if ((process.env.DISPLAY || process.env.WAYLAND_DISPLAY) && existsSync("/usr/bin/xdg-open")) { const child = spawn("/usr/bin/xdg-open", [webui.browserUrl], { stdio: "ignore", detached: true }); child.on("error", () => {}); child.unref(); }
-		return output({ status: "ready", url: webui.browserUrl });
+		if (targets.length !== 1 || !["webui", "hermes"].includes(targets[0]!)) throw new Error("Usage: treeai lab open webui|hermes");
+		const interfaces = client().interfaces, target = targets[0] === "webui" ? interfaces?.openWebUi?.browserUrl : interfaces?.hermes?.dashboardUrl;
+		if (!target) throw new Error(`${targets[0]} is not configured.`);
+		if ((process.env.DISPLAY || process.env.WAYLAND_DISPLAY) && existsSync("/usr/bin/xdg-open")) { const child = spawn("/usr/bin/xdg-open", [target], { stdio: "ignore", detached: true }); child.on("error", () => {}); child.unref(); }
+		return output({ status: "ready", url: target });
+	}
+	if (command === "hermes") {
+		const action = args.find((item) => !item.startsWith("--"));
+		if (action === "status") return output(call("/v1/hermes/status"));
+		if (action === "tools") return output(call("/v1/hermes/tools"));
+		if (action === "sessions") return output(call("/v1/hermes/sessions"));
+		if (action === "verify") return output({ status: "ready", statusCheck: call("/v1/hermes/status"), capabilities: call("/v1/hermes/capabilities"), tools: call("/v1/hermes/tools") });
+		if (action === "rotate-password") return output(await supervisor("lab.hermes.password.rotate"));
+		throw new Error("Usage: treeai lab hermes <status|tools|sessions|verify|rotate-password>");
 	}
 	if (command === "build") {
 		requireRoot("build");
@@ -132,7 +156,7 @@ async function main() {
 	}
 	if (command === "stop") { requireRoot("stop"); compose(["down"]); return output({ status: "ready" }); }
 	if (command === "status") return output(call("/v1/status"));
-	if (command === "verify") return output(verify());
+	if (command === "verify") return output(verify(args.includes("--deep")));
 	if (["enable", "pause", "resume"].includes(command ?? "")) return output(call(`/v1/loop/${command}`, "POST"));
 	if (command === "cycle-now") return output(call("/v1/loop/cycle-now", "POST"));
 	if (command === "watch") {
@@ -142,12 +166,12 @@ async function main() {
 	}
 	if (command === "logs") {
 		requireRoot("logs");
-		const allowed = ["controller", "experience-proxy", "open-webui", "hermes", "gateway"], service = args.find((item) => !item.startsWith("--"));
+		const allowed = ["controller", "experience-proxy", "open-webui", "hermes-agent", "hermes-dashboard", "web-tool-proxy", "gateway"], service = args.find((item) => !item.startsWith("--"));
 		if (service && !allowed.includes(service)) throw new Error("Unsupported lab service.");
 		compose(["logs", "--follow", ...(service ? [service] : [])]);
 		return;
 	}
-	throw new Error("Usage: treeai lab <plan|configure|reset-webui|urls|open|build|start|stop|restart|status|verify|watch|logs|enable|pause|resume|cycle-now>");
+	throw new Error("Usage: treeai lab <plan|configure|reset-webui|urls|open|hermes|build|start|stop|restart|status|verify|watch|logs|enable|pause|resume|cycle-now>");
 }
 
 main().catch((error) => {

@@ -1,0 +1,13 @@
+export const imageVariables: Record<string, string> = {
+	"inference-api": "INFERENCE_API_IMAGE",
+	"inference-manager": "INFERENCE_MANAGER_IMAGE",
+	"inference-vllm": "INFERENCE_VLLM_IMAGE",
+	"inference-evaluator": "INFERENCE_EVALUATOR_IMAGE",
+	"inference-migrations": "INFERENCE_MIGRATIONS_IMAGE",
+	"training-api": "TRAINING_API_IMAGE",
+	"training-manager": "TRAINING_MANAGER_IMAGE",
+	"axolotl-worker": "AXOLOTL_WORKER_IMAGE",
+	"marker-worker": "MARKER_WORKER_IMAGE",
+	"artifact-worker": "ARTIFACT_WORKER_IMAGE",
+	"training-migrations": "TRAINING_MIGRATIONS_IMAGE",
+};

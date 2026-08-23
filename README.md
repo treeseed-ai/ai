@@ -27,7 +27,7 @@ Inference also exposes an authenticated OpenAI-compatible data plane on port 477
 
 Managed mode provides TLS-only LAN listeners on 4770, 4771, 4780, and the manager on 4790.
 
-The optional lab adds TLS listeners for Open WebUI on 4791, the Hermes dashboard on 4792, and its authenticated OpenAPI control API on 4793. Both clients use the private experience proxy; neither can reach raw vLLM.
+The optional lab exposes loopback browser interfaces at `https://chat.treeai.localhost` and `https://hermes.treeai.localhost`, plus its authenticated OpenAPI control API on 4793. Open WebUI discovers both direct inference and `hermes-agent` through the private experience proxy; neither client can reach raw vLLM.
 
 Generate a bootstrap credential after building:
 
@@ -39,10 +39,10 @@ Put the returned `record` in the `AI_API_KEYS` JSON array. The plaintext credent
 
 ## Ubuntu 26.04 managed factory
 
-Release 0.7.1 supports Ubuntu 26.04 (Resolute) amd64. Download one generic or generated configuration package and install it locally:
+Release 0.8.0 supports Ubuntu 26.04 (Resolute) amd64. Download one generic or generated configuration package and install it locally:
 
 ```bash
-sudo apt install ./treeseed-ai_0.7.1-1_amd64.deb
+sudo apt install ./treeseed-ai_0.8.0-1_amd64.deb
 systemctl status treeseed-ai-bootstrap.service
 treeai platform status
 treeai platform doctor
@@ -57,7 +57,7 @@ Update channel and image source are independent. `updates.channel=development` p
 
 ### Optional Hermes experience lab
 
-When `lab` is enabled in `platform.json`, the manager generates distinct service credentials and reconciles Hermes, Open WebUI, the capture proxy, and controller with the core products. The same `treeai` operator credential controls the lab API. Automatic cycling remains disabled until `treeai lab enable` is called. The generated Hermes dashboard credential is host-local and root-readable under `/etc/treeseed-ai/lab/secrets/`; it is never placed in manager events or API responses.
+When `lab` is enabled in `platform.json`, the manager generates distinct service credentials and reconciles the Hermes gateway/dashboard, Open WebUI, safe web worker, capture proxy, and controller with the core products. The same `treeai` operator credential controls the lab API. The three training pipelines remain intentionally disabled in 0.8.0; enable and cycle requests return `training_pipeline_not_configured`. The Hermes dashboard stores only a password hash, and root can rotate its password with a one-time response.
 
 Hermes 0.18.2 is built from its official wheel pinned by SHA-256 because that release has no official container image. Open WebUI 0.11.0 is pinned by digest. In local single-user mode it is available only at `https://chat.treeai.localhost`, with the existing TreeAI CA and no login form. It connects through the private experience proxy rather than raw vLLM.
 
@@ -66,10 +66,13 @@ sudo treeai lab configure --local-single-user
 sudo treeai lab reset-webui --confirm
 treeai lab urls
 treeai lab open webui
-treeai lab verify
+sudo treeai lab hermes rotate-password
+treeai lab open hermes
+treeai lab hermes verify
+treeai lab verify --deep
 ```
 
-The reset command archives the existing Open WebUI volume before creating the fresh database required by auth-disabled mode. The public CA is `/etc/ssl/certs/treeseed-ai-ca.pem`; sandboxed browsers may require manual CA import. Experience artifacts are confined to the Hermes workspace, redacted, content-addressed, and uploaded to training storage before immutable batch preparation.
+The reset command archives the existing Open WebUI volume before creating the fresh database required by auth-disabled mode. The public CA is `/etc/ssl/certs/treeseed-ai-ca.pem`; sandboxed browsers may require manual CA import. Hermes is limited to its persistent `/workspace`, two concurrent runs, fixed local tools, and the credential-free safe web proxy. Versioned captures prepare separate evidence for continual pretraining, corrective SFT, and KTO without launching training.
 
 ## Development
 

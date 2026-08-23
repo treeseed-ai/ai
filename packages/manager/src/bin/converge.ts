@@ -144,7 +144,12 @@ function distribute(record: unknown) {
 function safeSans(config: PlatformConfiguration) {
 	const webuiHost = config.lab?.webui.browserUrl
 		? new URL(config.lab.webui.browserUrl).hostname
-		: undefined;
+		: undefined,
+		hermesHost = config.lab?.hermes?.dashboardUrl
+		? new URL(config.lab.hermes.dashboardUrl).hostname
+		: config.products.includes("lab")
+			? "hermes.treeai.localhost"
+			: undefined;
 	const values = new Set([
 		"localhost",
 		"127.0.0.1",
@@ -152,6 +157,7 @@ function safeSans(config: PlatformConfiguration) {
 		...config.network.hostnames,
 		...config.network.sans,
 		...(webuiHost ? [webuiHost] : []),
+		...(hermesHost ? [hermesHost] : []),
 	]);
 	return [...values]
 		.filter(
@@ -312,7 +318,7 @@ function client(config: PlatformConfiguration, ca: string) {
 		JSON.stringify(
 			{
 				schemaVersion: "treeai.config/v1",
-				version: "0.7.1",
+				version: "0.8.0",
 				imageSource: config.imageSource,
 				ca,
 				endpoints: {
@@ -327,6 +333,11 @@ function client(config: PlatformConfiguration, ca: string) {
 						authentication: "local-users",
 						browserUrl: `https://${host}:4791`,
 						binding: "0.0.0.0:4791",
+					},
+					hermes: config.lab?.hermes ?? {
+						authentication: "local-password",
+						dashboardUrl: "https://hermes.treeai.localhost",
+						binding: "127.0.0.1:443",
 					},
 				},
 				installedProducts: config.products,

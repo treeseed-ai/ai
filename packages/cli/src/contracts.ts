@@ -1,4 +1,4 @@
-export const VERSION='0.7.1';
+export const VERSION='0.8.0';
 export const descriptorRoot=process.env.TREEAI_DESCRIPTOR_ROOT??'/usr/lib/treeseed-ai/commands.d';
 export const configPath=process.env.TREEAI_CONFIG??'/etc/treeseed-ai/treeai/config.json';
 export const keyPath=process.env.TREEAI_OPERATOR_KEY??'/etc/treeseed-ai/treeai/operator.key';

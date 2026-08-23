@@ -1,16 +1,132 @@
 #!/usr/bin/env node
-import{serve}from'@hono/node-server';import{apiKeyAuthorization,openApiDocument,parseBootstrapKeys,requireScope,type ExperienceArtifact,type ExperienceBatchManifest,type ExperienceTrajectory,type RouteSpec}from'@ai-platform/common';import{PutObjectCommand,S3Client}from'@aws-sdk/client-s3';import{createHash}from'node:crypto';import{Hono}from'hono';import{streamSSE}from'hono/streaming';import{readdirSync,readFileSync,realpathSync}from'node:fs';import{extname,resolve,relative}from'node:path';import{appendEvent,atomic,digest,lines,readJson,redactKnownCredentials,required,stateRoot,workspaceRoot}from'./shared.js';
-type LoopState={enabled:boolean;paused:boolean;running:boolean;failures:number;lastCycleAt?:string;lastCaptureAt?:string;included:string[];phase:string};const statePath=`${stateRoot}/loop.json`,cyclePath=`${stateRoot}/cycles.jsonl`;let busy=false;
-const initial:LoopState={enabled:false,paused:false,running:false,failures:0,included:[],phase:'idle'};function state(){return readJson(statePath,initial);}function save(value:LoopState){atomic(statePath,value);appendEvent('loop',value);}function api(base:string,key:string,path:string,method='GET',body?:unknown){return fetch(`${base}${path}`,{method,headers:{authorization:`Bearer ${key}`,'content-type':'application/json'},body:body?JSON.stringify(body):undefined}).then(async response=>{const value=await response.json();if(!response.ok)throw new Error(`${path}: ${response.status} ${JSON.stringify(value)}`);return value;});}
-async function waitJob(base:string,key:string,id:string,minutes=360){const end=Date.now()+minutes*60_000;while(Date.now()<end){const job=await api(base,key,`/v1/jobs/${id}`);if(job.state==='succeeded')return job;if(['failed','cancelled'].includes(job.state))throw new Error(`${job.type} ${job.state}: ${JSON.stringify(job.error)}`);await new Promise(resolve=>setTimeout(resolve,5000));}throw new Error(`Job ${id} timed out`);}
-function assistant(raw:string){try{if(raw.startsWith('data:')){const chunks=raw.split('\n').filter(line=>line.startsWith('data:')&&!line.includes('[DONE]')).map(line=>JSON.parse(line.slice(5)));return chunks.map(value=>value.choices?.[0]?.delta?.content??'').join('');}return JSON.parse(raw).choices?.[0]?.message?.content??'';}catch{return'';}}
-function trajectories(force=false):ExperienceTrajectory[]{const cutoff=Date.now()-600_000,prior=new Set(state().included),seen=new Set<string>(),items:ExperienceTrajectory[]=[],eligible=lines(`${stateRoot}/captures.jsonl`).filter(capture=>(force||Date.parse(capture.capturedAt)<=cutoff)&&Array.isArray(capture.request?.messages)),prefix=(left:any[],right:any[])=>left.length<right.length&&left.every((message,index)=>digest(message)===digest(right[index]));for(const capture of eligible){const messages=capture.request.messages;if(eligible.some(other=>other!==capture&&other.sourceClient===capture.sourceClient&&prefix(messages,other.request.messages)))continue;const id=digest({source:capture.sourceClient,messages});if(prior.has(id)||seen.has(id))continue;seen.add(id);const answer=assistant(capture.response);if(!answer)continue;items.push({id,sourceClient:capture.sourceClient==='open-webui'?'open-webui':'hermes',model:capture.request.model??'local-model',deploymentRevision:capture.modelRevision,messages:[...messages,{role:'assistant',content:answer}],toolActivity:messages.flatMap((message:any)=>[...(message.tool_calls??[]),...(message.role==='tool'?[{toolCallId:message.tool_call_id,result:message.content}]:[])]),createdAt:capture.capturedAt,reward:capture.status===200?1:0});}return items;}
-function redactArtifact(value:Buffer,path:string){const textual=new Set(['.txt','.md','.json','.jsonl','.csv','.yaml','.yml','.xml','.html','.js','.ts','.py','.sh']);if(textual.has(extname(path).toLowerCase()))return Buffer.from(redactKnownCredentials(value.toString('utf8')));if(redactKnownCredentials(value.toString('latin1'))!==value.toString('latin1'))throw new Error(`Binary artifact ${path} contains a credential-like value`);return value;}
-async function artifacts():Promise<ExperienceArtifact[]>{const root=realpathSync(workspaceRoot),source=JSON.parse(readFileSync(process.env.TRAINING_SOURCE_FILE??'/run/secrets/training-source','utf8')),client=new S3Client({endpoint:source.endpoint,region:'us-east-1',forcePathStyle:true,credentials:{accessKeyId:source.accessKeyId,secretAccessKey:source.secretAccessKey}}),items:ExperienceArtifact[]=[];for(const entry of readdirSync(root,{recursive:true,withFileTypes:true})){const path=resolve(entry.parentPath,entry.name);if(entry.isSymbolicLink())throw new Error('Hermes workspace contains a forbidden symlink');if(!entry.isFile())continue;const real=realpathSync(path),relativePath=relative(root,real);if(relativePath.startsWith('..'))throw new Error('Workspace path escape');const bytes=redactArtifact(readFileSync(real),relativePath),sha256=createHash('sha256').update(bytes).digest('hex'),key=`experience-artifacts/${sha256}`;await client.send(new PutObjectCommand({Bucket:source.bucket,Key:key,Body:bytes,ContentType:'application/octet-stream',Metadata:{sha256}}));items.push({uri:`s3://${source.bucket}/${key}`,sha256,size:bytes.byteLength,mimeType:'application/octet-stream',provenance:{source:'hermes-workspace',path:relativePath}});}return items;}
-async function critic(item:ExperienceTrajectory){const result=await fetch(`${process.env.INFERENCE_URL??'http://inference-api:4771'}/v1/chat/completions`,{method:'POST',headers:{authorization:`Bearer ${required('AI_FACTORY_INFERENCE_KEY')}`,'content-type':'application/json','x-ai-experience':'ignore'},body:JSON.stringify({model:item.model,messages:[{role:'system',content:'Revise the final answer using the full trace. Preserve only supported claims and return the improved answer.'},...item.messages],temperature:0})});if(!result.ok)return item;const value=await result.json()as any,revised={...item,critic:{revision:item.deploymentRevision,answer:value.choices?.[0]?.message?.content,validated:item.reward===1}};if(revised.critic.validated){const{appendBounded}=await import('./shared.js');appendBounded(`${stateRoot}/qualified.jsonl`,revised);}return revised;}
-async function transition(target:'awake'|'sleep'){const value=await api(required('FACTORY_URL'),required('AI_FACTORY_CONTROL_KEY'),'/v1/mode','POST',{target,idempotencyKey:`lab-${target}-${Date.now()}`});let current=value;while(!['succeeded','failed'].includes(current.state??'')){await new Promise(resolve=>setTimeout(resolve,5000));current=await api(required('FACTORY_URL'),required('AI_FACTORY_CONTROL_KEY'),`/v1/transitions/${value.id}`);}if(current.state!=='succeeded')throw new Error(`Factory transition to ${target} failed`);}
-async function execute(force=false){if(busy)return;busy=true;let value={...state(),running:true,phase:'freeze'};save(value);const cycle={id:crypto.randomUUID(),startedAt:new Date().toISOString(),phases:[]as unknown[],status:'running'};try{let fresh=trajectories(force);if(!force&&fresh.length<Number(process.env.LAB_MIN_TRAJECTORIES??100))throw new Error('not_enough_experience');fresh=await Promise.all(fresh.map(critic));const workspace=await artifacts();fresh=fresh.map(item=>({...item,artifacts:workspace}));const history=lines(`${stateRoot}/qualified.jsonl`).slice(-10_000),recent=fresh,replay=history.filter((item:any)=>!fresh.some(current=>current.id===item.id)).slice(-Math.ceil(recent.length*3/7)),selected=[...recent,...replay]as ExperienceTrajectory[];const manifest:ExperienceBatchManifest={schemaVersion:'ai.experience-batch/v1',batchId:cycle.id,createdAt:new Date().toISOString(),trajectories:selected,redactionPolicyVersion:'known-credentials-v1',provenance:{controller:'treeseed-ai-lab/0.7.1'}};const training=required('TRAINING_URL'),tk=required('AI_FACTORY_TRAINING_KEY'),inference=required('INFERENCE_CONTROL_URL'),ik=required('AI_FACTORY_INFERENCE_KEY');value.phase='prepare';save(value);const registered=await api(training,tk,'/v1/experience-batches','POST',{idempotencyKey:`batch-${cycle.id}`,input:{manifest}});await waitJob(training,tk,registered.id);const prepared=await api(training,tk,`/v1/experience-batches/${registered.id}/prepare`,'POST',{idempotencyKey:`prepare-${cycle.id}`,input:{manifest}});const dataset=await waitJob(training,tk,prepared.id);value.phase='sleep';save(value);await transition('sleep');value.phase='train';save(value);const trained=await api(training,tk,'/v1/training-runs','POST',{idempotencyKey:`train-${cycle.id}`,input:{baseModel:process.env.BASE_MODEL??'Qwen/Qwen3.5-4B',baseModelRevision:required('BASE_MODEL_REVISION'),datasetManifests:[dataset.resultManifest],method:'qlora-sft'}});const adapter=await waitJob(training,tk,trained.id);value.phase='awake';save(value);await transition('awake');value.phase='import';save(value);const imported=await api(inference,ik,'/v1/adapters/import','POST',{idempotencyKey:`import-${cycle.id}`,input:{sourceId:'training-local',manifestUri:adapter.resultManifest}});const candidate=await waitJob(inference,ik,imported.id);const active=(await api(inference,ik,'/v1/deployments/current')).deployment?.candidateId??process.env.BASE_MODEL??'Qwen/Qwen3.5-4B',candidateId=String(candidate.resultManifest??'').replace(/^candidate:\/\//u,'');if(!/^[a-f0-9-]{36}$/u.test(candidateId))throw new Error('Inference import did not return a candidate reference');const adapterRecord=await api(inference,ik,`/v1/adapters/${candidateId}`),evaluation=await api(inference,ik,'/v1/evaluations','POST',{idempotencyKey:`eval-${cycle.id}`,input:{candidates:[active,{model:candidateId,manifest:adapterRecord.manifest}],suite:'default-v1'}}),evaluated=await waitJob(inference,ik,evaluation.id);const ranking=await api(inference,ik,'/v1/rankings','POST',{idempotencyKey:`rank-${cycle.id}`,input:{evaluationManifests:[evaluated.resultManifest],activeCandidate:active,candidate:candidateId}}),ranked=await waitJob(inference,ik,ranking.id);const promotion=await api(inference,ik,'/v1/promotions','POST',{idempotencyKey:`promote-${cycle.id}`,input:{candidateId,rankingManifest:ranked.resultManifest}});await waitJob(inference,ik,promotion.id);value={...value,running:false,phase:'idle',failures:0,lastCycleAt:new Date().toISOString(),included:[...new Set([...value.included,...fresh.map(item=>item.id)])].slice(-10_000)};cycle.status='succeeded';save(value);}catch(error){try{await transition('awake');}catch{}const ignored=error instanceof Error&&error.message==='not_enough_experience';value={...value,running:false,phase:'idle',failures:ignored?value.failures:value.failures+1,paused:value.failures+(ignored?0:1)>=3};cycle.status=ignored?'postponed':'failed';(cycle as any).error=error instanceof Error?error.message:String(error);save(value);}finally{appendEvent('cycle',cycle);import('node:fs').then(({appendFileSync})=>appendFileSync(cyclePath,`${JSON.stringify(cycle)}\n`));busy=false;}}
-async function mutate(context:any,action:string,operation:()=>unknown){const key=context.req.header('idempotency-key');if(!key)return context.json({error:{code:'invalid_request',message:'Idempotency-Key is required.'}},400);const path=`${stateRoot}/idempotency.json`,receipts=readJson<Record<string,unknown>>(path,{}),receiptKey=`${action}:${key}`;if(receipts[receiptKey])return context.json(receipts[receiptKey],202);const result=operation();receipts[receiptKey]=result;atomic(path,receipts);return context.json(result,202);}
-const routes:RouteSpec[]=[{method:'GET',path:'/healthz',summary:'Liveness'},{method:'GET',path:'/readyz',summary:'Readiness'},{method:'GET',path:'/v1/status',summary:'Lab state',scope:'lab:read'},{method:'GET',path:'/v1/cycles',summary:'Cycles',scope:'lab:read'},{method:'GET',path:'/v1/cycles/:id',summary:'Cycle',scope:'lab:read'},{method:'POST',path:'/v1/loop/enable',summary:'Enable loop',scope:'lab:write'},{method:'POST',path:'/v1/loop/pause',summary:'Pause loop',scope:'lab:write'},{method:'POST',path:'/v1/loop/resume',summary:'Resume loop',scope:'lab:write'},{method:'POST',path:'/v1/loop/cycle-now',summary:'Start cycle',scope:'lab:write'},{method:'GET',path:'/v1/experience',summary:'Experience',scope:'lab:read'},{method:'GET',path:'/v1/experience/:id',summary:'Experience',scope:'lab:read'},{method:'GET',path:'/v1/events/stream',summary:'Events',scope:'lab:read'},{method:'GET',path:'/v1/metrics',summary:'Metrics',scope:'metrics:read'}];
-const keys=parseBootstrapKeys(process.env.AI_LAB_API_KEYS??'');const app=new Hono();app.get('/healthz',c=>c.json({ok:true}));app.get('/readyz',c=>c.json({ok:true}));app.get('/openapi.json',c=>c.json(openApiDocument({title:'AI Experience Lab API',version:'0.7.1',routes})));app.use('/v1/*',apiKeyAuthorization(async id=>keys.find(key=>key.id===id)??null));app.get('/v1/status',requireScope('lab:read'),c=>c.json({...state(),qualified:trajectories().length}));app.get('/v1/cycles',requireScope('lab:read'),c=>c.json({items:lines(cyclePath).reverse()}));app.get('/v1/cycles/:id',requireScope('lab:read'),c=>{const item=lines(cyclePath).find(value=>value.id===c.req.param('id'));return item?c.json(item):c.json({error:{code:'not_found',message:'Cycle not found'}},404);});app.get('/v1/experience',requireScope('lab:read'),c=>c.json({items:trajectories(true)}));app.get('/v1/experience/:id',requireScope('lab:read'),c=>{const item=trajectories(true).find(value=>value.id===c.req.param('id'));return item?c.json(item):c.json({error:{code:'not_found',message:'Experience not found'}},404);});
-for(const[action,change]of Object.entries({enable:{enabled:true,paused:false},pause:{paused:true},resume:{enabled:true,paused:false}}))app.post(`/v1/loop/${action}`,requireScope('lab:write'),c=>mutate(c,action,()=>{const value={...state(),...change};save(value);return value;}));app.post('/v1/loop/cycle-now',requireScope('lab:write'),c=>mutate(c,'cycle-now',()=>{void execute(true);return{status:'accepted'};}));app.get('/v1/metrics',requireScope('metrics:read'),c=>c.text(`ai_lab_qualified_trajectories ${trajectories().length}\nai_lab_cycle_failures ${state().failures}\nai_lab_loop_enabled ${state().enabled&&!state().paused?1:0}\n`,200,{'content-type':'text/plain; version=0.0.4'}));app.get('/v1/events/stream',requireScope('lab:read'),c=>streamSSE(c,async stream=>{let cursor=c.req.header('last-event-id')??'';while(!stream.closed){for(const event of lines(`${stateRoot}/events.jsonl`)){if(event.id<=cursor)continue;await stream.writeSSE({id:event.id,event:event.type,data:JSON.stringify(event.data)});cursor=event.id;}await stream.writeSSE({event:'heartbeat',data:'{}'});await stream.sleep(2000);}}));serve({fetch:app.fetch,hostname:'0.0.0.0',port:Number(process.env.PORT??8081)});setInterval(()=>{const value=state(),captures=lines(`${stateRoot}/captures.jsonl`),lastCapture=captures.at(-1)?.capturedAt??new Date(0).toISOString(),idle=Date.now()-Date.parse(lastCapture)>=Number(process.env.LAB_IDLE_MINUTES??15)*60_000,cooldown=Date.now()-Date.parse(value.lastCycleAt??new Date(0).toISOString())>=Number(process.env.LAB_COOLDOWN_HOURS??6)*3_600_000,enough=trajectories().length>=Number(process.env.LAB_MIN_TRAJECTORIES??100);if(value.enabled&&!value.paused&&!value.running&&idle&&cooldown&&enough)void execute();},30_000);
+import { serve } from "@hono/node-server";
+import { apiKeyAuthorization, openApiDocument, parseBootstrapKeys, requireScope, type RouteSpec } from "@ai-platform/common";
+import { Hono, type Context } from "hono";
+import { streamSSE } from "hono/streaming";
+import { existsSync, mkdirSync, renameSync } from "node:fs";
+import { appendEvent, atomic, lines, readJson, required, sanitize, stateRoot } from "./shared.js";
+import { finalizeEvidence, sourceForSession } from "./evidence.js";
+
+type ControllerOptions = { fetch?: typeof fetch; now?: () => number };
+const sessionPattern = /^[A-Za-z0-9._-]{1,128}$/u;
+
+function migrateCaptureV1() {
+	const receipt = `${stateRoot}/capture-v1-migration.json`;
+	if (existsSync(receipt)) return;
+	const names = ["captures.jsonl", "qualified.jsonl", "cycles.jsonl", "loop.json", "idempotency.json"], present = names.filter((name) => existsSync(`${stateRoot}/${name}`));
+	if (!present.length) return atomic(receipt, { schemaVersion: "ai.capture-migration/v1", status: "not-required", completedAt: new Date().toISOString(), archived: [] });
+	const stamp = new Date().toISOString().replace(/[:.]/gu, "-"), archive = `${stateRoot}/archive/capture-v1-${stamp}`;
+	mkdirSync(archive, { recursive: true, mode: 0o700 });
+	for (const name of present) renameSync(`${stateRoot}/${name}`, `${archive}/${name}`);
+	atomic(receipt, { schemaVersion: "ai.capture-migration/v1", status: "archived", completedAt: new Date().toISOString(), archive: `archive/capture-v1-${stamp}`, archived: present });
+}
+
+function extractItems(value: unknown, key = "data") {
+	if (Array.isArray(value)) return value;
+	if (value && typeof value === "object") {
+		const record = value as Record<string, unknown>;
+		if (Array.isArray(record[key])) return record[key] as unknown[];
+		if (Array.isArray(record.messages)) return record.messages as unknown[];
+	}
+	return [];
+}
+
+export function createLabController(options: ControllerOptions = {}) {
+	migrateCaptureV1();
+	const requestFetch = options.fetch ?? fetch, now = options.now ?? Date.now;
+	const hermesUrl = process.env.HERMES_URL ?? "http://hermes-agent:8642";
+	const experienceUrl = process.env.EXPERIENCE_PROXY_URL ?? "http://experience-proxy:8080";
+	const keys = parseBootstrapKeys(process.env.AI_LAB_API_KEYS ?? "");
+	async function hermes(path: string, method = "GET") {
+		const response = await requestFetch(`${hermesUrl}${path}`, { method, headers: { authorization: `Bearer ${required("HERMES_API_KEY")}`, "content-type": "application/json" } });
+		const value = await response.json().catch(() => ({}));
+		if (!response.ok) throw new Error(`Hermes ${path} returned ${response.status}`);
+		return sanitize(value);
+	}
+	async function finalize(id: string) {
+		if (!sessionPattern.test(id)) throw new Error("Invalid Hermes session identifier");
+		const sessionValue = await hermes(`/api/sessions/${encodeURIComponent(id)}`) as Record<string, unknown>;
+		const session = (sessionValue.session ?? sessionValue) as Record<string, unknown>;
+		const messageValue = await hermes(`/api/sessions/${encodeURIComponent(id)}/messages`);
+		const trajectory = finalizeEvidence(session, extractItems(messageValue) as never[], sourceForSession(id, String(session.source ?? "")));
+		appendEvent("trajectory.finalized", { id: trajectory.id, hermesSessionId: id });
+		return trajectory;
+	}
+	async function deepVerify() {
+		const artifactName = `treeai-hermes-deep-check-${crypto.randomUUID()}.txt`, artifactContent = `TREEAI_HERMES_READY_${crypto.randomUUID()}`;
+		async function completion(model: string, stream: boolean, content: string) {
+			const response = await requestFetch(`${experienceUrl}/v1/chat/completions`, { method: "POST", headers: { authorization: "Bearer lab-hermes", "content-type": "application/json", "x-ai-client": "hermes" }, body: JSON.stringify({ model, stream, messages: [{ role: "user", content }], temperature: 0 }) });
+			const raw = await response.text();
+			if (!response.ok || !raw) throw new Error(`${model} ${stream ? "streaming" : "non-streaming"} verification failed`);
+			return { sessionId: response.headers.get("x-hermes-session-id") };
+		}
+		await completion("local-model", false, "Reply with DIRECT_READY only.");
+		await completion("local-model", true, "Reply with STREAM_READY only.");
+		const agent = await completion("hermes-agent", false, `Use the file tool to create /workspace/${artifactName} containing exactly ${artifactContent}, read it back, then reply with HERMES_READY.`);
+		await completion("hermes-agent", true, "Reply with HERMES_STREAM_READY only.");
+		if (!agent.sessionId) throw new Error("Hermes verification did not return a session identifier");
+		const trajectory = await finalize(agent.sessionId);
+		const observations = lines(`${stateRoot}/artifact-observations.jsonl`), correlated = observations.find((item) => trajectory.artifactObservationIds.includes(String(item.id)) && item.relativePath === artifactName);
+		if (!correlated) throw new Error("Hermes verification did not produce the expected correlated workspace artifact");
+		return { status: "ready", direct: true, streaming: true, hermes: true, trajectoryId: trajectory?.id, artifacts: trajectory?.artifactObservationIds ?? [] };
+	}
+	async function idempotent(context: Context, action: string, operation: () => Promise<unknown>) {
+		const key = context.req.header("idempotency-key");
+		if (!key || key.length > 200) return context.json({ error: { code: "invalid_request", message: "A valid Idempotency-Key is required." } }, 400);
+		const path = `${stateRoot}/idempotency-v2.json`, receipts = readJson<Record<string, unknown>>(path, {}), receiptKey = `${action}:${key}`;
+		if (receipts[receiptKey]) return context.json(receipts[receiptKey], 202);
+		const result = await operation(); receipts[receiptKey] = result; atomic(path, receipts);
+		return context.json(result, 202);
+	}
+	const routes: RouteSpec[] = [
+		{ method: "GET", path: "/healthz", summary: "Liveness" }, { method: "GET", path: "/readyz", summary: "Readiness" },
+		{ method: "GET", path: "/v1/status", summary: "Lab state", scope: "lab:read" },
+		{ method: "GET", path: "/v1/hermes/status", summary: "Hermes status", scope: "lab:hermes:read" },
+		{ method: "GET", path: "/v1/hermes/capabilities", summary: "Hermes capabilities", scope: "lab:hermes:read" },
+		{ method: "GET", path: "/v1/hermes/tools", summary: "Hermes tools", scope: "lab:hermes:read" },
+		{ method: "GET", path: "/v1/hermes/sessions", summary: "Hermes sessions", scope: "lab:hermes:read" },
+		{ method: "GET", path: "/v1/hermes/sessions/:id", summary: "Hermes session", scope: "lab:hermes:read" },
+		{ method: "POST", path: "/v1/hermes/sessions/:id/finalize", summary: "Finalize Hermes evidence", scope: "lab:experience:write" },
+		{ method: "POST", path: "/v1/hermes/verify", summary: "Run bounded Hermes verification", scope: "lab:experience:write" },
+		{ method: "GET", path: "/v1/trajectories", summary: "Agent trajectories", scope: "lab:read" },
+		{ method: "GET", path: "/v1/trajectories/:id", summary: "Agent trajectory", scope: "lab:read" },
+		{ method: "GET", path: "/v1/artifacts", summary: "Artifact observations", scope: "lab:read" },
+		{ method: "GET", path: "/v1/cycles", summary: "Disabled training cycles", scope: "lab:read" },
+		{ method: "GET", path: "/v1/experience", summary: "Captured trajectories", scope: "lab:read" },
+		{ method: "GET", path: "/v1/events/stream", summary: "Events", scope: "lab:read" },
+		{ method: "GET", path: "/v1/metrics", summary: "Metrics", scope: "metrics:read" },
+		{ method: "POST", path: "/v1/loop/enable", summary: "Enable loop", scope: "lab:write" },
+		{ method: "POST", path: "/v1/loop/cycle-now", summary: "Start cycle", scope: "lab:write" },
+		{ method: "POST", path: "/v1/loop/pause", summary: "Pause loop", scope: "lab:write" },
+		{ method: "POST", path: "/v1/loop/resume", summary: "Resume loop", scope: "lab:write" },
+	];
+	const app = new Hono();
+	app.get("/healthz", (context) => context.json({ ok: true })); app.get("/readyz", async (context) => { try { await hermes("/health"); return context.json({ ok: true }); } catch { return context.json({ ok: false, reason: "hermes-unavailable" }, 503); } });
+	app.get("/openapi.json", (context) => context.json(openApiDocument({ title: "AI Experience Lab API", version: "0.8.0", routes })));
+	app.get("/docs", (context) => context.html('<!doctype html><title>TreeAI Lab API</title><script id="api-reference" data-url="/openapi.json"></script><script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>'));
+	app.onError((error, context) => context.json({ error: { code: "agent_unavailable", message: "Hermes Agent is unavailable." } }, 503));
+	app.use("/v1/*", apiKeyAuthorization(async (id) => keys.find((key) => key.id === id) ?? null));
+	app.get("/v1/status", requireScope("lab:read"), (context) => context.json({ enabled: false, paused: true, phase: "training-pipelines-not-configured", trajectories: lines(`${stateRoot}/trajectories.jsonl`).length }));
+	app.get("/v1/hermes/status", requireScope("lab:hermes:read"), async (context) => context.json(await hermes("/health/detailed")));
+	app.get("/v1/hermes/capabilities", requireScope("lab:hermes:read"), async (context) => context.json(await hermes("/v1/capabilities")));
+	app.get("/v1/hermes/tools", requireScope("lab:hermes:read"), async (context) => context.json(await hermes("/v1/toolsets")));
+	app.get("/v1/hermes/sessions", requireScope("lab:hermes:read"), async (context) => context.json(await hermes("/api/sessions")));
+	app.get("/v1/hermes/sessions/:id", requireScope("lab:hermes:read"), async (context) => sessionPattern.test(context.req.param("id")) ? context.json(await hermes(`/api/sessions/${encodeURIComponent(context.req.param("id"))}`)) : context.json({ error: { code: "invalid_request", message: "Invalid session ID" } }, 400));
+	app.post("/v1/hermes/sessions/:id/finalize", requireScope("lab:experience:write"), async (context) => {
+		try { return await idempotent(context, `finalize:${context.req.param("id")}`, () => finalize(context.req.param("id"))); } catch { return context.json({ error: { code: "finalization_failed", message: "Hermes evidence could not be finalized." } }, 422); }
+	});
+	app.post("/v1/hermes/verify", requireScope("lab:experience:write"), (context) => idempotent(context, "hermes-verify", deepVerify));
+	app.get("/v1/trajectories", requireScope("lab:read"), (context) => context.json({ items: lines(`${stateRoot}/trajectories.jsonl`).reverse() }));
+	app.get("/v1/trajectories/:id", requireScope("lab:read"), (context) => { const item = lines(`${stateRoot}/trajectories.jsonl`).find((value) => value.id === context.req.param("id")); return item ? context.json(item) : context.json({ error: { code: "not_found", message: "Trajectory not found" } }, 404); });
+	app.get("/v1/artifacts", requireScope("lab:read"), (context) => context.json({ items: lines(`${stateRoot}/artifact-observations.jsonl`).reverse() }));
+	app.get("/v1/cycles", requireScope("lab:read"), (context) => context.json({ items: [], disabled: true }));
+	app.get("/v1/experience", requireScope("lab:read"), (context) => context.json({ items: lines(`${stateRoot}/trajectories.jsonl`).reverse() }));
+	for (const action of ["enable", "cycle-now", "resume"]) app.post(`/v1/loop/${action}`, requireScope("lab:write"), (context) => context.req.header("idempotency-key") ? context.json({ error: { code: "training_pipeline_not_configured", message: "Continual pretraining, corrective SFT, and KTO pipelines must be qualified before automatic cycling can be enabled." } }, 409) : context.json({ error: { code: "invalid_request", message: "Idempotency-Key is required." } }, 400));
+	app.post("/v1/loop/pause", requireScope("lab:write"), (context) => context.req.header("idempotency-key") ? context.json({ enabled: false, paused: true, phase: "training-pipelines-not-configured" }) : context.json({ error: { code: "invalid_request", message: "Idempotency-Key is required." } }, 400));
+	app.get("/v1/metrics", requireScope("metrics:read"), (context) => context.text(`ai_lab_trajectories ${lines(`${stateRoot}/trajectories.jsonl`).length}\nai_lab_artifact_observations ${lines(`${stateRoot}/artifact-observations.jsonl`).length}\nai_lab_loop_enabled 0\n`, 200, { "content-type": "text/plain; version=0.0.4" }));
+	app.get("/v1/events/stream", requireScope("lab:read"), (context) => streamSSE(context, async (stream) => { let cursor = context.req.header("last-event-id") ?? ""; while (!stream.closed) { for (const event of lines(`${stateRoot}/events.jsonl`)) { if (event.id <= cursor) continue; await stream.writeSSE({ id: event.id, event: event.type, data: JSON.stringify(event.data) }); cursor = event.id; } await stream.writeSSE({ event: "heartbeat", data: "{}" }); await stream.sleep(2000); } }));
+	const synchronize = async () => { try { const value = await hermes("/api/sessions?limit=100"), cutoff = now() - 600_000; for (const item of extractItems(value) as Array<Record<string, unknown>>) { const id = String(item.id ?? item.session_id ?? ""), raw = item.last_active ?? item.updated_at ?? item.created_at, numeric = Number(raw), last = Number.isFinite(numeric) ? numeric * (numeric < 10_000_000_000 ? 1000 : 1) : Date.parse(String(raw ?? "")); if (id && Number.isFinite(last) && last <= cutoff) await finalize(id); } } catch (error) { appendEvent("trajectory.synchronization-failed", { message: error instanceof Error ? error.message : String(error) }); } };
+	return { app, synchronize };
+}
+
+if (process.env.NODE_ENV !== "test") { const controller = createLabController(); serve({ fetch: controller.app.fetch, hostname: "0.0.0.0", port: Number(process.env.PORT ?? 8081) }); setInterval(() => void controller.synchronize(), 30_000); }
