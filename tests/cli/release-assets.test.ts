@@ -7,6 +7,13 @@ import{describe,expect,it}from'vitest';
 function run(source:string,destination:string){return spawnSync(process.execPath,['--import','tsx','scripts/release/stage-release-assets.ts',source,destination],{encoding:'utf8'})}
 
 describe('release asset staging',()=>{
+	it('keeps the newest Debian changelog entry chronologically newest',()=>{
+		const dates=[...readFileSync('debian/changelog','utf8').matchAll(/^ -- .+?  (.+)$/gmu)].map(match=>Date.parse(match[1]!));
+		expect(dates.length).toBeGreaterThan(1);
+		expect(dates.every(Number.isFinite)).toBe(true);
+		expect(dates[0]).toBeGreaterThan(dates[1]!);
+	});
+
   it('matches GitHub Release basename publication',()=>{
     const root=mkdtempSync(join(tmpdir(),'treeai-assets-')),source=join(root,'source'),destination=join(root,'published');
     mkdirSync(join(source,'sboms'),{recursive:true});
