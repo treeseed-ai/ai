@@ -53,6 +53,9 @@ describe("Open WebUI local single-user integration", () => {
 		expect(compose.services.gateway.ports).toBeUndefined();
 		expect(compose.services['library-bridge'].networks).toEqual(['lab-private','ai-shared']);
 		expect(compose.services['library-bridge'].secrets).toEqual(['training-ingest-key','lab-library-action-key']);
+		expect(compose.services['library-bridge'].group_add).toEqual([
+			"${RUNTIME_GID:?RUNTIME_GID is required}",
+		]);
 		expect(compose.services['open-webui'].volumes).toContain('/usr/lib/treeseed-ai/lab/open-webui:/opt/treeai/actions:ro');
 		expect(readFileSync('deploy/lab/Caddyfile','utf8')).toContain('reverse_proxy library-bridge:8082');
 		const action=readFileSync('deploy/lab/open-webui/treeai_train_library.py','utf8');

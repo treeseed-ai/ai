@@ -59,6 +59,7 @@ services:
   library-bridge:
     image: ${LAB_LIBRARY_BRIDGE_IMAGE:?LAB_LIBRARY_BRIDGE_IMAGE is required}
     restart: unless-stopped
+    group_add: ["${RUNTIME_GID:?RUNTIME_GID is required}"]
     depends_on:
       open-webui: { condition: service_healthy }
     environment:
