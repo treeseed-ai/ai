@@ -1,0 +1,7 @@
+Package: treeseed-ai-development-archive-keyring
+Version: 0.6.2-1
+Section: misc
+Priority: optional
+Architecture: all
+Maintainer: TreeSeed AI Releases <releases@treeseed.ai>
+Description: TreeAI development APT archive public keyring

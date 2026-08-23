@@ -10,7 +10,7 @@ services:
     networks:
       default: {}
       ai-shared: { aliases: [training-api] }
-    volumes: ["/var/lib/treeseed-ai/host-runtime/factory:/factory:ro", "/run/treeseed-ai/training:/runtime-status:ro"]
+    volumes: ["/var/lib/treeseed-ai/platform:/factory:ro", "/run/treeseed-ai/training:/runtime-status:ro"]
     environment: { AI_FACTORY_MODE_FILE: /factory/mode.json, AI_FACTORY_STATUS_FILE: /runtime-status/status.json, SIGNING_PUBLIC_KEY_FILE: /run/secrets/training-signing-public, SIGNING_KEY_ID: "${SIGNING_KEY_ID:?SIGNING_KEY_ID is required}" }
     secrets: [training-signing-public]
   manager:
@@ -19,7 +19,7 @@ services:
       migrations: { condition: service_completed_successfully }
       artifact: { condition: service_healthy }
       minio-init: { condition: service_completed_successfully }
-    volumes: ["/var/lib/treeseed-ai/host-runtime/factory:/factory:ro", "/run/treeseed-ai/training:/runtime-status"]
+    volumes: ["/var/lib/treeseed-ai/platform:/factory:ro", "/run/treeseed-ai/training:/runtime-status"]
     environment: { AI_FACTORY_MODE_FILE: /factory/mode.json, AI_FACTORY_STATUS_FILE: /runtime-status/status.json }
   marker:
     restart: "no"
@@ -32,4 +32,4 @@ services:
 networks:
   ai-shared: { external: true, name: ai-shared }
 secrets:
-  training-signing-public: { file: /etc/treeseed-ai/host-runtime/factory/artifact-signing-public.pem }
+  training-signing-public: { file: /etc/treeseed-ai/manager/factory/artifact-signing-public.pem }

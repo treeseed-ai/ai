@@ -1,0 +1,9 @@
+Package: treeseed-ai-host-js-runtime
+Version: 0.6.2-1
+Section: interpreters
+Priority: optional
+Architecture: amd64
+Maintainer: TreeSeed AI Releases <releases@treeseed.ai>
+Depends: libc6 (>= 2.36), libstdc++6, ca-certificates
+Description: Private pinned JavaScript runtime for TreeAI management services
+ Installs Node only under /usr/lib/treeseed-ai/runtime and does not replace /usr/bin/node.

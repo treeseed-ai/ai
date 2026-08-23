@@ -3,6 +3,7 @@ node_modules/
 coverage/
 .treeseed/
 .artifacts/
+.cache/
 *.log
 __pycache__/
 *.pyc

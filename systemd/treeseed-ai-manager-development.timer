@@ -1,0 +1,12 @@
+[Unit]
+Description=Continuous TreeAI development release polling
+
+[Timer]
+OnUnitInactiveSec=60s
+RandomizedDelaySec=5s
+AccuracySec=1s
+Persistent=true
+Unit=treeseed-ai-manager-update.service
+
+[Install]
+WantedBy=timers.target

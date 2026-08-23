@@ -1,9 +1,9 @@
 Package: treeseed-ai-lab
-Version: 0.5.0
+Version: 0.6.2-1
 Section: utils
 Priority: optional
 Architecture: amd64
 Maintainer: TreeSeed AI Releases <releases@treeseed.ai>
-Depends: treeseed-ai-cli (= 0.5.0), nodejs (>= 22), openssl
-Recommends: treeseed-ai-host-runtime (= 0.5.0), treeseed-ai-inference (= 0.5.0), treeseed-ai-training (= 0.5.0)
+Depends: treeseed-ai-cli (>= 0.6.0), treeseed-ai-host-js-runtime (>= 0.6.0), openssl
+Recommends: treeseed-ai-manager (>= 0.6.0), treeseed-ai-host-runtime (>= 0.6.0), treeseed-ai-inference (>= 0.6.0), treeseed-ai-training (>= 0.6.0)
 Description: Optional Hermes and Open WebUI experience laboratory for the local AI factory

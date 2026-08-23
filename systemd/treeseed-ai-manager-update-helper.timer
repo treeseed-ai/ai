@@ -1,0 +1,7 @@
+[Unit]
+Description=Delay TreeAI manager self-update handoff until dpkg completes
+
+[Timer]
+OnActiveSec=30s
+AccuracySec=1s
+Unit=treeseed-ai-manager-update-helper.service

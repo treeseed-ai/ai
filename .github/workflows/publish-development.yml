@@ -1,0 +1,121 @@
+name: Publish protected TreeAI development generation
+
+on:
+  workflow_dispatch:
+    inputs:
+      debian_version: { description: "Exact version, e.g. 0.6.1~dev.20260822.142500+gabcdef123456-1", required: true, type: string }
+      generation: { description: Monotonic numeric catalog generation, required: true, type: string }
+
+permissions: { contents: read }
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 240
+    permissions: { contents: write, id-token: write }
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Validate protected development identity
+        run: |
+          test '${{ github.ref }}' = 'refs/heads/staging'
+          printf '%s' '${{ inputs.debian_version }}' | grep -Eq '^0\.6\.[0-9]+~dev\.[0-9]{8}\.[0-9]{6}\+g[0-9a-f]{12}-1$'
+          printf '%s' '${{ inputs.generation }}' | grep -Eq '^[1-9][0-9]+$'
+          test "$(git rev-parse HEAD)" = '${{ github.sha }}'
+      - uses: pnpm/action-setup@v4
+        with: { version: 10.15.1 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24.19.0, cache: pnpm }
+      - run: pnpm install --frozen-lockfile && pnpm verify
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with: { username: "${{ secrets.DOCKERHUB_USERNAME }}", password: "${{ secrets.DOCKERHUB_TOKEN }}" }
+      - uses: sigstore/cosign-installer@v3.9.2
+      - uses: anchore/sbom-action/download-syft@v0.20.6
+      - name: Resolve prior signed image identities
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          mkdir -p prior plan digests assets/sboms assets/vulnerabilities
+          previous=$(gh release list --limit 100 --json tagName,isDraft --jq '.[]|select(.isDraft==false)|.tagName' | head -1 || true)
+          if test -n "$previous"; then
+            gh release download "$previous" --dir prior
+            gpg --batch --import release/apt/treeseed-ai-archive-keyring.asc release/apt-development/treeseed-ai-development-archive-keyring.asc
+            gpg --batch --verify prior/SHA256SUMS.asc prior/SHA256SUMS
+            (cd prior && sha256sum -c SHA256SUMS)
+          fi
+          short=$(git rev-parse --short=12 HEAD)
+          echo "TREEAI_IMAGE_TAG=dev-$short" >> "$GITHUB_ENV"
+          TREEAI_RELEASE_VERSION='${{ inputs.debian_version }}' TREEAI_IMAGE_TAG="dev-$short" node --import tsx scripts/release/plan-image-builds.ts plan/image-plan.json prior/image-manifest.json
+      - name: Build only changed image roles
+        env: { COSIGN_YES: "true" }
+        run: |
+          for role in $(jq -r '.images|keys[]' plan/image-plan.json); do
+            action=$(jq -r --arg role "$role" '.images[$role].action' plan/image-plan.json)
+            if test "$action" = reused; then
+              digest=$(jq -r --arg role "$role" '.images[$role].digest' plan/image-plan.json)
+              printf '%s\n' "$digest" > "digests/$role.digest"
+              cosign verify --certificate-identity-regexp '^https://github.com/treeseed-ai/ai/.github/workflows/(release|publish-development)\.yml@refs/heads/(main|staging)$' --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' "treeseed/$role@$digest" >/dev/null
+              cp "prior/$role.spdx.json" "assets/sboms/$role.spdx.json"
+              cp "prior/$role.json" "assets/vulnerabilities/$role.json"
+              continue
+            fi
+            dockerfile=$(jq -r --arg role "$role" '.images[$role].dockerfile' plan/image-plan.json)
+            docker buildx build --file "$dockerfile" --platform linux/amd64 --provenance=mode=max --sbom=true --output "type=image,name=treeseed/$role,push-by-digest=true,name-canonical=true,push=true" --metadata-file "plan/$role.metadata.json" .
+            digest=$(jq -r '."containerimage.digest"' "plan/$role.metadata.json")
+            printf '%s\n' "$digest" > "digests/$role.digest"
+            docker buildx imagetools create -t "treeseed/$role:$TREEAI_IMAGE_TAG" "treeseed/$role@$digest"
+            cosign sign --yes "treeseed/$role@$digest"
+            syft "treeseed/$role@$digest" -o spdx-json="assets/sboms/$role.spdx.json"
+            docker run --rm -v "$PWD/assets/vulnerabilities:/reports" aquasec/trivy:0.74.0 image --scanners vuln --skip-version-check --exit-code 0 --severity CRITICAL --format json --output "/reports/$role.json" "treeseed/$role@$digest"
+          done
+          node --import tsx scripts/release/check-vulnerabilities.ts assets/vulnerabilities
+          TREEAI_RELEASE_VERSION='${{ inputs.debian_version }}' node --import tsx scripts/release/collect-image-manifest.ts digests assets/image-manifest.json plan/image-plan.json
+      - name: Build development Debian generation
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential debhelper lintian nodejs
+          sed -i "1s/(0.6.0-1)/(${{ inputs.debian_version }})/; s/) stable;/) development;/" debian/changelog
+          TREEAI_DEBIAN_VERSION='${{ inputs.debian_version }}' TREEAI_RELEASE_VERSION='${{ inputs.debian_version }}' TREEAI_RELEASE_CHANNEL=development TREEAI_RELEASE_GENERATION='${{ inputs.generation }}' TREEAI_IMAGE_MANIFEST="$PWD/assets/image-manifest.json" dpkg-buildpackage -b -us -uc
+          find .. -maxdepth 1 -type f -name 'treeseed-ai*.deb' -exec cp {} assets/ \;
+          lintian --fail-on error assets/*.deb
+      - name: Sign and publish immutable prerelease
+        env:
+          GH_TOKEN: "${{ github.token }}"
+          APT_GPG_PRIVATE_KEY: "${{ secrets.APT_GPG_PRIVATE_KEY }}"
+          APT_GPG_PASSPHRASE: "${{ secrets.APT_GPG_PASSPHRASE }}"
+        run: |
+          printf '%s' "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
+          export APT_RELEASE_FINGERPRINT="$(cat release/apt-development/RELEASE_KEY_FINGERPRINT)"
+          (cd assets && find . -maxdepth 1 -type f -printf '%f\n' | sort | xargs sha256sum > SHA256SUMS)
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$APT_GPG_PASSPHRASE" --local-user "$APT_RELEASE_FINGERPRINT" --detach-sign --armor assets/SHA256SUMS
+          tag="dev-${{ inputs.generation }}"
+          mapfile -t files < <(find assets -type f -print | sort)
+          if gh release view "$tag" >/dev/null 2>&1; then gh release upload "$tag" --clobber "${files[@]}"; else gh release create "$tag" "${files[@]}" --target '${{ github.sha }}' --prerelease --title "TreeAI development ${{ inputs.debian_version }}" --notes "Protected development generation ${{ inputs.generation }}."; fi
+      - name: Build signed development APT suite
+        env:
+          GH_TOKEN: "${{ github.token }}"
+          APT_GPG_PRIVATE_KEY: "${{ secrets.APT_GPG_PRIVATE_KEY }}"
+          APT_GPG_PASSPHRASE: "${{ secrets.APT_GPG_PASSPHRASE }}"
+        run: |
+          mkdir -p development-debs pages
+          gh release download "dev-${{ inputs.generation }}" --pattern '*.deb' --dir development-debs
+          wget --quiet --mirror --no-parent --no-host-directories --cut-dirs=1 --directory-prefix=pages https://treeseed-ai.github.io/ai/apt/ || true
+          export APT_RELEASE_FINGERPRINT="$(cat release/apt-development/RELEASE_KEY_FINGERPRINT)"
+          sh scripts/release/build-apt-repository.sh development-debs pages '${{ inputs.debian_version }}' development
+      - uses: actions/upload-artifact@v4
+        with: { name: development-apt-pages-site, path: pages, if-no-files-found: error }
+
+  pages:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions: { contents: read, pages: write, id-token: write }
+    environment: { name: github-pages, url: "${{ steps.deploy.outputs.page_url }}" }
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: development-apt-pages-site, path: pages }
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: pages }
+      - id: deploy
+        uses: actions/deploy-pages@v4

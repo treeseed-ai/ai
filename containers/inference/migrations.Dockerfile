@@ -1,4 +1,5 @@
-FROM postgres:17.6-alpine@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94
-LABEL org.opencontainers.image.base.name="postgres:17.6-alpine" org.opencontainers.image.base.digest="sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94"
+FROM alpine:3.23.5@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
+LABEL org.opencontainers.image.base.name="alpine:3.23.5" org.opencontainers.image.base.digest="sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40"
+RUN apk add --no-cache postgresql17-client=17.11-r0
 COPY migrations/inference /migrations
 ENTRYPOINT ["sh","-c","psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f /migrations/001_initial.sql"]
