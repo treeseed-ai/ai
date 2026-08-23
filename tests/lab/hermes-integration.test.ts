@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { actionSequences, ktoLabel, normalizeEvents } from "../../packages/lab/src/evidence.js";
+import { actionSequences, ktoLabel, normalizeEvents, observeArtifacts } from "../../packages/lab/src/evidence.js";
 import { createExperienceProxy } from "../../packages/lab/src/proxy.js";
 import { discoverProviderModels } from "../../packages/lab/src/controller.js";
-import { readFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 describe("tight Hermes integration", () => {
 	it("merges discovery and routes only the fixed Hermes model", async () => {
@@ -38,6 +40,21 @@ describe("tight Hermes integration", () => {
 		expect(ktoLabel({ ...base, score: 0.25 })?.label).toBe("desirable");
 		expect(ktoLabel({ ...base, score: -0.25 })?.label).toBe("undesirable");
 		expect(ktoLabel({ ...base, score: 0 })).toBeUndefined();
+	});
+
+	it("skips unreadable legacy artifacts while harvesting new readable files", () => {
+		const root = mkdtempSync(join(tmpdir(), "treeai-evidence-")), workspace = join(root, "workspace"), state = join(root, "state");
+		mkdirSync(workspace); mkdirSync(state);
+		const legacy = join(workspace, "legacy.txt");
+		writeFileSync(legacy, "historical"); chmodSync(legacy, 0o000);
+		writeFileSync(join(workspace, "current.txt"), "current");
+		const observations = observeArtifacts("trajectory", { workspace, state });
+		expect(observations.map(({ relativePath }) => relativePath)).toEqual(["current.txt"]);
+		const event = readFileSync(join(state, "events.jsonl"), "utf8");
+		expect(event).toContain('"type":"artifact.unavailable"');
+		expect(event).toContain('"relativePath":"legacy.txt"');
+		expect(event).not.toContain(root);
+		chmodSync(legacy, 0o600);
 	});
 
 	it("preserves authoritative Hermes session correlation on inner inference", async () => {
