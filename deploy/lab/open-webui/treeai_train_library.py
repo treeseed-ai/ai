@@ -10,6 +10,7 @@ import asyncio
 import json
 import urllib.error
 import urllib.request
+import uuid
 
 
 BRIDGE = "http://library-bridge:8082"
@@ -24,7 +25,7 @@ def _request(method, path, authorization, body=None):
         headers={
             "authorization": authorization,
             "content-type": "application/json",
-            "idempotency-key": f"open-webui:{path}:{body.get('mode', '') if body else ''}",
+            "idempotency-key": f"open-webui:{uuid.uuid4()}",
         },
     )
     try:

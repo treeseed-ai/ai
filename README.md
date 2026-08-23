@@ -59,6 +59,8 @@ Update channel and image source are independent. `updates.channel=development` p
 
 When `lab` is enabled in `platform.json`, the manager generates distinct service credentials and reconciles Hermes, Open WebUI, the safe web worker, experience proxy, library bridge, and controller. In 0.9.0, Open WebUI Knowledge Bases can become immutable continual-pretraining libraries. Smoke cycles qualify mechanics and remain inactive; standard cycles use held-out likelihood and strict behavior gates before updating only `library/<slug>`. Corrective SFT and KTO remain follow-up pipelines. The Hermes dashboard stores only a password hash, and root can rotate its password with a one-time response.
 
+See [Library training](docs/library-training.md) for supported documents, collection-size guidance, and the smoke/standard qualification flow.
+
 Hermes 0.18.2 is built from its official wheel pinned by SHA-256 because that release has no official container image. Open WebUI 0.11.0 is pinned by digest. In local single-user mode it is available only at `https://chat.treeai.localhost`, with the existing TreeAI CA and no login form. It connects through the private experience proxy rather than raw vLLM.
 
 ```bash
