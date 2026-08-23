@@ -4,21 +4,35 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameS
 import { extname, relative, resolve } from "node:path";
 import { appendBounded, appendEvent, atomic, digest, lines, readJson, redactKnownCredentials, sanitize, stateRoot, workspaceRoot } from "./shared.js";
 
-type HermesMessage = { id?: string; role?: string; content?: unknown; tool_name?: string; tool_call_id?: string; tool_calls?: unknown; timestamp?: string; token_count?: number; reasoning?: unknown };
-type HermesSession = { id?: string; session_id?: string; source?: string; model?: string; created_at?: string; last_active?: string; end_reason?: string };
+type HermesMessage = { id?: string | number; role?: string; content?: unknown; tool_name?: string; tool_call_id?: string; tool_calls?: unknown; timestamp?: string | number; token_count?: number; reasoning?: unknown };
+type HermesSession = { id?: string; session_id?: string; source?: string; model?: string; created_at?: string | number; started_at?: string | number; last_active?: string | number; end_reason?: string };
 
 const textual = new Set([".txt", ".md", ".json", ".jsonl", ".csv", ".yaml", ".yml", ".xml", ".html", ".js", ".ts", ".py", ".sh"]);
 function mime(path: string) { return ({ ".md": "text/markdown", ".json": "application/json", ".jsonl": "application/x-ndjson", ".html": "text/html", ".csv": "text/csv", ".txt": "text/plain" } as Record<string, string>)[extname(path).toLowerCase()] ?? "application/octet-stream"; }
+function iso(value: unknown, fallback?: string) {
+	if (typeof value === "number" && Number.isFinite(value)) return new Date(value * (value < 10_000_000_000 ? 1000 : 1)).toISOString();
+	if (typeof value === "string" && Number.isFinite(Date.parse(value))) return new Date(value).toISOString();
+	return fallback;
+}
+export function sanitizeEvidence(value: unknown): unknown {
+	const clean = sanitize(value);
+	if (typeof clean === "string") return clean
+		.replaceAll(`${workspaceRoot}/`, "").replaceAll("/workspace/", "")
+		.replace(/\/(?:etc|var|run|proc|sys|dev|tmp|root|usr|opt)(?:\/[A-Za-z0-9._@%+=:,~-]+)+/gu, "[REDACTED_PATH]");
+	if (Array.isArray(clean)) return clean.map(sanitizeEvidence);
+	if (clean && typeof clean === "object") return Object.fromEntries(Object.entries(clean).map(([key, item]) => [key, sanitizeEvidence(item)]));
+	return clean;
+}
 
 export function normalizeEvents(messages: HermesMessage[]): AgentTrajectoryEvent[] {
 	return messages.flatMap((message, index) => {
 		const role = message.role;
 		if (!role || !["system", "user", "assistant", "tool"].includes(role)) return [];
-		const value: AgentTrajectoryEvent = { id: message.id ?? `event-${index}`, role: role as AgentTrajectoryEvent["role"], content: sanitize(message.content) };
+		const value: AgentTrajectoryEvent = { id: String(message.id ?? `event-${index}`), role: role as AgentTrajectoryEvent["role"], content: sanitizeEvidence(message.content) };
 		if (message.tool_name) value.toolName = message.tool_name;
 		if (message.tool_call_id) value.toolCallId = message.tool_call_id;
-		if (message.tool_calls) value.toolArguments = sanitize(message.tool_calls);
-		if (message.timestamp) value.timestamp = message.timestamp;
+		if (message.tool_calls) value.toolArguments = sanitizeEvidence(message.tool_calls);
+		const timestamp = iso(message.timestamp); if (timestamp) value.timestamp = timestamp;
 		if (Number.isFinite(message.token_count)) value.tokenCount = message.token_count;
 		return [value];
 	});
@@ -80,7 +94,7 @@ export function finalizeEvidence(session: HermesSession, messages: HermesMessage
 	const existing = lines(`${stateRoot}/trajectories.jsonl`).find((item) => item.id === trajectoryId) as AgentTrajectoryV1 | undefined;
 	if (existing) return existing;
 	const sequences = actionSequences(trajectoryId, events), artifacts = observeArtifacts(trajectoryId), now = new Date().toISOString(), sessionCapture = lines(`${stateRoot}/inference-captures-v2.jsonl`).reverse().find((item) => item.sourceClient === "hermes" && item.hermesSessionId === hermesSessionId) as { resolvedDeployment?: { deploymentRevision?: string } } | undefined;
-	const trajectory: AgentTrajectoryV1 = { schemaVersion: "ai.agent-trajectory/v1", id: trajectoryId, hermesSessionId, sourceClient, createdAt: session.created_at ?? now, finalizedAt: now, model: session.model ?? "hermes-agent", deploymentRevision: sessionCapture?.resolvedDeployment?.deploymentRevision ?? "unknown", events, actionSequenceIds: sequences.map((item) => item.id), artifactObservationIds: artifacts.map((item) => item.id), eligibility: { continualPretraining: { eligible: false, libraryIds: ["default"], documentTags: [] }, correctiveSft: { eligible: sequences.length > 0 }, kto: { eligible: sequences.length > 0 } } };
+	const trajectory: AgentTrajectoryV1 = { schemaVersion: "ai.agent-trajectory/v1", id: trajectoryId, hermesSessionId, sourceClient, createdAt: iso(session.started_at ?? session.created_at, now)!, finalizedAt: now, model: session.model ?? "hermes-agent", deploymentRevision: sessionCapture?.resolvedDeployment?.deploymentRevision ?? "unknown", events, actionSequenceIds: sequences.map((item) => item.id), artifactObservationIds: artifacts.map((item) => item.id), eligibility: { continualPretraining: { eligible: false, libraryIds: ["default"], documentTags: [] }, correctiveSft: { eligible: sequences.length > 0 }, kto: { eligible: sequences.length > 0 } } };
 	for (const sequence of sequences) appendBounded(`${stateRoot}/action-sequences.jsonl`, sequence);
 	for (const artifact of artifacts) if (!lines(`${stateRoot}/artifact-observations.jsonl`).some((item) => item.id === artifact.id)) appendBounded(`${stateRoot}/artifact-observations.jsonl`, artifact);
 	appendBounded(`${stateRoot}/trajectories.jsonl`, trajectory);

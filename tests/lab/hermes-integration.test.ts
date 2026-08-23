@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actionSequences, ktoLabel, normalizeEvents, observeArtifacts } from "../../packages/lab/src/evidence.js";
+import { actionSequences, ktoLabel, normalizeEvents, observeArtifacts, sanitizeEvidence } from "../../packages/lab/src/evidence.js";
 import { createExperienceProxy } from "../../packages/lab/src/proxy.js";
 import { discoverProviderModels } from "../../packages/lab/src/controller.js";
 import { chmodSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -40,6 +40,13 @@ describe("tight Hermes integration", () => {
 		expect(ktoLabel({ ...base, score: 0.25 })?.label).toBe("desirable");
 		expect(ktoLabel({ ...base, score: -0.25 })?.label).toBe("undesirable");
 		expect(ktoLabel({ ...base, score: 0 })).toBeUndefined();
+	});
+
+	it("normalizes Hermes timestamps and workspace paths for durable evidence", () => {
+		const events = normalizeEvents([{ id: 7, role: "tool", timestamp: 1_787_491_030.5, content: { resolved_path: "/workspace/result.md" }, tool_calls: [{ function: { arguments: '{"path":"/workspace/result.md"}' } }] }]);
+		expect(events[0]).toMatchObject({ id: "7", timestamp: "2026-08-23T13:17:10.500Z", content: { resolved_path: "result.md" } });
+		expect(JSON.stringify(events)).not.toContain("/workspace/");
+		expect(sanitizeEvidence("opened /etc/shadow")).toBe("opened [REDACTED_PATH]");
 	});
 
 	it("skips unreadable legacy artifacts while harvesting new readable files", () => {
