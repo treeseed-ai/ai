@@ -18,6 +18,8 @@ describe('selective image build identities',()=>{
     expect(workflow).toContain('TREEAI_DEVELOPMENT_BASE');
     expect(workflow).not.toContain('validate-image-metadata.ts prior');
     expect(workflow).toContain('(cd prior && sha256sum -c SHA256SUMS)');
+    expect(workflow).toContain('development-debs pages/apt');
+    expect(workflow).toContain('mirror-apt-suite.sh');
   });
 
   it('covers every coordinated role with explicit inputs',()=>{

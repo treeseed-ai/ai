@@ -7,6 +7,8 @@ import{describe,expect,it}from'vitest';
 function run(source:string,destination:string){return spawnSync(process.execPath,['--import','tsx','scripts/release/stage-release-assets.ts',source,destination],{encoding:'utf8'})}
 
 describe('release asset staging',()=>{
+	it('preserves the signed development suite during stable Pages publication',()=>{for(const path of['.github/workflows/release.yml','.github/workflows/repair-release.yml'])expect(readFileSync(path,'utf8')).toContain('mirror-apt-suite.sh');});
+	it('repairs APT without rebuilding immutable release packages',()=>{const workflow=readFileSync('.github/workflows/repair-apt.yml','utf8');expect(workflow).toContain('workflow_dispatch:');expect(workflow).toContain('gh release download');expect(workflow).not.toContain('dpkg-buildpackage');expect(workflow).not.toContain('docker');});
 	it('keeps the newest Debian changelog entry chronologically newest',()=>{
 		const dates=[...readFileSync('debian/changelog','utf8').matchAll(/^ -- .+?  (.+)$/gmu)].map(match=>Date.parse(match[1]!));
 		expect(dates.length).toBeGreaterThan(1);

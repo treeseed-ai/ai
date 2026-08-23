@@ -1,37 +1,41 @@
-name: Repair TreeSeed AI APT publication
+name: Repair TreeAI APT repository
 
 on:
   workflow_dispatch:
+    inputs:
+      version: { description: Existing stable release version, required: true, type: string }
 
-permissions: { contents: read }
+permissions: { contents: read, pages: write, id-token: write }
 
 jobs:
-  build:
+  repository:
     runs-on: ubuntu-latest
     environment: production
-    permissions: { contents: read }
     steps:
       - uses: actions/checkout@v4
-      - name: Reconstruct all public package releases
+      - name: Validate immutable stable release and collect packages
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
+          test '${{ github.ref }}' = 'refs/heads/main'
+          test '${{ inputs.version }}' = "$(node -p "require('./release/manifest.json').version")"
+          gh release view "v${{ inputs.version }}" >/dev/null
           mkdir -p debs pages/apt
-          gh release list --limit 100 --json tagName,isDraft,isPrerelease --jq '.[] | select(.isDraft == false and .isPrerelease == false) | .tagName' | while read tag; do gh release download "$tag" --pattern '*.deb' --dir debs --skip-existing; done
-      - name: Sign APT metadata
+          gh release list --limit 100 --json tagName,isDraft,isPrerelease --jq '.[]|select(.isDraft==false and .isPrerelease==false)|.tagName' | while read tag; do gh release download "$tag" --pattern '*.deb' --dir debs --skip-existing; done
+          sh scripts/release/mirror-apt-suite.sh https://treeseed-ai.github.io/ai/apt development pages/apt || sh scripts/release/mirror-apt-suite.sh https://treeseed-ai.github.io/ai development pages/apt || true
+      - name: Rebuild only the signed stable index
         env:
           APT_GPG_PRIVATE_KEY: "${{ secrets.APT_GPG_PRIVATE_KEY }}"
           APT_GPG_PASSPHRASE: "${{ secrets.APT_GPG_PASSPHRASE }}"
         run: |
           printf '%s' "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
           export APT_RELEASE_FINGERPRINT="$(cat release/apt/RELEASE_KEY_FINGERPRINT)"
-          sh scripts/release/build-apt-repository.sh debs pages/apt repair
+          sh scripts/release/build-apt-repository.sh debs pages/apt '${{ inputs.version }}' stable
       - uses: actions/upload-artifact@v4
         with: { name: repaired-apt-pages-site, path: pages, if-no-files-found: error }
 
-  publish:
-    needs: build
+  pages:
+    needs: repository
     runs-on: ubuntu-latest
-    permissions: { contents: read, pages: write, id-token: write }
     environment: { name: github-pages, url: "${{ steps.deploy.outputs.page_url }}" }
     steps:
       - uses: actions/download-artifact@v4

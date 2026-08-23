@@ -48,8 +48,10 @@ sudo apt install treeseed-ai
 ```
 
 If only Pages publication fails after a GitHub Release exists, dispatch
-**Repair TreeSeed AI APT publication**. It reconstructs the complete repository
-from immutable release assets without rebuilding images or packages.
+**Repair TreeAI APT repository** with the existing stable version. It reconstructs
+the stable suite from immutable GitHub Release packages, preserves the currently
+signed development suite, and republishes both beneath `/apt` without rebuilding
+images or packages.
 
 If checksum publication alone is malformed, dispatch **Repair TreeSeed AI
 release checksums**. It verifies the existing signature and payloads, then
