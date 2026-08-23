@@ -31,7 +31,7 @@ services:
     environment: *s3-environment
     volumes: ["training-artifacts:/artifacts"]
     deploy: { resources: { reservations: { devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }] } } }
-    healthcheck: &worker-health { test: ["CMD","python","-c","import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/healthz')"], interval: 10s, timeout: 3s, retries: 10 }
+    healthcheck: &worker-health { test: ["CMD","python3","-c","import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/healthz')"], interval: 10s, timeout: 3s, retries: 10 }
   axolotl:
     image: ${AXOLOTL_WORKER_IMAGE:?AXOLOTL_WORKER_IMAGE is required}
     build: { context: ../.., dockerfile: containers/training/axolotl.Dockerfile }

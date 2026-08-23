@@ -43,6 +43,14 @@ describe('local factory contracts', () => {
     expect(inference).toContain('group_add: ["${RUNTIME_GID:?RUNTIME_GID is required}"]');
     expect(training).toContain('group_add: ["${RUNTIME_GID:?RUNTIME_GID is required}"]');
   });
+  it('probes training workers with the Python runtime installed by every worker image', () => {
+    const training = readFileSync('deploy/training/compose.yml', 'utf8');
+    expect(training).toContain('test: ["CMD","python3","-c"');
+    expect(training).not.toContain('test: ["CMD","python","-c"');
+    for (const image of ['marker', 'axolotl']) {
+      expect(readFileSync(`containers/training/${image}.Dockerfile`, 'utf8')).toContain('python3');
+    }
+  });
   it('declares the descending two-request context qualification profile', () => {
     const activation = readFileSync('packages/host-runtime/src/factory/activation.ts', 'utf8');
     const configure = readFileSync('packages/host-runtime/src/factory/configure.ts', 'utf8');
