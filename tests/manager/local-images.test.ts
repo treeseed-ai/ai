@@ -2,7 +2,7 @@ import{chmodSync,mkdtempSync,readFileSync,writeFileSync}from'node:fs';
 import{tmpdir}from'node:os';
 import{join}from'node:path';
 import{afterEach,describe,expect,it,vi}from'vitest';
-import{localImageReadiness}from'../../packages/manager/src/lifecycle/local-build.js';
+import{localImageReadiness,localTag}from'../../packages/manager/src/lifecycle/local-build.js';
 import{assertCatalogedSimulation}from'../../packages/manager/src/lifecycle/apt-policy.js';
 import{managementOnly}from'../../packages/manager/src/lifecycle/update.js';
 import{validateCatalog,type ReleaseCatalog}from'../../packages/manager/src/core/catalog.js';
@@ -14,6 +14,8 @@ function receipt(buildIdentity=identity){return{schemaVersion:'treeai.local-buil
 describe('repository-local image admission',()=>{
   const original=process.env.TREEAI_LOCAL_BUILD_RECEIPT,originalPath=process.env.PATH;
   afterEach(()=>{vi.restoreAllMocks();process.env.PATH=originalPath;if(original)process.env.TREEAI_LOCAL_BUILD_RECEIPT=original;else delete process.env.TREEAI_LOCAL_BUILD_RECEIPT;});
+  it('uses a generation-independent content identity tag',()=>{expect(localTag('hermes-agent',identity)).toBe(`local/hermes-agent:build-${'b'.repeat(16)}`);});
+  it('reuses only verified receipted images and records delivery',()=>{const source=readFileSync('packages/manager/src/lifecycle/local-build.ts','utf8');expect(source).toContain('previous?.smoke === "passed"');expect(source).toContain('["image", "tag", previous.tag, tag]');expect(source).toContain('delivery: reused.has(item.role) ? "reused"');});
   it('accepts package-only generations without a receipt',()=>{const value=catalog();value.imagePolicy={...value.imagePolicy,mode:'package-only',sourceBundle:null,requiredLocalImages:[]};expect(localImageReadiness(value).ready).toBe(true);});
   it('blocks a local-image generation without its exact receipt',()=>{process.env.TREEAI_LOCAL_BUILD_RECEIPT=join(mkdtempSync(join(tmpdir(),'treeai-local-')),'missing.json');expect(localImageReadiness(catalog())).toEqual(expect.objectContaining({ready:false,reason:'local_build_receipt_missing'}));});
   it('reports an unreadable or malformed receipt without crashing the API',()=>{const root=mkdtempSync(join(tmpdir(),'treeai-local-')),path=join(root,'receipt.json');process.env.TREEAI_LOCAL_BUILD_RECEIPT=path;writeFileSync(path,'not-json');expect(localImageReadiness(catalog())).toEqual(expect.objectContaining({ready:false,reason:'local_build_receipt_unreadable'}));});
