@@ -41,6 +41,7 @@ export interface LocalBuildReceipt {
 		configDigest: string;
 		baseDigest: string;
 		smoke: "passed";
+		delivery?: "built" | "reused";
 	}>;
 }
 export interface LocalImageReadiness {
@@ -120,8 +121,8 @@ function requirements(catalog: ReleaseCatalog, plan: BuildPlan) {
 			);
 	return required;
 }
-function localTag(catalog: ReleaseCatalog, role: string) {
-	return `local/${role}:dev-${catalog.imagePolicy.sourceRevision.slice(0, 12)}-g${catalog.generation}`;
+export function localTag(role: string, buildIdentity: string) {
+	return `local/${role}:build-${buildIdentity.replace(/^sha256:/u, "").slice(0, 16)}`;
 }
 function inspect(tag: string) {
 	return JSON.parse(
@@ -185,7 +186,7 @@ export function planLocalBuild(requested: string, trusted?: TrustedSource) {
 	};
 }
 export function buildLocalImages(requested: string, trusted?: TrustedSource) {
-	const planned = planLocalBuild(requested, trusted), catalog = stagedCatalog();
+	const planned = planLocalBuild(requested, trusted);
 	if (!planned.required.length)
 		throw new Error("The staged generation does not require local images.");
 	const revision = trusted?.revision ?? run("git", ["rev-parse", "HEAD"], planned.source).trim(),
@@ -193,7 +194,6 @@ export function buildLocalImages(requested: string, trusted?: TrustedSource) {
 		createdAt = new Date().toISOString(),
 		environment = {
 			...process.env,
-			AI_VERSION: `dev-${planned.sourceRevision.slice(0, 12)}-g${planned.generation}`,
 			AI_SOURCE_REVISION: revision,
 			AI_SOURCE_DIGEST: createHash("sha256")
 				.update(
@@ -205,18 +205,32 @@ export function buildLocalImages(requested: string, trusted?: TrustedSource) {
 				.digest("hex"),
 			AI_BUILD_DATE: createdAt,
 		};
+	let prior: LocalBuildReceipt | undefined;
+	try { prior = JSON.parse(readFileSync(receiptPath(), "utf8")) as LocalBuildReceipt; } catch {}
+	const reused = new Set<string>();
 	for (const item of planned.required) {
+		const tag = localTag(item.role, item.buildIdentity), previous = prior?.images?.find((image) => image.role === item.role && image.buildIdentity === item.buildIdentity);
+		if (prior?.schemaVersion === "treeai.local-build-receipt/v1" && prior.platform === "linux/amd64" && previous?.smoke === "passed" && previous.configDigest === previous.imageId && /^sha256:[a-f0-9]{64}$/u.test(previous.baseDigest)) {
+			try {
+				const detail = inspect(previous.tag);
+				if (detail.Id === previous.imageId && detail.Architecture === "amd64" && detail.Config?.Labels?.["org.treeseed-ai.role"] === item.role) {
+					run("docker", ["image", "tag", previous.tag, tag]);
+					reused.add(item.role);
+					continue;
+				}
+			} catch {}
+		}
 		const bake = item.role.startsWith("lab-") || item.role === "hermes-agent"
 			? "deploy/lab/docker-bake.hcl"
 			: "deploy/factory/docker-bake.hcl";
 		execFileSync("docker", ["buildx", "bake", "-f", bake, "--load", item.role], {
 			cwd: planned.source,
-			env: environment,
+			env: { ...environment, AI_VERSION: tag.split(":").at(-1)! },
 			stdio: "inherit",
 		});
 	}
 	const images = planned.required.map((item) => {
-		const tag = localTag(catalog, item.role),
+		const tag = localTag(item.role, item.buildIdentity),
 			detail = smoke(item.role, tag),
 			labels = detail.Config?.Labels ?? {};
 		return {
@@ -227,6 +241,7 @@ export function buildLocalImages(requested: string, trusted?: TrustedSource) {
 			configDigest: detail.Id,
 			baseDigest: labels["org.opencontainers.image.base.digest"] ?? "unknown",
 			smoke: "passed" as const,
+			delivery: reused.has(item.role) ? "reused" as const : "built" as const,
 		};
 	});
 	const receipt: LocalBuildReceipt = {
