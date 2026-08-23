@@ -11,6 +11,7 @@ import { hashHermesPassword } from "./hermes/password.js";
 import { ensurePlatformTls } from "./certificates/tls.js";
 import { imageVariables } from "../core/image-variables.js";
 import { summarizeComposeStatus, type ProductStatus } from "./status.js";
+import { reconcileLabEdge } from "./lab/edge.js";
 const products = {
 	inference: {
 		compose: "/usr/lib/treeseed-ai/inference/compose.yml",
@@ -76,10 +77,7 @@ function environment(path: string, values: Record<string, string>, group: string
 		execFileSync("chown", [`root:${group}`, path]);
 	} catch {}
 }
-function compose(product: keyof typeof products, args: string[]) {
-	const item = products[product];
-	return command("docker", ["compose", "-p", `treeseed-ai-${product}`, "--env-file", item.environment, "-f", item.compose, "-f", item.overlay, ...args]);
-}
+function compose(product: keyof typeof products, args: string[]) { const item = products[product]; return command("docker", ["compose", "-p", `treeseed-ai-${product}`, "--env-file", item.environment, "-f", item.compose, "-f", item.overlay, ...args]); }
 export function ensureManagedRuntime() {
 	const config = JSON.parse(readFileSync(paths.configuration, "utf8")) as {
 		runtime: { management: string };
@@ -445,7 +443,7 @@ export async function reconcilePlatform() {
 	} else throw new Error(`Unsafe persisted mode ${mode}; manual recovery is required.`);
 	if (enabled.has("inference") || enabled.has("training")) gateway(["up", "-d", "--wait"]);
 	try {
-		if (enabled.has("lab")) lab(["up", "-d", "--wait", "--wait-timeout", "900"]);
+		if (enabled.has("lab")) reconcileLabEdge(lab, command, event);
 		certificate.commit();
 	} catch (error) {
 		certificate.rollback();
