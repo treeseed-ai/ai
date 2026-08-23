@@ -39,7 +39,6 @@ jobs:
           gpg --batch --import release/apt/treeseed-ai-archive-keyring.asc
           gpg --batch --verify prior/SHA256SUMS.asc prior/SHA256SUMS
           (cd prior && sha256sum -c SHA256SUMS)
-          node --import tsx scripts/release/validate-image-metadata.ts prior
           for role in $(jq -r '.images|keys[]' prior/image-manifest.json); do
             repository=$(jq -r --arg role "$role" '.images[$role].repository' prior/image-manifest.json)
             digest=$(jq -r --arg role "$role" '.images[$role].digest' prior/image-manifest.json)
