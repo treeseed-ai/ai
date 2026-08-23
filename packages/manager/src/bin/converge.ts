@@ -47,6 +47,12 @@ export function writeServerExtensions(stage: string, requiredSans: string[]) {
 	chmodSync(path, 0o600);
 	return path;
 }
+export async function reconcileConfiguredPlatform<T>(
+	updatedPlatform: T | undefined,
+	reconcile: () => Promise<T>,
+) {
+	return updatedPlatform ?? (await reconcile());
+}
 function migrate(): PlatformConfiguration | undefined {
 	const old = `${treeai}/config.json`;
 	const legacy04 = existsSync(
@@ -404,8 +410,10 @@ export async function converge() {
 			certificate.commit();
 			return { status: "postponed", update };
 		}
-		platform =
-			"platform" in update ? update.platform : await reconcilePlatform();
+		platform = await reconcileConfiguredPlatform(
+			"platform" in update ? update.platform : undefined,
+			reconcilePlatform,
+		);
 		certificate.commit();
 	} catch (error) {
 		certificate.rollback();
