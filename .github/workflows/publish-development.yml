@@ -47,6 +47,11 @@ jobs:
           previous=$(gh release list --limit 100 --json tagName,isDraft,isPrerelease --jq '.[]|select(.isDraft==false and .isPrerelease==false)|.tagName' | head -1)
           test -n "$previous"
           gh release download "$previous" --dir prior
+          catalog_deb=$(find prior -maxdepth 1 -type f -name 'treeseed-ai-release-catalog_*.deb' -print -quit)
+          test -n "$catalog_deb"
+          mkdir -p prior-catalog
+          dpkg-deb --extract "$catalog_deb" prior-catalog
+          cp prior-catalog/usr/share/treeseed-ai/release/catalog.json assets/prior-catalog.json
           gpg --batch --import release/apt/treeseed-ai-archive-keyring.asc
           gpg --batch --verify prior/SHA256SUMS.asc prior/SHA256SUMS
           (cd prior && sha256sum -c SHA256SUMS)
@@ -64,7 +69,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential debhelper lintian nodejs
           sed -i "1s/([^)]*)/($TREEAI_RC_DEBIAN_VERSION)/; 1s/) stable;/) development;/" debian/changelog
-          TREEAI_DEBIAN_VERSION="$TREEAI_RC_DEBIAN_VERSION" TREEAI_RELEASE_VERSION="$TREEAI_RC_TAG" TREEAI_RELEASE_CHANNEL=development TREEAI_RELEASE_GENERATION='${{ inputs.generation }}' TREEAI_IMAGE_MANIFEST="$PWD/assets/image-manifest.json" TREEAI_IMAGE_PLAN="$PWD/assets/development-image-plan.json" TREEAI_SOURCE_REVISION='${{ github.sha }}' TREEAI_SOURCE_ARCHIVE_URL="$TREEAI_SOURCE_ARCHIVE_URL" TREEAI_SOURCE_ARCHIVE_SHA256="$TREEAI_SOURCE_ARCHIVE_SHA256" TREEAI_FORCE_PACKAGE_ONLY='${{ inputs.package_only_bridge && '1' || '0' }}' TREEAI_CATALOG_PACKAGE_SET='${{ inputs.package_only_bridge && 'management' || 'all' }}' dpkg-buildpackage -b -us -uc
+          TREEAI_DEBIAN_VERSION="$TREEAI_RC_DEBIAN_VERSION" TREEAI_RELEASE_VERSION="$TREEAI_RC_TAG" TREEAI_RELEASE_CHANNEL=development TREEAI_RELEASE_GENERATION='${{ inputs.generation }}' TREEAI_IMAGE_MANIFEST="$PWD/assets/image-manifest.json" TREEAI_IMAGE_PLAN="$PWD/assets/development-image-plan.json" TREEAI_SOURCE_REVISION='${{ github.sha }}' TREEAI_SOURCE_ARCHIVE_URL="$TREEAI_SOURCE_ARCHIVE_URL" TREEAI_SOURCE_ARCHIVE_SHA256="$TREEAI_SOURCE_ARCHIVE_SHA256" TREEAI_FORCE_PACKAGE_ONLY='${{ inputs.package_only_bridge && '1' || '0' }}' TREEAI_CATALOG_PACKAGE_SET='${{ inputs.package_only_bridge && 'management' || 'all' }}' TREEAI_BASE_CATALOG='${{ inputs.package_only_bridge && format('{0}/assets/prior-catalog.json', github.workspace) || '' }}' dpkg-buildpackage -b -us -uc
           find .. -maxdepth 1 -type f -name 'treeseed-ai*.deb' -exec cp {} assets/ \;
           lintian --fail-on error assets/*.deb
       - name: Sign and publish immutable prerelease
@@ -85,8 +90,15 @@ jobs:
           APT_GPG_PRIVATE_KEY: "${{ secrets.APT_GPG_PRIVATE_KEY }}"
           APT_GPG_PASSPHRASE: "${{ secrets.APT_GPG_PASSPHRASE }}"
         run: |
-          mkdir -p development-debs pages/apt
-          gh release download "$TREEAI_RC_TAG" --pattern '*.deb' --dir development-debs
+          mkdir -p all-development-debs development-debs pages/apt
+          gh release download "$TREEAI_RC_TAG" --pattern '*.deb' --dir all-development-debs
+          if test '${{ inputs.package_only_bridge }}' = true; then
+            for package in archive-keyring development-archive-keyring host-js-runtime manager release-catalog cli; do
+              cp all-development-debs/treeseed-ai-$package\_*.deb development-debs/
+            done
+          else
+            cp all-development-debs/*.deb development-debs/
+          fi
           sh scripts/release/mirror-apt-suite.sh https://treeseed-ai.github.io/ai/apt stable pages/apt || true
           export APT_RELEASE_FINGERPRINT="$(cat release/apt-development/RELEASE_KEY_FINGERPRINT)"
           sh scripts/release/build-apt-repository.sh development-debs pages/apt "$TREEAI_RC_DEBIAN_VERSION" development

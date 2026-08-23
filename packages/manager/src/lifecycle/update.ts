@@ -9,6 +9,7 @@ import { paths } from "../core/paths.js";
 import { securePlatformConfiguration } from "../core/configuration-file.js";
 import { ensureManagedRuntime, persistMode, reconcilePlatform } from "./platform.js";
 import { buildCatalogLocalImages, localImageReadiness } from "./local-build.js";
+import { assertCatalogedSimulation } from "./apt-policy.js";
 const allowedPackages = new Set(["treeseed-ai", "treeseed-ai-archive-keyring", "treeseed-ai-development-archive-keyring", "treeseed-ai-host-js-runtime", "treeseed-ai-manager", "treeseed-ai-cli", "treeseed-ai-release-catalog", "treeseed-ai-host-runtime", "treeseed-ai-inference", "treeseed-ai-training", "treeseed-ai-lab", "treeseed-ai-factory"]);
 function configuration() {
 	return validatePlatformConfiguration(JSON.parse(readFileSync(paths.configuration, "utf8")));
@@ -111,7 +112,7 @@ export function planUpdate(input?: ReleaseCatalog) {
 	if (catalog.generation < installed) throw new Error("Implicit catalog downgrade refused.");
 	if (catalog.classification === "blocked") throw new Error("The candidate catalog is blocked.");
 	const simulation = command("apt-get", [...aptOptions(config.updates.channel), "-s", "--no-remove", "--no-install-recommends", "install", ...packages]);
-	if (/^Remv /mu.test(simulation) || /DOWNGRADED/mu.test(simulation)) throw new Error("APT simulation proposed removal or downgrade.");
+	assertCatalogedSimulation(simulation, catalog);
 	const plan = {
 		schemaVersion: "treeai.update-plan/v1",
 		generation: catalog.generation,
