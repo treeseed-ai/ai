@@ -133,6 +133,7 @@ function distribute(record: unknown) {
 }
 function client(config: PlatformConfiguration, ca: string) {
 	const host = config.network.hostnames[0] ?? hostname();
+	const labEndpoint = labClientEndpoint(config, host);
 	atomic(
 		`${treeai}/config.json`,
 		JSON.stringify(
@@ -146,7 +147,7 @@ function client(config: PlatformConfiguration, ca: string) {
 					inference: `https://${host}:4770`,
 					openai: `https://${host}:4771`,
 					training: `https://${host}:4780`,
-					lab: `https://${host}:4793`,
+					lab: labEndpoint,
 				},
 				interfaces: {
 					openWebUi: config.lab?.webui ?? {
@@ -167,6 +168,11 @@ function client(config: PlatformConfiguration, ca: string) {
 		),
 		0o644,
 	);
+}
+export function labClientEndpoint(config: PlatformConfiguration, host: string) {
+	const binding = config.lab?.webui?.binding;
+	const loopback = binding?.startsWith("127.0.0.1:") || binding?.startsWith("[::1]:");
+	return `https://${loopback ? "localhost" : host}:4793`;
 }
 function migrateFactoryMaterial(config: PlatformConfiguration) {
 	if (config.configurationId !== "migrated-local-factory") return;
