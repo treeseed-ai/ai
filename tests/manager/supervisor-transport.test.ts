@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { connect } from "node:net";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -42,6 +42,19 @@ afterEach(async () => {
 });
 
 describe("supervisor transport", () => {
+	it("repairs the complete runtime path before starting the root supervisor", () => {
+		const unit = readFileSync(
+			new URL("../../systemd/treeseed-ai-manager-supervisor.service", import.meta.url),
+			"utf8",
+		);
+		expect(unit).toContain(
+			"ExecStartPre=/usr/bin/install -d -o root -g root -m 0711 /run/treeseed-ai",
+		);
+		expect(unit).toContain(
+			"ExecStartPre=/usr/bin/install -d -o root -g treeseed-ai-manager -m 0750 /run/treeseed-ai/manager",
+		);
+	});
+
 	it("responds after a client half-closes its request stream", async () => {
 		const socketPath = await fixture(async () => ({ accepted: true }));
 		const response = await request(socketPath, JSON.stringify({ operation: "reconcile", idempotencyKey: "one" }));
