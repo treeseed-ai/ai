@@ -10,6 +10,7 @@ const args = process.argv.slice(3);
 const root = "/etc/treeseed-ai/lab";
 const envFile = `${root}/environment`;
 const composeFile = "/usr/lib/treeseed-ai/lab/compose.yml";
+const composePortsFile = "/etc/treeseed-ai/lab/ports.override.yml";
 const json = args.includes("--json");
 
 interface ClientConfiguration {
@@ -82,7 +83,7 @@ function supervisor(operation: "lab.webui.configure" | "lab.webui.reset" | "lab.
 	});
 }
 function compose(values: string[], stdio: "pipe" | "inherit" = "inherit") {
-	return run("docker", ["compose", "-p", "treeseed-ai-lab", "--env-file", envFile, "-f", composeFile, ...values], stdio);
+	return run("docker", ["compose", "-p", "treeseed-ai-lab", "--env-file", envFile, "-f", composeFile, "-f", composePortsFile, ...values], stdio);
 }
 function urls() {
 	const settings = client(), webui = settings.interfaces?.openWebUi, hermes = settings.interfaces?.hermes;
