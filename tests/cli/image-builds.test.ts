@@ -9,7 +9,7 @@ describe('selective image build identities',()=>{
     const workflow=readFileSync('.github/workflows/publish-development.yml','utf8');
     expect(workflow).toContain('1s/([^)]*)/(${{ inputs.debian_version }})/');
     expect(workflow).not.toContain('1s/(0.6.0-1)/');
-    expect(workflow).toContain('0.7.1~dev.');
+    expect(workflow).toContain('0.7.0~dev.');
     expect(workflow).not.toContain('docker/login-action');
     expect(workflow).not.toContain('docker buildx build');
     expect(workflow).not.toContain('cosign sign');
