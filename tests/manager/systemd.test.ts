@@ -1,8 +1,11 @@
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
-import { writeServerExtensions } from "../../packages/manager/src/bin/converge.js";
+import { describe, expect, it, vi } from "vitest";
+import {
+	reconcileConfiguredPlatform,
+	writeServerExtensions,
+} from "../../packages/manager/src/bin/converge.js";
 
 describe("manager scheduling and privilege split", () => {
 	it("polls development every 60 seconds with jitter", () => {
@@ -70,6 +73,22 @@ describe("manager scheduling and privilege split", () => {
 		} finally {
 			rmSync(stage, { recursive: true, force: true });
 		}
+	});
+
+	it("reconciles desired state after a package-only update", async () => {
+		const reconciled = { mode: "awake", services: { lab: "ready" } };
+		const reconcile = vi.fn(async () => reconciled);
+		expect(await reconcileConfiguredPlatform(undefined, reconcile)).toBe(
+			reconciled,
+		);
+		expect(reconcile).toHaveBeenCalledOnce();
+
+		const alreadyReconciled = { mode: "sleep", services: {} };
+		reconcile.mockClear();
+		expect(
+			await reconcileConfiguredPlatform(alreadyReconciled, reconcile),
+		).toBe(alreadyReconciled);
+		expect(reconcile).not.toHaveBeenCalled();
 	});
 
 	it("runs the API unprivileged and supervisor without a listener", () => {
