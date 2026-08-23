@@ -37,6 +37,16 @@ function atomic(path: string, value: string, mode = 0o600) {
 	renameSync(temporary, path);
 	chmodSync(path, mode);
 }
+export function writeServerExtensions(stage: string, requiredSans: string[]) {
+	const path = `${stage}/server-extensions.cnf`;
+	writeFileSync(
+		path,
+		`subjectAltName=${requiredSans.join(",")}\nextendedKeyUsage=serverAuth\n`,
+		{ mode: 0o600 },
+	);
+	chmodSync(path, 0o600);
+	return path;
+}
 function migrate(): PlatformConfiguration | undefined {
 	const old = `${treeai}/config.json`;
 	const legacy04 = existsSync(
@@ -202,6 +212,7 @@ function tls(config: PlatformConfiguration) {
 	const stage = mkdtempSync(`${root}/server-stage-`),
 		stagedKey = `${stage}/server.key`,
 		stagedCertificate = `${stage}/server.crt`,
+		extensions = writeServerExtensions(stage, requiredSans),
 		backupKey = `${root}/server.key.previous`,
 		backupCertificate = `${root}/server.crt.previous`;
 	execFileSync("openssl", [
@@ -233,11 +244,8 @@ function tls(config: PlatformConfiguration) {
 			"-out",
 			stagedCertificate,
 			"-extfile",
-			"/dev/stdin",
+			extensions,
 		],
-		{
-			input: `subjectAltName=${requiredSans.join(",")}\nextendedKeyUsage=serverAuth\n`,
-		},
 	);
 	execFileSync("openssl", [
 		"verify",

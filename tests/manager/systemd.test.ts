@@ -1,5 +1,8 @@
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { writeServerExtensions } from "../../packages/manager/src/bin/converge.js";
 
 describe("manager scheduling and privilege split", () => {
 	it("polls development every 60 seconds with jitter", () => {
@@ -47,6 +50,25 @@ describe("manager scheduling and privilege split", () => {
 			);
 			expect(unit).toContain("--disable-warning=ExperimentalWarning");
 			expect(unit).not.toContain("NODE_NO_WARNINGS");
+		}
+	});
+
+	it("writes TLS SAN extensions without relying on systemd stdin", () => {
+		const stage = mkdtempSync(join(tmpdir(), "treeai-tls-"));
+		try {
+			const path = writeServerExtensions(stage, [
+				"DNS:chat.treeai.localhost",
+				"IP:127.0.0.1",
+			]);
+			expect(statSync(path).mode & 0o777).toBe(0o600);
+			expect(readFileSync(path, "utf8")).toBe(
+				"subjectAltName=DNS:chat.treeai.localhost,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n",
+			);
+			expect(
+				readFileSync("packages/manager/src/bin/converge.ts", "utf8"),
+			).not.toContain('"/dev/stdin"');
+		} finally {
+			rmSync(stage, { recursive: true, force: true });
 		}
 	});
 
