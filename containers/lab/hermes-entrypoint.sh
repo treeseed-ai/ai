@@ -48,6 +48,15 @@ chmod 0640 "$config"
 mv "$config" "$managed/config.yaml"
 export HERMES_MANAGED_DIR="$managed"
 
+# Hermes 0.18.2 applies the managed overlay only after discovering a home
+# config file. Keep that trigger root-owned and empty: all effective values
+# remain in the immutable managed scope above and no secret enters the volume.
+home_config="$HERMES_HOME/config.yaml.new.$$"
+: > "$home_config"
+chown root:hermes "$home_config"
+chmod 0640 "$home_config"
+mv "$home_config" "$HERMES_HOME/config.yaml"
+
 case "${HERMES_SERVICE_MODE:-dashboard}" in
   dashboard)
     export HERMES_DASHBOARD_BASIC_AUTH_PASSWORD_HASH="$(cat /run/secrets/hermes-password-hash)"
