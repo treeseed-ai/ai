@@ -2,6 +2,10 @@ import { execFileSync } from "node:child_process";
 import { redactSensitiveText } from "@ai-platform/common";
 
 const container = "treeseed-ai-lab-hermes-agent-1";
+const edgeContainers = {
+	gateway: "treeseed-ai-lab-gateway-1",
+	controller: "treeseed-ai-lab-controller-1",
+};
 
 function docker(args: string[]) {
 	return execFileSync("docker", args, {
@@ -36,6 +40,32 @@ function privateRuntimeEvidence() {
 	}
 }
 
+function edgeEvidence() {
+	return Object.fromEntries(Object.entries(edgeContainers).map(([role, name]) => {
+		try {
+			const parts = docker([
+				"inspect",
+				"--format",
+				"{{json .State}}|{{json .NetworkSettings.Ports}}|{{json .HostConfig.PortBindings}}",
+				name,
+			]).trim().split("|").map((part) => JSON.parse(part || "null"));
+			const [state, ports, bindings] = parts;
+			return [role, { state, ports, bindings }];
+		} catch (error) {
+			return [role, { error: sanitized(error instanceof Error ? error.message : String(error)) }];
+		}
+	}));
+}
+
+function edgeLogs() {
+	try {
+		return docker(["logs", "--tail", "80", edgeContainers.gateway]);
+	} catch (error) {
+		const value = error as { stdout?: string; stderr?: string };
+		return `${value.stdout ?? ""}${value.stderr ?? ""}`;
+	}
+}
+
 export function hermesDiagnostics() {
 	const state = JSON.parse(
 		docker(["inspect", "--format", "{{json .State}}", container]),
@@ -64,6 +94,8 @@ export function hermesDiagnostics() {
 			failingStreak: state.Health?.FailingStreak ?? 0,
 		},
 		logs: sanitized(logs).split("\n").filter(Boolean),
+		edge: edgeEvidence(),
+		gatewayLogs: sanitized(edgeLogs()).split("\n").filter(Boolean),
 		privateRuntime: Object.fromEntries(
 			Object.entries(privateRuntimeEvidence()).map(([name, value]) => [
 				name,
