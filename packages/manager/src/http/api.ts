@@ -109,6 +109,7 @@ function queue(
 			);
 	return work;
 }
+function completedTransition(mode:string,idempotencyKey:string){const work=createWork('transition',idempotencyKey,{mode});return work.state==='queued'?finishWork(work.id,'succeeded',{mode,changed:false,reason:'already_in_mode'}):work;}
 export function createManagerApp() {
 	const app = new Hono();
 	app.get("/healthz", (c) => c.json({ status: "ready", version: VERSION }));
@@ -160,10 +161,7 @@ export function createManagerApp() {
 				},
 				400,
 			);
-		return c.json(
-			queue("transition", "mode.set", { mode: body.mode }, body.idempotencyKey),
-			202,
-		);
+		const mode=String(body.mode),current=setting('mode','awake');return c.json(current===mode?completedTransition(mode,body.idempotencyKey):queue("transition", "mode.set", { mode }, body.idempotencyKey),202);
 	});
 	app.get("/v1/transitions/:id", requireScope("platform:read"), (c) => {
 		const work = getWork(c.req.param("id"));
