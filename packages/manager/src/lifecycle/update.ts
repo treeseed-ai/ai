@@ -8,7 +8,7 @@ import { event, setSetting, setting } from "../core/store.js";
 import { paths } from "../core/paths.js";
 import { securePlatformConfiguration } from "../core/configuration-file.js";
 import { ensureManagedRuntime, persistMode, reconcilePlatform } from "./platform.js";
-import { localImageReadiness } from "./local-build.js";
+import { buildCatalogLocalImages, localImageReadiness } from "./local-build.js";
 const allowedPackages = new Set(["treeseed-ai", "treeseed-ai-archive-keyring", "treeseed-ai-development-archive-keyring", "treeseed-ai-host-js-runtime", "treeseed-ai-manager", "treeseed-ai-cli", "treeseed-ai-release-catalog", "treeseed-ai-host-runtime", "treeseed-ai-inference", "treeseed-ai-training", "treeseed-ai-lab", "treeseed-ai-factory"]);
 function configuration() {
 	return validatePlatformConfiguration(JSON.parse(readFileSync(paths.configuration, "utf8")));
@@ -276,10 +276,35 @@ export async function applyUpdate() {
 		catalog = candidateCatalog(config.updates.channel),
 		packages = exactPackages(catalog);
 	if (setting("updatesPaused", false)) return { state: "postponed", reason: "updates_paused" };
-	const plan = planUpdate(catalog);
+	let plan = planUpdate(catalog);
 	if (!plan.automatic && setting("automaticInvocation", false)) return { state: "postponed", reason: "local_approval_required" };
 	event("update.acquiring", { generation: catalog.generation });
 	command("apt-get", [...aptOptions(config.updates.channel), "--download-only", "--no-remove", "--no-install-recommends", "install", ...packages]);
+	if (
+		!plan.localImages.ready &&
+		setting("automaticInvocation", false) &&
+		config.imageSource === "local-build" &&
+		config.updates.channel === "development" &&
+		config.updates.policy === "continuous"
+	) {
+		event("root-capability.started", {
+			operation: "development.local-images.build",
+			generation: catalog.generation,
+			requiredRoles: catalog.imagePolicy.requiredLocalImages.map((item) => item.role),
+		});
+		try {
+			const built = buildCatalogLocalImages(catalog);
+			event("root-capability.succeeded", built.capability);
+			plan = { ...plan, localImages: localImageReadiness(catalog) };
+		} catch (error) {
+			event("root-capability.failed", {
+				operation: "development.local-images.build",
+				generation: catalog.generation,
+				error: error instanceof Error ? error.message : String(error),
+			});
+			throw error;
+		}
+	}
 	if (!plan.localImages.ready) {
 		setSetting("stagedGeneration", catalog.generation);
 		event("update.postponed", {
@@ -293,7 +318,9 @@ export async function applyUpdate() {
 			staged: true,
 			generation: catalog.generation,
 			requiredLocalImages: plan.localImages.required,
-			next: "Run treeai local-build plan --source PATH, then treeai local-build build --source PATH.",
+			next: setting("automaticInvocation", false)
+				? "The manager will retry the catalog-authorized build after backoff."
+				: "Run treeai local-build plan --source PATH, then treeai local-build build --source PATH.",
 		};
 	}
 	ensureManagedRuntime();

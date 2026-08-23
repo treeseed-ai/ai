@@ -26,7 +26,7 @@ jobs:
           test '${{ inputs.version }}' = "$(node -p "require('./release/manifest.json').version")"
           node --import tsx scripts/release/validate.ts --release
           test "$(git rev-parse HEAD)" = '${{ github.sha }}'
-          ! gh release view "v${{ inputs.version }}" >/dev/null 2>&1
+          ! gh release view "${{ inputs.version }}" >/dev/null 2>&1
       - run: pnpm verify
       - id: commit
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -60,7 +60,7 @@ jobs:
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
           mkdir -p previous-download previous-assets/sboms previous-assets/vulnerabilities release-plan
-          previous=$(gh release list --limit 100 --json tagName,isDraft,isPrerelease --jq '.[]|select(.isDraft==false and .isPrerelease==false)|.tagName' | grep -vFx "v${{ inputs.version }}" | head -1 || true)
+          previous=$(gh release list --limit 100 --json tagName,isDraft,isPrerelease --jq '.[]|select(.isDraft==false and .isPrerelease==false)|.tagName' | grep -vFx "${{ inputs.version }}" | head -1 || true)
           if test -n "$previous"; then
             gh release download "$previous" --dir previous-download
             gpg --batch --import release/apt/treeseed-ai-archive-keyring.asc
@@ -247,7 +247,7 @@ jobs:
           sha256sum "${files[@]}" > SHA256SUMS
           gpg --batch --yes --pinentry-mode loopback --passphrase "$APT_GPG_PASSPHRASE" --local-user "$APT_RELEASE_FINGERPRINT" --detach-sign --armor SHA256SUMS
           cd ..
-          gh release create "v${{ inputs.version }}" $(find published-assets -type f -print | sort) --target '${{ needs.validate.outputs.sha }}' --title "TreeSeed AI ${{ inputs.version }}" --notes-file docs/releases/0.6.0.md
+          gh release create "${{ inputs.version }}" $(find published-assets -type f -print | sort) --target '${{ needs.validate.outputs.sha }}' --title "TreeSeed AI ${{ inputs.version }}" --notes-file docs/releases/0.7.0.md
 
   apt-repository:
     needs: github-release

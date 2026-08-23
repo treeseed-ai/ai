@@ -25,12 +25,12 @@ jobs:
         run: |
           test '${{ github.ref }}' = 'refs/heads/main'
           test '${{ inputs.version }}' = "$(node -p "require('./release/manifest.json').version")"
-          gh release view "v${{ inputs.version }}" --json isDraft,isPrerelease --jq 'select(.isDraft == false and .isPrerelease == false)' >/dev/null
-          git merge-base --is-ancestor "v${{ inputs.version }}" HEAD
-          unexpected=$(git diff --name-only "v${{ inputs.version }}" HEAD | grep -Ev '^(\.github/workflows/(release|repair-release|repair-release-checksums|repair-apt)\.yml|scripts/release/(validate-image-metadata|stage-release-assets)\.ts|tests/cli/(cli|release-assets)\.test\.ts)$' || true)
+          gh release view "${{ inputs.version }}" --json isDraft,isPrerelease --jq 'select(.isDraft == false and .isPrerelease == false)' >/dev/null
+          git merge-base --is-ancestor "${{ inputs.version }}" HEAD
+          unexpected=$(git diff --name-only "${{ inputs.version }}" HEAD | grep -Ev '^(\.github/workflows/(release|repair-release|repair-release-checksums|repair-apt)\.yml|scripts/release/(validate-image-metadata|stage-release-assets)\.ts|tests/cli/(cli|release-assets)\.test\.ts)$' || true)
           test -z "$unexpected" || { printf 'Release-affecting changes since tag:\n%s\n' "$unexpected" >&2; exit 1; }
           mkdir assets
-          gh release download "v${{ inputs.version }}" --dir assets
+          gh release download "${{ inputs.version }}" --dir assets
           gpg --batch --import release/apt/treeseed-ai-archive-keyring.asc
           gpg --batch --verify assets/SHA256SUMS.asc assets/SHA256SUMS
           sed -E 's#  .*/#  #' assets/SHA256SUMS > assets/previous-flat-SHA256SUMS
@@ -50,9 +50,9 @@ jobs:
           sha256sum "${files[@]}" > SHA256SUMS
           gpg --batch --yes --pinentry-mode loopback --passphrase "$APT_GPG_PASSPHRASE" --local-user "$APT_RELEASE_FINGERPRINT" --detach-sign --armor SHA256SUMS
           cd ..
-          gh release upload "v${{ inputs.version }}" published-assets/SHA256SUMS published-assets/SHA256SUMS.asc --clobber
+          gh release upload "${{ inputs.version }}" published-assets/SHA256SUMS published-assets/SHA256SUMS.asc --clobber
           rm -rf verified-assets
           mkdir verified-assets
-          gh release download "v${{ inputs.version }}" --dir verified-assets
+          gh release download "${{ inputs.version }}" --dir verified-assets
           (cd verified-assets && sha256sum -c SHA256SUMS)
           gpg --batch --verify verified-assets/SHA256SUMS.asc verified-assets/SHA256SUMS

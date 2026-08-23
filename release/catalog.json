@@ -15,6 +15,7 @@
     "mode": "package-only",
     "productionManifestVersion": "0.7.0",
     "sourceRevision": "release-source",
+    "sourceBundle": null,
     "requiredLocalImages": []
   },
   "runtimeImages": [
@@ -32,7 +33,7 @@
   "evidence": {
     "cosignIssuer": "https://token.actions.githubusercontent.com",
     "cosignIdentity": "https://github.com/treeseed-ai/ai/.github/workflows/release.yml@refs/heads/main",
-    "githubRelease": "https://github.com/treeseed-ai/ai/releases/tag/v0.7.0",
+    "githubRelease": "https://github.com/treeseed-ai/ai/releases/tag/0.7.0",
     "sbomAssetPattern": "<role>.spdx.json",
     "vulnerabilityAssetPattern": "<role>.json"
   }

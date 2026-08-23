@@ -18,7 +18,7 @@ jobs:
         run: |
           test '${{ github.ref }}' = 'refs/heads/main'
           test '${{ inputs.version }}' = "$(node -p "require('./release/manifest.json').version")"
-          gh release view "v${{ inputs.version }}" >/dev/null
+          gh release view "${{ inputs.version }}" >/dev/null
           mkdir -p debs pages/apt
           gh release list --limit 100 --json tagName,isDraft,isPrerelease --jq '.[]|select(.isDraft==false and .isPrerelease==false)|.tagName' | while read tag; do gh release download "$tag" --pattern '*.deb' --dir debs --skip-existing; done
           sh scripts/release/mirror-apt-suite.sh https://treeseed-ai.github.io/ai/apt development pages/apt || sh scripts/release/mirror-apt-suite.sh https://treeseed-ai.github.io/ai development pages/apt || true
