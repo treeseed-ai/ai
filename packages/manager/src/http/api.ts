@@ -20,7 +20,8 @@ import {
 	setting,
 } from "../core/store.js";
 import { updateStatus } from "../lifecycle/update.js";
-const VERSION = "0.6.2";
+import { normalizeStoredComponents } from "../lifecycle/status.js";
+const VERSION = "0.7.0";
 function keys(): ApiKeyRecord[] {
 	try {
 		return JSON.parse(readFileSync(paths.apiKeys, "utf8")) as ApiKeyRecord[];
@@ -72,11 +73,8 @@ function components() {
 			return { name, state: "inactive" };
 		}
 	});
-	const products = setting<Record<string, { product: string }>>(
-		"components",
-		{},
-	);
-	return [...manager, ...Object.values(products)];
+	const products = setting<unknown>("components", {});
+	return [...manager, ...normalizeStoredComponents(products)];
 }
 function queue(
 	kind: "transition" | "update-check" | "update-plan" | "reconcile",

@@ -1,20 +1,21 @@
 {
   "schemaVersion": "treeai.release-catalog/v1",
-  "release": "0.6.2",
+  "release": "0.7.0",
   "channel": "stable",
-  "generation": 6002000,
+  "generation": 7000000,
   "compatibilityId": "linux-amd64-nvidia-v1",
-  "classification": "patch",
-  "automatic": true,
+  "classification": "breaking",
+  "automatic": false,
   "suite": "stable",
   "signingKeyFingerprint": "B94202432CC72B933C4554BC9B8CBEABA53728D0",
-  "platform": { "architecture": "amd64", "operatingSystems": ["debian:12", "debian:13", "ubuntu:22.04", "ubuntu:24.04", "ubuntu:26.04"], "manager": ">=0.6.0 <0.7.0", "nodeRuntime": "24.6.0", "nvidiaDriver": ">=570" },
+  "platform": { "architecture": "amd64", "operatingSystems": ["debian:12", "debian:13", "ubuntu:22.04", "ubuntu:24.04", "ubuntu:26.04"], "manager": ">=0.6.0 <0.8.0", "nodeRuntime": "24.6.0", "nvidiaDriver": ">=570" },
   "packages": [],
   "images": [],
   "imagePolicy": {
     "mode": "package-only",
-    "productionManifestVersion": "0.6.2",
+    "productionManifestVersion": "0.7.0",
     "sourceRevision": "release-source",
+    "sourceBundle": null,
     "requiredLocalImages": []
   },
   "runtimeImages": [
@@ -22,17 +23,17 @@
     { "id": "postgres", "reference": "postgres:17.11-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73", "digest": "sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73", "consumers": ["inference", "training"], "restartImpact": "state" },
     { "id": "minio", "reference": "minio/minio:RELEASE.2025-07-23T15-54-02Z@sha256:d249d1fb6966de4d8ad26c04754b545205ff15a62e4fd19ebd0f26fa5baacbc0", "digest": "sha256:d249d1fb6966de4d8ad26c04754b545205ff15a62e4fd19ebd0f26fa5baacbc0", "consumers": ["inference", "training"], "restartImpact": "state" },
     { "id": "minio-client", "reference": "minio/mc:RELEASE.2025-07-21T05-28-08Z@sha256:fb8f773eac8ef9d6da0486d5dec2f42f219358bcb8de579d1623d518c9ebd4cc", "digest": "sha256:fb8f773eac8ef9d6da0486d5dec2f42f219358bcb8de579d1623d518c9ebd4cc", "consumers": ["inference", "training"], "restartImpact": "initialization" },
-    { "id": "open-webui", "reference": "ghcr.io/open-webui/open-webui:v0.9.5@sha256:ef3eaeb6235dd86d8ae7425e6af38272b0cea27896c0d5ae8c5cf23f886de76a", "digest": "sha256:ef3eaeb6235dd86d8ae7425e6af38272b0cea27896c0d5ae8c5cf23f886de76a", "consumers": ["lab"], "restartImpact": "open-webui" }
+    { "id": "open-webui", "reference": "ghcr.io/open-webui/open-webui:v0.11.0@sha256:72c0ba641ba75e7aa52655cb242570906ececd09b1140fb736483038a22b3228", "digest": "sha256:72c0ba641ba75e7aa52655cb242570906ececd09b1140fb736483038a22b3228", "consumers": ["lab"], "restartImpact": "open-webui" }
   ],
-  "composeGeneration": 1,
-  "configurationGeneration": 1,
+  "composeGeneration": 2,
+  "configurationGeneration": 2,
   "migrations": [],
   "gates": ["disk", "runtime", "gpu", "database", "storage", "readiness", "canary"],
   "rollback": { "compatible": true, "requiresBackup": true },
   "evidence": {
     "cosignIssuer": "https://token.actions.githubusercontent.com",
     "cosignIdentity": "https://github.com/treeseed-ai/ai/.github/workflows/release.yml@refs/heads/main",
-    "githubRelease": "https://github.com/treeseed-ai/ai/releases/tag/v0.6.2",
+    "githubRelease": "https://github.com/treeseed-ai/ai/releases/tag/0.7.0",
     "sbomAssetPattern": "<role>.spdx.json",
     "vulnerabilityAssetPattern": "<role>.json"
   }

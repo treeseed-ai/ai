@@ -1,8 +1,9 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
 	chmodSync,
 	copyFileSync,
 	existsSync,
+	mkdtempSync,
 	mkdirSync,
 	readFileSync,
 	renameSync,
@@ -125,12 +126,16 @@ function distribute(record: unknown) {
 	}
 }
 function safeSans(config: PlatformConfiguration) {
+	const webuiHost = config.lab?.webui.browserUrl
+		? new URL(config.lab.webui.browserUrl).hostname
+		: undefined;
 	const values = new Set([
 		"localhost",
 		"127.0.0.1",
 		hostname(),
 		...config.network.hostnames,
 		...config.network.sans,
+		...(webuiHost ? [webuiHost] : []),
 	]);
 	return [...values]
 		.filter(
@@ -141,48 +146,73 @@ function safeSans(config: PlatformConfiguration) {
 }
 function tls(config: PlatformConfiguration) {
 	const root = "/etc/treeseed-ai/manager/tls",
-		publicCa = "/etc/ssl/certs/treeseed-ai-ca.pem";
-	if (existsSync(`${root}/server.crt`) && existsSync(`${root}/ca.crt`)) {
+		publicCa = "/etc/ssl/certs/treeseed-ai-ca.pem",
+		requiredSans = safeSans(config),
+		serverKey = `${root}/server.key`,
+		serverCertificate = `${root}/server.crt`;
+	mkdirSync(root, { recursive: true, mode: 0o750 });
+	if (!existsSync(`${root}/ca.crt`))
+		execFileSync("openssl", [
+			"req",
+			"-x509",
+			"-newkey",
+			"rsa:3072",
+			"-nodes",
+			"-days",
+			"3650",
+			"-keyout",
+			`${root}/ca.key`,
+			"-out",
+			`${root}/ca.crt`,
+			"-subj",
+			"/CN=TreeAI Local CA",
+			"-addext",
+			"basicConstraints=critical,CA:TRUE",
+		]);
+	if (!existsSync(`${root}/ca.key`))
+		throw new Error(
+			"The existing TreeAI CA private key is unavailable; the server certificate cannot be extended transactionally.",
+		);
+	const supports =
+		existsSync(serverCertificate) &&
+		requiredSans.every((entry) => {
+			const [type, value] = entry.split(":", 2);
+			return (
+				spawnSync(
+					"openssl",
+					[
+						"x509",
+						"-in",
+						serverCertificate,
+						"-noout",
+						type === "IP" ? "-checkip" : "-checkhost",
+						value!,
+					],
+					{ encoding: "utf8" },
+				).status === 0
+			);
+		});
+	if (supports) {
 		copyFileSync(`${root}/ca.crt`, publicCa);
 		chmodSync(publicCa, 0o644);
 		chmodSync(`${root}/ca.key`, 0o600);
-		chmodSync(`${root}/server.key`, 0o640);
-		try {
-			execFileSync("chown", [
-				"root:treeseed-ai-manager",
-				`${root}/server.key`,
-				`${root}/server.crt`,
-			]);
-		} catch {}
-		return publicCa;
+		chmodSync(serverKey, 0o640);
+		return { ca: publicCa, commit() {}, rollback() {} };
 	}
-	mkdirSync(root, { recursive: true, mode: 0o750 });
-	execFileSync("openssl", [
-		"req",
-		"-x509",
-		"-newkey",
-		"rsa:3072",
-		"-nodes",
-		"-days",
-		"3650",
-		"-keyout",
-		`${root}/ca.key`,
-		"-out",
-		`${root}/ca.crt`,
-		"-subj",
-		"/CN=TreeAI Local CA",
-		"-addext",
-		"basicConstraints=critical,CA:TRUE",
-	]);
+	const stage = mkdtempSync(`${root}/server-stage-`),
+		stagedKey = `${stage}/server.key`,
+		stagedCertificate = `${stage}/server.crt`,
+		backupKey = `${root}/server.key.previous`,
+		backupCertificate = `${root}/server.crt.previous`;
 	execFileSync("openssl", [
 		"req",
 		"-newkey",
 		"rsa:3072",
 		"-nodes",
 		"-keyout",
-		`${root}/server.key`,
+		stagedKey,
 		"-out",
-		`${root}/server.csr`,
+		`${stage}/server.csr`,
 		"-subj",
 		`/CN=${hostname()}`,
 	]);
@@ -194,23 +224,45 @@ function tls(config: PlatformConfiguration) {
 			"-days",
 			"825",
 			"-in",
-			`${root}/server.csr`,
+			`${stage}/server.csr`,
 			"-CA",
 			`${root}/ca.crt`,
 			"-CAkey",
 			`${root}/ca.key`,
 			"-CAcreateserial",
 			"-out",
-			`${root}/server.crt`,
+			stagedCertificate,
 			"-extfile",
 			"/dev/stdin",
 		],
 		{
-			input: `subjectAltName=${safeSans(config).join(",")}\nextendedKeyUsage=serverAuth\n`,
+			input: `subjectAltName=${requiredSans.join(",")}\nextendedKeyUsage=serverAuth\n`,
 		},
 	);
+	execFileSync("openssl", [
+		"verify",
+		"-CAfile",
+		`${root}/ca.crt`,
+		stagedCertificate,
+	]);
+	for (const entry of requiredSans) {
+		const [type, value] = entry.split(":", 2);
+		execFileSync("openssl", [
+			"x509",
+			"-in",
+			stagedCertificate,
+			"-noout",
+			type === "IP" ? "-checkip" : "-checkhost",
+			value!,
+		]);
+	}
+	if (existsSync(serverKey)) copyFileSync(serverKey, backupKey);
+	if (existsSync(serverCertificate))
+		copyFileSync(serverCertificate, backupCertificate);
+	renameSync(stagedKey, serverKey);
+	renameSync(stagedCertificate, serverCertificate);
 	chmodSync(`${root}/ca.key`, 0o600);
-	chmodSync(`${root}/server.key`, 0o640);
+	chmodSync(serverKey, 0o640);
 	for (const name of ["ca.crt", "server.crt"])
 		chmodSync(`${root}/${name}`, 0o644);
 	try {
@@ -222,7 +274,22 @@ function tls(config: PlatformConfiguration) {
 	} catch {}
 	copyFileSync(`${root}/ca.crt`, publicCa);
 	chmodSync(publicCa, 0o644);
-	return publicCa;
+	return {
+		ca: publicCa,
+		commit() {
+			rmSync(backupKey, { force: true });
+			rmSync(backupCertificate, { force: true });
+			rmSync(stage, { recursive: true, force: true });
+		},
+		rollback() {
+			if (existsSync(backupKey)) renameSync(backupKey, serverKey);
+			else rmSync(serverKey, { force: true });
+			if (existsSync(backupCertificate))
+				renameSync(backupCertificate, serverCertificate);
+			else rmSync(serverCertificate, { force: true });
+			rmSync(stage, { recursive: true, force: true });
+		},
+	};
 }
 function client(config: PlatformConfiguration, ca: string) {
 	const host = config.network.hostnames[0] ?? hostname();
@@ -231,7 +298,7 @@ function client(config: PlatformConfiguration, ca: string) {
 		JSON.stringify(
 			{
 				schemaVersion: "treeai.config/v1",
-				version: "0.6.2",
+				version: "0.7.0",
 				imageSource: config.imageSource,
 				ca,
 				endpoints: {
@@ -240,6 +307,13 @@ function client(config: PlatformConfiguration, ca: string) {
 					openai: `https://${host}:4771`,
 					training: `https://${host}:4780`,
 					lab: `https://${host}:4793`,
+				},
+				interfaces: {
+					openWebUi: config.lab?.webui ?? {
+						authentication: "local-users",
+						browserUrl: `https://${host}:4791`,
+						binding: "0.0.0.0:4791",
+					},
 				},
 				installedProducts: config.products,
 			},
@@ -294,8 +368,8 @@ export async function converge() {
 	migrateFactoryMaterial(config);
 	const credential = ensureOperatorCredential();
 	distribute(credential.record);
-	const ca = tls(config);
-	client(config, ca);
+	const certificate = tls(config);
+	client(config, certificate.ca);
 	const temporary =
 		"/var/lib/treeseed-ai/bootstrap/seed/temporary-credentials.json";
 	if (existsSync(temporary)) {
@@ -314,10 +388,21 @@ export async function converge() {
 			"The configured installer contained revoked temporary credentials; delete the downloaded .deb.\n",
 		);
 	}
-	const update = await applyUpdate();
-	if (update.state === "postponed") return { status: "postponed", update };
-	const platform =
-		"platform" in update ? update.platform : await reconcilePlatform();
+	let update: Awaited<ReturnType<typeof applyUpdate>>;
+	let platform: Awaited<ReturnType<typeof reconcilePlatform>> | undefined;
+	try {
+		update = await applyUpdate();
+		if (update.state === "postponed") {
+			certificate.commit();
+			return { status: "postponed", update };
+		}
+		platform =
+			"platform" in update ? update.platform : await reconcilePlatform();
+		certificate.commit();
+	} catch (error) {
+		certificate.rollback();
+		throw error;
+	}
 	if (
 		platform &&
 		config.configurationId === "migrated-local-factory" &&

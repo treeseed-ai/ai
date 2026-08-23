@@ -35,7 +35,7 @@ jobs:
           case "$SOURCE_RUN_ID" in (*[!0-9]*|'') echo 'source_run_id must be numeric' >&2; exit 1;; esac
           node --import tsx scripts/release/validate.ts --release
           test "$(git rev-parse HEAD)" = '${{ github.sha }}'
-          ! gh release view "v${{ inputs.version }}" >/dev/null 2>&1
+          ! gh release view "${{ inputs.version }}" >/dev/null 2>&1
           source_sha=$(gh api "repos/${{ github.repository }}/actions/runs/$SOURCE_RUN_ID" --jq 'select(.event=="workflow_dispatch" and .head_branch=="main" and .name=="Publish coordinated TreeSeed AI release")|.head_sha')
           test -n "$source_sha"
           git merge-base --is-ancestor "$source_sha" HEAD
@@ -125,7 +125,7 @@ jobs:
           sha256sum "${files[@]}" > SHA256SUMS
           gpg --batch --yes --pinentry-mode loopback --passphrase "$APT_GPG_PASSPHRASE" --local-user "$APT_RELEASE_FINGERPRINT" --detach-sign --armor SHA256SUMS
           cd ..
-          gh release create "v${{ inputs.version }}" $(find published-assets -type f -print | sort) --target '${{ needs.validate.outputs.sha }}' --title "TreeSeed AI ${{ inputs.version }}" --notes-file "docs/releases/${{ inputs.version }}.md"
+          gh release create "${{ inputs.version }}" $(find published-assets -type f -print | sort) --target '${{ needs.validate.outputs.sha }}' --title "TreeSeed AI ${{ inputs.version }}" --notes-file "docs/releases/${{ inputs.version }}.md"
 
   apt-repository:
     needs: github-release

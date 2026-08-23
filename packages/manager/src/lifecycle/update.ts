@@ -8,7 +8,8 @@ import { event, setSetting, setting } from "../core/store.js";
 import { paths } from "../core/paths.js";
 import { securePlatformConfiguration } from "../core/configuration-file.js";
 import { ensureManagedRuntime, persistMode, reconcilePlatform } from "./platform.js";
-import { localImageReadiness } from "./local-build.js";
+import { buildCatalogLocalImages, localImageReadiness } from "./local-build.js";
+import { assertCatalogedSimulation } from "./apt-policy.js";
 const allowedPackages = new Set(["treeseed-ai", "treeseed-ai-archive-keyring", "treeseed-ai-development-archive-keyring", "treeseed-ai-host-js-runtime", "treeseed-ai-manager", "treeseed-ai-cli", "treeseed-ai-release-catalog", "treeseed-ai-host-runtime", "treeseed-ai-inference", "treeseed-ai-training", "treeseed-ai-lab", "treeseed-ai-factory"]);
 function configuration() {
 	return validatePlatformConfiguration(JSON.parse(readFileSync(paths.configuration, "utf8")));
@@ -111,7 +112,7 @@ export function planUpdate(input?: ReleaseCatalog) {
 	if (catalog.generation < installed) throw new Error("Implicit catalog downgrade refused.");
 	if (catalog.classification === "blocked") throw new Error("The candidate catalog is blocked.");
 	const simulation = command("apt-get", [...aptOptions(config.updates.channel), "-s", "--no-remove", "--no-install-recommends", "install", ...packages]);
-	if (/^Remv /mu.test(simulation) || /DOWNGRADED/mu.test(simulation)) throw new Error("APT simulation proposed removal or downgrade.");
+	assertCatalogedSimulation(simulation, catalog);
 	const plan = {
 		schemaVersion: "treeai.update-plan/v1",
 		generation: catalog.generation,
@@ -276,10 +277,35 @@ export async function applyUpdate() {
 		catalog = candidateCatalog(config.updates.channel),
 		packages = exactPackages(catalog);
 	if (setting("updatesPaused", false)) return { state: "postponed", reason: "updates_paused" };
-	const plan = planUpdate(catalog);
+	let plan = planUpdate(catalog);
 	if (!plan.automatic && setting("automaticInvocation", false)) return { state: "postponed", reason: "local_approval_required" };
 	event("update.acquiring", { generation: catalog.generation });
 	command("apt-get", [...aptOptions(config.updates.channel), "--download-only", "--no-remove", "--no-install-recommends", "install", ...packages]);
+	if (
+		!plan.localImages.ready &&
+		setting("automaticInvocation", false) &&
+		config.updates.channel === "development" &&
+		config.updates.policy === "continuous"
+	) {
+		event("root-capability.started", {
+			operation: "development.local-images.build",
+			generation: catalog.generation,
+			configuredImageSource: config.imageSource,
+			requiredRoles: catalog.imagePolicy.requiredLocalImages.map((item) => item.role),
+		});
+		try {
+			const built = buildCatalogLocalImages(catalog);
+			event("root-capability.succeeded", built.capability);
+			plan = { ...plan, localImages: localImageReadiness(catalog) };
+		} catch (error) {
+			event("root-capability.failed", {
+				operation: "development.local-images.build",
+				generation: catalog.generation,
+				error: error instanceof Error ? error.message : String(error),
+			});
+			throw error;
+		}
+	}
 	if (!plan.localImages.ready) {
 		setSetting("stagedGeneration", catalog.generation);
 		event("update.postponed", {
@@ -293,7 +319,9 @@ export async function applyUpdate() {
 			staged: true,
 			generation: catalog.generation,
 			requiredLocalImages: plan.localImages.required,
-			next: "Run treeai local-build plan --source PATH, then treeai local-build build --source PATH.",
+			next: setting("automaticInvocation", false)
+				? "The manager will retry the catalog-authorized build after backoff."
+				: "Run treeai local-build plan --source PATH, then treeai local-build build --source PATH.",
 		};
 	}
 	ensureManagedRuntime();
@@ -373,10 +401,21 @@ export function setChannel(channel: unknown, approveDowngrade = false) {
 		current.provenance.generator = "treeai-manager-channel";
 		writeFileSync(paths.configuration, JSON.stringify(finalizeConfiguration(current), null, 2), { mode: 0o600 });
 		securePlatformConfiguration();
-		for (const name of ["stable", "development"])
-			try {
-				execFileSync("systemctl", [name === channel ? "enable" : "disable", "--now", `treeseed-ai-manager-${name}.timer`]);
-			} catch {}
+		try {
+			execFileSync("systemctl", [
+				"disable",
+				"--now",
+				`treeseed-ai-manager-${channel === "stable" ? "development" : "stable"}.timer`,
+			]);
+			execFileSync("systemctl", [
+				"enable",
+				`treeseed-ai-manager-${channel}.timer`,
+			]);
+		} catch (error) {
+			throw new Error(
+				`Cannot configure the ${channel} update timer: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
 		setSetting("channel", channel);
 		event("update.channel", { channel, installed, candidate });
 		return { channel, installed, candidate };
@@ -385,6 +424,15 @@ export function setChannel(channel: unknown, approveDowngrade = false) {
 		else rmSync(source, { force: true });
 		throw error;
 	}
+}
+export function activateChannelTimer(channel: unknown) {
+	if (channel !== "stable" && channel !== "development")
+		throw new Error("Channel must be stable or development.");
+	execFileSync("systemctl", [
+		"restart",
+		"--no-block",
+		`treeseed-ai-manager-${channel}.timer`,
+	]);
 }
 export function updateStatus() {
 	const config = configuration();

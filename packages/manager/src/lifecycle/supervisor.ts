@@ -16,6 +16,7 @@ import {
 } from "@ai-platform/common";
 import {
 	applyUpdate,
+	activateChannelTimer,
 	checkForUpdate,
 	planUpdate,
 	restoreGeneration,
@@ -31,6 +32,10 @@ import {
 	stopManagedProduct,
 	transitionMode,
 } from "./platform.js";
+import {
+	configureLocalSingleUser,
+	resetOpenWebUi,
+} from "./lab-webui.js";
 function rootOnly() {
 	if (process.getuid?.() !== 0)
 		throw new Error("Manager supervisor must run as root.");
@@ -152,6 +157,10 @@ export async function execute(request: SupervisorRequest) {
 		case "component.disable":
 			component(parameters.component, false);
 			return stopManagedProduct(parameters.component);
+		case "lab.webui.configure":
+			return configureLocalSingleUser();
+		case "lab.webui.reset":
+			return resetOpenWebUi(parameters.confirm === true);
 		case "mode.set": {
 			const config = validatePlatformConfiguration(
 				JSON.parse(readFileSync(paths.configuration, "utf8")),
@@ -187,7 +196,19 @@ export function startSupervisor() {
 				if (!request.idempotencyKey)
 					throw new Error("idempotencyKey is required.");
 				const result = await execute(request);
-				socket.end(`${JSON.stringify({ ok: true, result })}\n`);
+				socket.end(`${JSON.stringify({ ok: true, result })}\n`, () => {
+					if (request.operation === "update.channel.set") {
+						try {
+							activateChannelTimer(request.parameters?.channel);
+						} catch (error) {
+							event("update.timer-activation-failed", {
+								channel: request.parameters?.channel,
+								error:
+									error instanceof Error ? error.message : String(error),
+							});
+						}
+					}
+				});
 			} catch (error) {
 				socket.end(
 					`${JSON.stringify({ ok: false, error: { code: "operation_failed", message: error instanceof Error ? error.message : String(error) } })}\n`,

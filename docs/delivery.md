@@ -2,7 +2,7 @@
 
 Publication is manual. Merge a reviewed `staging` branch into `main`, configure
 the protected GitHub `production` environment, and dispatch **Publish coordinated
-TreeSeed AI release** with version `0.6.2`. The workflow refuses any other
+TreeSeed AI release** with version `0.7.0`. The workflow refuses any other
 branch/version and does not create a tag until images, scans, signatures, and
 packages succeed.
 
@@ -23,7 +23,7 @@ matching public archive key and fingerprint as described in `release/apt`.
 Jobs that consume Docker Hub or APT signing credentials run in `production`.
 The final secret-free Pages deployment runs separately in `github-pages`.
 
-Development generations use the manually dispatched **Publish protected TreeAI development generation** workflow from `staging`. Its APT signing material is held only in the protected `staging` environment and differs from the stable key. Versions follow `0.6.3~dev.YYYYMMDD.HHMMSS+g<commit>-1`. This workflow never builds or publishes containers. It verifies the latest stable image manifest and signatures, reuses those production digests, and records whether the generation is `package-only` or `local-images-required`. No development container tag or registry credential is involved.
+Release candidates use the manually dispatched **Publish protected TreeAI release candidate** workflow from `staging`. Tags omit a `v` prefix and follow `0.7.0-rc1`; Debian versions use `0.7.0~rc1-1` so the final `0.7.0-1` sorts newer. APT signing material is held only in the protected `staging` environment and differs from the stable key. The workflow never builds or publishes development containers. It verifies the latest stable image manifest and signatures, reuses those production digests, and records whether the candidate is `package-only` or `local-images-required`.
 
 For `local-images-required`, the catalog names the exact roles, build identities, and source revision. The development host must explicitly build them from that checkout with `treeai local-build`; the manager verifies the atomic receipt and current Docker image IDs before it permits package installation. This keeps repository execution outside the automatic privileged update path. Unchanged roles continue to use their production digests.
 

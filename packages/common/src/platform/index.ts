@@ -18,6 +18,13 @@ export interface PlatformConfiguration {
 		postgresql: "bundled" | "external";
 		objectStorage: "bundled" | "external";
 	};
+	lab?: {
+		webui: {
+			authentication: "disabled" | "local-users";
+			browserUrl: string;
+			binding: string;
+		};
+	};
 	network: {
 		bindings: Record<string, string>;
 		hostnames: string[];
@@ -103,6 +110,24 @@ function assertRelationships(value: PlatformConfiguration) {
 			!value.products.includes("training"))
 	)
 		throw new Error("The lab product requires inference and training.");
+	if (value.lab) {
+		const webui = value.lab.webui;
+		if (
+			!webui ||
+			!["disabled", "local-users"].includes(webui.authentication) ||
+			!/^https:\/\//u.test(webui.browserUrl) ||
+			!/^.+:\d{1,5}$/u.test(webui.binding)
+		)
+			throw new Error("Invalid lab Open WebUI configuration.");
+		if (
+			webui.authentication === "disabled" &&
+			(webui.binding !== "127.0.0.1:443" ||
+				new URL(webui.browserUrl).hostname !== "chat.treeai.localhost")
+		)
+			throw new Error(
+				"Authentication-disabled Open WebUI requires https://chat.treeai.localhost on 127.0.0.1:443.",
+			);
+	}
 }
 export function canonicalJson(value: unknown) {
 	return `${JSON.stringify(sorted(value))}\n`;

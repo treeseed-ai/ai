@@ -4,5 +4,5 @@ After=network-online.target treeseed-ai-manager-supervisor.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/flock --nonblock /run/treeseed-ai/manager/update.lock /usr/lib/treeseed-ai/runtime/bin/node /usr/lib/treeseed-ai/manager/dist/timer.js
+ExecStart=/usr/bin/flock --nonblock /run/treeseed-ai/manager/update.lock /usr/lib/treeseed-ai/runtime/bin/node --disable-warning=ExperimentalWarning /usr/lib/treeseed-ai/manager/dist/timer.js
 TimeoutStartSec=2h

@@ -5,5 +5,5 @@ Requires=treeseed-ai-manager-supervisor.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/lib/treeseed-ai/runtime/bin/node /usr/lib/treeseed-ai/manager/dist/converge.js
+ExecStart=/usr/lib/treeseed-ai/runtime/bin/node --disable-warning=ExperimentalWarning /usr/lib/treeseed-ai/manager/dist/converge.js
 TimeoutStartSec=1h

@@ -107,8 +107,12 @@ function runtime(base: string) {
 }
 function catalog(base: string) {
 	directory(base, "usr/share/treeseed-ai/release");
-	const value = JSON.parse(readFileSync(resolve(root, "release/catalog.json"), "utf8")) as Record<string, unknown>,
-		packages = release.products.map((product, index) => ({
+	const catalogSource = process.env.TREEAI_BASE_CATALOG || resolve(root, "release/catalog.json"),
+		value = JSON.parse(readFileSync(catalogSource, "utf8")) as Record<string, unknown>,
+		catalogProducts = process.env.TREEAI_CATALOG_PACKAGE_SET === "management"
+			? release.products.filter((product) => ["archive-keyring", "development-archive-keyring", "host-js-runtime", "manager", "cli", "release-catalog"].includes(product))
+			: release.products,
+		packages = catalogProducts.map((product, index) => ({
 			name: packageName(product),
 			version: release.debianVersion,
 			architecture: ["archive-keyring", "development-archive-keyring", "release-catalog"].includes(product) ? "all" : "amd64",
@@ -128,15 +132,23 @@ function catalog(base: string) {
 		value.signingKeyFingerprint = readFileSync(resolve(root, "release/apt-development/RELEASE_KEY_FINGERPRINT"), "utf8").trim();
 	}
 	value.packages = packages;
+	if (process.env.TREEAI_CATALOG_PACKAGE_SET === "management") {
+		value.migrations = [];
+		value.gates = ["manager-health"];
+		value.rollback = { compatible: true, requiresBackup: false };
+	}
 	const requiredLocalImages = release.images.flatMap((role) => {
 		const planned = imagePlan?.images?.[role];
 		return planned?.action === "built" ? [{ role, buildIdentity: planned.buildIdentity }] : [];
 	});
 	value.imagePolicy = {
-		mode: requiredLocalImages.length ? "local-images-required" : "package-only",
+		mode: requiredLocalImages.length && process.env.TREEAI_FORCE_PACKAGE_ONLY !== "1" ? "local-images-required" : "package-only",
 		productionManifestVersion: imageManifest.version ?? release.version,
 		sourceRevision: process.env.TREEAI_SOURCE_REVISION ?? "release-source",
-		requiredLocalImages,
+		sourceBundle: process.env.TREEAI_SOURCE_ARCHIVE_URL && process.env.TREEAI_SOURCE_ARCHIVE_SHA256
+			? { url: process.env.TREEAI_SOURCE_ARCHIVE_URL, sha256: process.env.TREEAI_SOURCE_ARCHIVE_SHA256, format: "tar.gz" }
+			: null,
+		requiredLocalImages: process.env.TREEAI_FORCE_PACKAGE_ONLY === "1" ? [] : requiredLocalImages,
 	};
 	value.images = release.images.flatMap((role, index) => {
 		const image = imageManifest.images?.[role], planned = imagePlan?.images?.[role], digest = image?.digest;

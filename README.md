@@ -39,10 +39,10 @@ Put the returned `record` in the `AI_API_KEYS` JSON array. The plaintext credent
 
 ## Ubuntu 26.04 managed factory
 
-Release 0.6.2 supports Ubuntu 26.04 (Resolute) amd64. Download one generic or generated configuration package and install it locally:
+Release 0.7.0 supports Ubuntu 26.04 (Resolute) amd64. Download one generic or generated configuration package and install it locally:
 
 ```bash
-sudo apt install ./treeseed-ai_0.6.2-1_amd64.deb
+sudo apt install ./treeseed-ai_0.7.0-1_amd64.deb
 systemctl status treeseed-ai-bootstrap.service
 treeai platform status
 treeai platform doctor
@@ -59,7 +59,17 @@ Update channel and image source are independent. `updates.channel=development` p
 
 When `lab` is enabled in `platform.json`, the manager generates distinct service credentials and reconciles Hermes, Open WebUI, the capture proxy, and controller with the core products. The same `treeai` operator credential controls the lab API. Automatic cycling remains disabled until `treeai lab enable` is called. The generated Hermes dashboard credential is host-local and root-readable under `/etc/treeseed-ai/lab/secrets/`; it is never placed in manager events or API responses.
 
-Hermes 0.18.2 is built from its official wheel pinned by SHA-256 because that release has no official container image. Open WebUI 0.9.5 is pinned to its linux/amd64 OCI manifest. Experience artifacts are confined to the Hermes workspace, redacted, content-addressed, and uploaded to training storage before immutable batch preparation.
+Hermes 0.18.2 is built from its official wheel pinned by SHA-256 because that release has no official container image. Open WebUI 0.11.0 is pinned by digest. In local single-user mode it is available only at `https://chat.treeai.localhost`, with the existing TreeAI CA and no login form. It connects through the private experience proxy rather than raw vLLM.
+
+```bash
+sudo treeai lab configure --local-single-user
+sudo treeai lab reset-webui --confirm
+treeai lab urls
+treeai lab open webui
+treeai lab verify
+```
+
+The reset command archives the existing Open WebUI volume before creating the fresh database required by auth-disabled mode. The public CA is `/etc/ssl/certs/treeseed-ai-ca.pem`; sandboxed browsers may require manual CA import. Experience artifacts are confined to the Hermes workspace, redacted, content-addressed, and uploaded to training storage before immutable batch preparation.
 
 ## Development
 

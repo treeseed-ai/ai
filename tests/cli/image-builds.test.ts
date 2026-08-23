@@ -7,9 +7,11 @@ import{computeBuildIdentity,type ImageBuild}from'../../scripts/release/plan-imag
 describe('selective image build identities',()=>{
   it('rewrites the current changelog version for development publications',()=>{
     const workflow=readFileSync('.github/workflows/publish-development.yml','utf8');
-    expect(workflow).toContain('1s/([^)]*)/(${{ inputs.debian_version }})/');
+    expect(workflow).toContain('1s/([^)]*)/($TREEAI_RC_DEBIAN_VERSION)/');
     expect(workflow).not.toContain('1s/(0.6.0-1)/');
-    expect(workflow).toContain('0.6.3~dev.');
+    expect(workflow).toContain('TREEAI_RC_TAG=${version}-rc${{ inputs.rc }}');
+    expect(workflow).toContain('TREEAI_RC_DEBIAN_VERSION=${version}~rc${{ inputs.rc }}-1');
+    expect(workflow).not.toContain('tag="dev-');
     expect(workflow).not.toContain('docker/login-action');
     expect(workflow).not.toContain('docker buildx build');
     expect(workflow).not.toContain('cosign sign');

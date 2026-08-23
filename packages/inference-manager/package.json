@@ -1,6 +1,6 @@
 {
   "name": "@ai-platform/inference-manager",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "bin": { "ai-inference-manager": "./dist/main.js" },
