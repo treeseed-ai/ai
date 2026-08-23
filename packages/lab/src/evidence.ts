@@ -2,7 +2,7 @@ import type { AgentActionSequenceV1, AgentTrajectoryEvent, AgentTrajectoryV1, Ar
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { extname, relative, resolve } from "node:path";
-import { appendBounded, atomic, digest, lines, readJson, redactKnownCredentials, sanitize, stateRoot, workspaceRoot } from "./shared.js";
+import { appendBounded, appendEvent, atomic, digest, lines, readJson, redactKnownCredentials, sanitize, stateRoot, workspaceRoot } from "./shared.js";
 
 type HermesMessage = { id?: string; role?: string; content?: unknown; tool_name?: string; tool_call_id?: string; tool_calls?: unknown; timestamp?: string; token_count?: number; reasoning?: unknown };
 type HermesSession = { id?: string; session_id?: string; source?: string; model?: string; created_at?: string; last_active?: string; end_reason?: string };
@@ -37,19 +37,29 @@ export function actionSequences(trajectoryId: string, events: AgentTrajectoryEve
 	return result;
 }
 
-export function observeArtifacts(trajectoryId: string): ArtifactObservationV1[] {
-	const root = realpathSync(workspaceRoot), observations: ArtifactObservationV1[] = [],
-		snapshotPath = `${stateRoot}/workspace-snapshot.json`, previous = readJson<Record<string, string>>(snapshotPath, {}), next: Record<string, string> = {};
+export function observeArtifacts(trajectoryId: string, roots = { workspace: workspaceRoot, state: stateRoot }): ArtifactObservationV1[] {
+	const root = realpathSync(roots.workspace), observations: ArtifactObservationV1[] = [],
+		snapshotPath = `${roots.state}/workspace-snapshot.json`, previous = readJson<Record<string, string>>(snapshotPath, {}), next: Record<string, string> = {};
 	for (const entry of readdirSync(root, { recursive: true, withFileTypes: true })) {
 		const path = resolve(entry.parentPath, entry.name);
 		if (entry.isSymbolicLink()) throw new Error("Hermes workspace contains a forbidden symlink");
 		if (!entry.isFile()) continue;
 		const real = realpathSync(path), relativePath = relative(root, real);
 		if (!relativePath || relativePath.startsWith("..")) throw new Error("Workspace path escape");
-		const raw = readFileSync(real), extension = extname(relativePath).toLowerCase();
+		let raw: Buffer;
+		try { raw = readFileSync(real); }
+		catch (error) {
+			const code = (error as NodeJS.ErrnoException).code;
+			if (code !== "EACCES" && code !== "EPERM") throw error;
+			const unavailable = `unavailable:${code}`;
+			next[relativePath] = unavailable;
+			if (previous[relativePath] !== unavailable) appendEvent("artifact.unavailable", { relativePath, reason: code }, roots.state);
+			continue;
+		}
+		const extension = extname(relativePath).toLowerCase();
 		const bytes = textual.has(extension) ? Buffer.from(redactKnownCredentials(raw.toString("utf8"))) : raw;
 		const sha256 = createHash("sha256").update(bytes).digest("hex");
-		const objectRoot = `${stateRoot}/artifact-objects/sha256`, objectPath = `${objectRoot}/${sha256}`;
+		const objectRoot = `${roots.state}/artifact-objects/sha256`, objectPath = `${objectRoot}/${sha256}`;
 		if (!existsSync(objectPath)) {
 			mkdirSync(objectRoot, { recursive: true, mode: 0o700 });
 			const temporary = `${objectPath}.${process.pid}.tmp`;
