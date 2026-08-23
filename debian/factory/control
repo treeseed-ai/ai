@@ -1,5 +1,5 @@
 Package: treeseed-ai-factory
-Version: 0.7.0-1
+Version: 0.8.0-1
 Section: metapackages
 Priority: optional
 Architecture: amd64

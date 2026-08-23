@@ -1,10 +1,10 @@
 variable "AI_SOURCE_REVISION" { default = "unknown" }
 variable "AI_SOURCE_DIGEST" { default = "unknown" }
 variable "AI_BUILD_DATE" { default = "unknown" }
-variable "AI_VERSION" { default = "0.7.0" }
+variable "AI_VERSION" { default = "0.8.0" }
 
 group "default" {
-  targets = ["lab-controller", "lab-experience-proxy", "hermes-agent"]
+  targets = ["lab-controller", "lab-experience-proxy", "hermes-agent", "lab-web-tool-proxy"]
 }
 
 target "defaults" {
@@ -39,4 +39,11 @@ target "hermes-agent" {
   dockerfile = "containers/lab/hermes.Dockerfile"
   tags = ["local/hermes-agent:${AI_VERSION}"]
   labels = { "org.treeseed-ai.role" = "hermes-agent" }
+}
+
+target "lab-web-tool-proxy" {
+  inherits = ["defaults"]
+  dockerfile = "containers/lab/web-tool.Dockerfile"
+  tags = ["local/lab-web-tool-proxy:${AI_VERSION}"]
+  labels = { "org.treeseed-ai.role" = "lab-web-tool-proxy" }
 }

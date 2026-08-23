@@ -41,6 +41,7 @@ export interface LocalBuildReceipt {
 		configDigest: string;
 		baseDigest: string;
 		smoke: "passed";
+		delivery?: "built" | "reused";
 	}>;
 }
 export interface LocalImageReadiness {
@@ -120,8 +121,8 @@ function requirements(catalog: ReleaseCatalog, plan: BuildPlan) {
 			);
 	return required;
 }
-function localTag(catalog: ReleaseCatalog, role: string) {
-	return `local/${role}:dev-${catalog.imagePolicy.sourceRevision.slice(0, 12)}-g${catalog.generation}`;
+export function localTag(role: string, buildIdentity: string) {
+	return `local/${role}:build-${buildIdentity.replace(/^sha256:/u, "").slice(0, 16)}`;
 }
 function inspect(tag: string) {
 	return JSON.parse(
@@ -147,6 +148,7 @@ const smokeCommands: Record<string, string[]> = {
 	"inference-migrations": ["sh", "-c", "test -s /migrations/001_initial.sql"],
 	"training-migrations": ["sh", "-c", "test -s /migrations/001_initial.sql"],
 	"hermes-agent": ["python", "-c", "from importlib.metadata import version;assert version('hermes-agent')=='0.18.2'"],
+	"lab-web-tool-proxy": ["python", "-c", "source=open('/app/worker.py',encoding='utf-8').read();compile(source,'/app/worker.py','exec')"],
 };
 function smoke(role: string, tag: string) {
 	const detail = inspect(tag);
@@ -184,7 +186,7 @@ export function planLocalBuild(requested: string, trusted?: TrustedSource) {
 	};
 }
 export function buildLocalImages(requested: string, trusted?: TrustedSource) {
-	const planned = planLocalBuild(requested, trusted), catalog = stagedCatalog();
+	const planned = planLocalBuild(requested, trusted);
 	if (!planned.required.length)
 		throw new Error("The staged generation does not require local images.");
 	const revision = trusted?.revision ?? run("git", ["rev-parse", "HEAD"], planned.source).trim(),
@@ -192,7 +194,6 @@ export function buildLocalImages(requested: string, trusted?: TrustedSource) {
 		createdAt = new Date().toISOString(),
 		environment = {
 			...process.env,
-			AI_VERSION: `dev-${planned.sourceRevision.slice(0, 12)}-g${planned.generation}`,
 			AI_SOURCE_REVISION: revision,
 			AI_SOURCE_DIGEST: createHash("sha256")
 				.update(
@@ -204,18 +205,32 @@ export function buildLocalImages(requested: string, trusted?: TrustedSource) {
 				.digest("hex"),
 			AI_BUILD_DATE: createdAt,
 		};
+	let prior: LocalBuildReceipt | undefined;
+	try { prior = JSON.parse(readFileSync(receiptPath(), "utf8")) as LocalBuildReceipt; } catch {}
+	const reused = new Set<string>();
 	for (const item of planned.required) {
+		const tag = localTag(item.role, item.buildIdentity), previous = prior?.images?.find((image) => image.role === item.role && image.buildIdentity === item.buildIdentity);
+		if (prior?.schemaVersion === "treeai.local-build-receipt/v1" && prior.platform === "linux/amd64" && previous?.smoke === "passed" && previous.configDigest === previous.imageId && /^sha256:[a-f0-9]{64}$/u.test(previous.baseDigest)) {
+			try {
+				const detail = inspect(previous.tag);
+				if (detail.Id === previous.imageId && detail.Architecture === "amd64" && detail.Config?.Labels?.["org.treeseed-ai.role"] === item.role) {
+					run("docker", ["image", "tag", previous.tag, tag]);
+					reused.add(item.role);
+					continue;
+				}
+			} catch {}
+		}
 		const bake = item.role.startsWith("lab-") || item.role === "hermes-agent"
 			? "deploy/lab/docker-bake.hcl"
 			: "deploy/factory/docker-bake.hcl";
 		execFileSync("docker", ["buildx", "bake", "-f", bake, "--load", item.role], {
 			cwd: planned.source,
-			env: environment,
+			env: { ...environment, AI_VERSION: tag.split(":").at(-1)! },
 			stdio: "inherit",
 		});
 	}
 	const images = planned.required.map((item) => {
-		const tag = localTag(catalog, item.role),
+		const tag = localTag(item.role, item.buildIdentity),
 			detail = smoke(item.role, tag),
 			labels = detail.Config?.Labels ?? {};
 		return {
@@ -226,6 +241,7 @@ export function buildLocalImages(requested: string, trusted?: TrustedSource) {
 			configDigest: detail.Id,
 			baseDigest: labels["org.opencontainers.image.base.digest"] ?? "unknown",
 			smoke: "passed" as const,
+			delivery: reused.has(item.role) ? "reused" as const : "built" as const,
 		};
 	});
 	const receipt: LocalBuildReceipt = {
@@ -244,8 +260,9 @@ export function buildLocalImages(requested: string, trusted?: TrustedSource) {
 	};
 	const target = receiptPath(), temporary = `${target}.tmp-${process.pid}`;
 	writeFileSync(temporary, `${JSON.stringify(receipt, null, 2)}\n`, {
-		mode: 0o600,
+		mode: 0o640,
 	});
+	run("chown", ["root:treeseed-ai-manager", temporary]);
 	renameSync(temporary, target);
 	return receipt;
 }
@@ -303,16 +320,19 @@ export function buildCatalogLocalImages(catalog: ReleaseCatalog) {
 	writeFileSync(join(paths.state, `root-capability-${catalog.generation}.json`), `${JSON.stringify(capability, null, 2)}\n`, { mode: 0o600 });
 	return { receipt, capability };
 }
-export function localImageReadiness(catalog: ReleaseCatalog): LocalImageReadiness {
+export function localImageReadiness(catalog: ReleaseCatalog, options: { inspect?: boolean } = {}): LocalImageReadiness {
 	if (catalog.imagePolicy.mode === "package-only")
 		return { ready: true, required: [], images: new Map<string, string>() };
 	const path = receiptPath();
 	if (!existsSync(path))
 		return { ready: false, required: catalog.imagePolicy.requiredLocalImages, reason: "local_build_receipt_missing", images: new Map<string, string>() };
-	const receipt = JSON.parse(
-		readFileSync(path, "utf8"),
-	) as LocalBuildReceipt,
-		images = new Map<string, string>();
+	let receipt: LocalBuildReceipt;
+	try {
+		receipt = JSON.parse(readFileSync(path, "utf8")) as LocalBuildReceipt;
+	} catch {
+		return { ready: false, required: catalog.imagePolicy.requiredLocalImages, reason: "local_build_receipt_unreadable", images: new Map<string, string>() };
+	}
+	const images = new Map<string, string>();
 	if (
 		receipt.schemaVersion !== "treeai.local-build-receipt/v1" ||
 		receipt.generation !== catalog.generation ||
@@ -336,11 +356,13 @@ export function localImageReadiness(catalog: ReleaseCatalog): LocalImageReadines
 			!/^sha256:[a-f0-9]{64}$/u.test(built.baseDigest)
 		)
 			return { ready: false, required: catalog.imagePolicy.requiredLocalImages, reason: `local_build_receipt_invalid:${required.role}`, images };
-		try {
-			if (inspect(built.tag).Id !== built.imageId)
-				return { ready: false, required: catalog.imagePolicy.requiredLocalImages, reason: `local_image_moved:${required.role}`, images };
-		} catch {
-			return { ready: false, required: catalog.imagePolicy.requiredLocalImages, reason: `local_image_missing:${required.role}`, images };
+		if (options.inspect !== false) {
+			try {
+				if (inspect(built.tag).Id !== built.imageId)
+					return { ready: false, required: catalog.imagePolicy.requiredLocalImages, reason: `local_image_moved:${required.role}`, images };
+			} catch {
+				return { ready: false, required: catalog.imagePolicy.requiredLocalImages, reason: `local_image_missing:${required.role}`, images };
+			}
 		}
 		images.set(required.role, built.imageId);
 	}

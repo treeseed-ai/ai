@@ -17,7 +17,7 @@ export const inferenceRoutes: RouteSpec[] = [
 ];
 
 export function createInferenceControlApp(input: { jobs: JobRepository; resolveKey: ApiKeyResolver; version?: string; ready?: () => Promise<boolean>; importArtifact?:(job:Job)=>Promise<string>; currentDeployment?:()=>Promise<unknown>; candidate?:(id:string)=>Promise<unknown|null> }) {
-	const app = new Hono(); const version=input.version??'0.7.0'; const document=openApiDocument({ title:'AI Inference Control API',version,routes:inferenceRoutes });
+	const app = new Hono(); const version=input.version??'0.8.0'; const document=openApiDocument({ title:'AI Inference Control API',version,routes:inferenceRoutes });
 	app.get('/healthz',(context)=>context.json({ok:true,service:'inference-control'})); app.get('/readyz',async(context)=>{const ok=await(input.ready?.()??true);return context.json({ok},ok?200:503);});
 	app.get('/openapi.json',(context)=>context.json(document)); app.get('/docs',(context)=>context.html('<!doctype html><title>AI Inference API</title><script id="api-reference" data-url="/openapi.json"></script><script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>'));
 	app.post('/internal/artifacts/import',async context=>{if(!input.importArtifact||context.req.header('authorization')!==`Bearer ${internalImportToken()}`)return context.json({error:{code:'not_found',message:'Route not found.'}},404);const job=await context.req.json()as Job;return context.json({resultManifest:await input.importArtifact(job)});});

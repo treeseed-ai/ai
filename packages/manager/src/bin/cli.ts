@@ -2,6 +2,7 @@
 import { execFileSync, spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
+import { redactSensitiveText, transportFailure } from "@ai-platform/common";
 import { callSupervisor, type SupervisorOperation } from "../lifecycle/socket.js";
 import { paths } from "../core/paths.js";
 import { buildLocalImages, planLocalBuild } from "../lifecycle/local-build.js";
@@ -21,8 +22,13 @@ function api(path: string, method = "GET", body?: unknown) {
 	const config = settings(),
 		values = ["--silent", "--show-error", "--fail-with-body", "--cacert", config.ca, "-H", `Authorization: Bearer ${key()}`, "-H", "content-type: application/json", "-X", method];
 	if (body) values.push("--data", JSON.stringify(body));
-	values.push(`${config.endpoints.manager ?? config.endpoints.factory}${path}`);
-	return JSON.parse(execFileSync("curl", values, { encoding: "utf8" })) as unknown;
+	const target = `${config.endpoints.manager ?? config.endpoints.factory}${path}`;
+	values.push(target);
+	try {
+		return JSON.parse(execFileSync("curl", values, { encoding: "utf8" })) as unknown;
+	} catch (error) {
+		throw transportFailure(error, target);
+	}
 }
 function root() {
 	if (process.getuid?.() !== 0) throw new Error("This operation requires local root authority.");
@@ -105,7 +111,7 @@ async function main() {
 	process.stdout.write(`${typeof result === "string" ? result : JSON.stringify(result, null, json ? 2 : 0)}\n`);
 }
 main().catch((error) => {
-	const value = { error: { code: "treeai_manager_error", message: error instanceof Error ? error.message : String(error) } };
+	const value = { error: { code: "treeai_manager_error", message: redactSensitiveText(error instanceof Error ? error.message : String(error)) } };
 	process.stderr.write(`${json ? JSON.stringify(value) : value.error.message}\n`);
 	process.exitCode = 1;
 });

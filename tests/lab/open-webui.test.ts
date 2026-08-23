@@ -5,6 +5,7 @@ import {
 	finalizeConfiguration,
 	validatePlatformConfiguration,
 } from "../../packages/common/src/platform/index.js";
+import { assertWebUiAuthenticationDisabled } from "../../packages/manager/src/lifecycle/lab-webui.js";
 
 function defaultConfiguration() {
 	return JSON.parse(
@@ -42,9 +43,21 @@ describe("Open WebUI local single-user integration", () => {
 			"lab-open-webui",
 		);
 		expect(compose.services["open-webui"].secrets).toBeUndefined();
-		expect(compose.services.gateway.ports[0]).toBe(
-			"${OPEN_WEBUI_PUBLISH:-0.0.0.0:4791:4791}",
+		expect(compose.services["experience-proxy"].group_add).toEqual([
+			"${RUNTIME_GID:?RUNTIME_GID is required}",
+		]);
+		expect(compose.services.controller.group_add).toEqual([
+			"${RUNTIME_GID:?RUNTIME_GID is required}",
+			"10001",
+		]);
+		expect(compose.services.gateway.ports).toBeUndefined();
+		const platform = readFileSync(
+			"packages/manager/src/lifecycle/platform.ts",
+			"utf8",
 		);
+		expect(platform).toContain('"127.0.0.1:443:443"');
+		expect(platform).toContain('"127.0.0.1" : "0.0.0.0"');
+		expect(platform).toContain("ports.override.yml");
 	});
 
 	it("provides environment-controlled single-user security settings", () => {
@@ -57,6 +70,21 @@ describe("Open WebUI local single-user integration", () => {
 		expect(environment.WEBUI_AUTH).toBe("${OPEN_WEBUI_AUTH:-true}");
 	});
 
+	it("reads authentication state from the Open WebUI API response shape", () => {
+		expect(() =>
+			assertWebUiAuthenticationDisabled({ features: { auth: false } }),
+		).not.toThrow();
+		for (const response of [
+			{ features: { auth: true } },
+			{ auth: false },
+			{},
+			null,
+		])
+			expect(() => assertWebUiAuthenticationDisabled(response)).toThrow(
+				/authentication enabled/u,
+			);
+	});
+
 	it("stages configuration and backs up only the Open WebUI volume", () => {
 		const lifecycle = readFileSync(
 			"packages/manager/src/lifecycle/lab-webui.ts",
@@ -67,21 +95,37 @@ describe("Open WebUI local single-user integration", () => {
 		expect(lifecycle).toContain("reset-webui requires --confirm");
 		expect(lifecycle).toContain("reset-rolled-back");
 		expect(lifecycle).not.toContain("hermes-home");
+		const platform = readFileSync(
+			"packages/manager/src/lifecycle/platform.ts",
+			"utf8",
+		);
+		expect(platform).toContain('command("chown", ["root:treeseed-ai-lab"');
+		expect(platform).toContain('RUNTIME_GID: productGroup("lab")');
 	});
 
 	it("attributes proxy traffic by its non-secret provider identity", () => {
 		const proxy = readFileSync("packages/lab/src/proxy.ts", "utf8");
 		expect(proxy).toContain("Bearer lab-open-webui");
-		expect(proxy).toContain("return'open-webui'");
-		expect(proxy).toContain("headers.set('authorization'");
+		expect(proxy).toContain('return "open-webui"');
+		expect(proxy).toContain('headers.set("authorization"');
 	});
 
 	it("keeps browser launch fixed and certificate replacement transactional", () => {
 		const cli = readFileSync("packages/lab/src/cli.ts", "utf8");
 		const converge = readFileSync("packages/manager/src/bin/converge.ts", "utf8");
-		expect(cli).toContain('targets.length !== 1 || targets[0] !== "webui"');
-		expect(cli).toContain('spawn("/usr/bin/xdg-open", [webui.browserUrl]');
-		expect(converge).toContain('"-checkhost"');
+		const tls = readFileSync(
+			"packages/manager/src/lifecycle/certificates/tls.ts",
+			"utf8",
+		);
+		expect(cli).toContain('["webui", "hermes"].includes');
+		expect(cli).toContain('spawn("/usr/bin/xdg-open", [target]');
+		expect(tls).toContain('"-checkhost"');
 		expect(converge).toContain("certificate.rollback()");
+		const platform = readFileSync(
+			"packages/manager/src/lifecycle/platform.ts",
+			"utf8",
+		);
+		expect(platform).toContain("ensurePlatformTls(configuration)");
+		expect(platform).toContain("certificate.rollback()");
 	});
 });

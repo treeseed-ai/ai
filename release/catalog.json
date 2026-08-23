@@ -1,19 +1,20 @@
 {
   "schemaVersion": "treeai.release-catalog/v1",
-  "release": "0.7.0",
+  "release": "0.8.0",
   "channel": "stable",
-  "generation": 7000000,
+  "generation": 8000000,
   "compatibilityId": "linux-amd64-nvidia-v1",
   "classification": "breaking",
   "automatic": false,
   "suite": "stable",
   "signingKeyFingerprint": "B94202432CC72B933C4554BC9B8CBEABA53728D0",
-  "platform": { "architecture": "amd64", "operatingSystems": ["debian:12", "debian:13", "ubuntu:22.04", "ubuntu:24.04", "ubuntu:26.04"], "manager": ">=0.6.0 <0.8.0", "nodeRuntime": "24.6.0", "nvidiaDriver": ">=570" },
+  "packageSet": "all",
+  "platform": { "architecture": "amd64", "operatingSystems": ["debian:12", "debian:13", "ubuntu:22.04", "ubuntu:24.04", "ubuntu:26.04"], "manager": ">=0.8.0 <0.9.0", "nodeRuntime": "24.6.0", "nvidiaDriver": ">=570" },
   "packages": [],
   "images": [],
   "imagePolicy": {
     "mode": "package-only",
-    "productionManifestVersion": "0.7.0",
+    "productionManifestVersion": "0.8.0",
     "sourceRevision": "release-source",
     "sourceBundle": null,
     "requiredLocalImages": []
@@ -25,15 +26,15 @@
     { "id": "minio-client", "reference": "minio/mc:RELEASE.2025-07-21T05-28-08Z@sha256:fb8f773eac8ef9d6da0486d5dec2f42f219358bcb8de579d1623d518c9ebd4cc", "digest": "sha256:fb8f773eac8ef9d6da0486d5dec2f42f219358bcb8de579d1623d518c9ebd4cc", "consumers": ["inference", "training"], "restartImpact": "initialization" },
     { "id": "open-webui", "reference": "ghcr.io/open-webui/open-webui:v0.11.0@sha256:72c0ba641ba75e7aa52655cb242570906ececd09b1140fb736483038a22b3228", "digest": "sha256:72c0ba641ba75e7aa52655cb242570906ececd09b1140fb736483038a22b3228", "consumers": ["lab"], "restartImpact": "open-webui" }
   ],
-  "composeGeneration": 2,
-  "configurationGeneration": 2,
+  "composeGeneration": 3,
+  "configurationGeneration": 3,
   "migrations": [],
   "gates": ["disk", "runtime", "gpu", "database", "storage", "readiness", "canary"],
   "rollback": { "compatible": true, "requiresBackup": true },
   "evidence": {
     "cosignIssuer": "https://token.actions.githubusercontent.com",
     "cosignIdentity": "https://github.com/treeseed-ai/ai/.github/workflows/release.yml@refs/heads/main",
-    "githubRelease": "https://github.com/treeseed-ai/ai/releases/tag/0.7.0",
+    "githubRelease": "https://github.com/treeseed-ai/ai/releases/tag/0.8.0",
     "sbomAssetPattern": "<role>.spdx.json",
     "vulnerabilityAssetPattern": "<role>.json"
   }

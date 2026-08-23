@@ -1,5 +1,11 @@
-import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it, vi } from "vitest";
+import {
+	reconcileConfiguredPlatform,
+	writeServerExtensions,
+} from "../../packages/manager/src/bin/converge.js";
 
 describe("manager scheduling and privilege split", () => {
 	it("polls development every 60 seconds with jitter", () => {
@@ -22,10 +28,15 @@ describe("manager scheduling and privilege split", () => {
 			"packages/manager/src/lifecycle/update.ts",
 			"utf8",
 		);
-		expect(supervisor).toContain(
-			'request.operation === "update.channel.set"',
+		expect(supervisor).toMatch(
+			/request\.operation\s+!={1,2}\s+"update\.channel\.set"/u,
 		);
-		expect(supervisor).toMatch(/socket\.end\([\s\S]+activateChannelTimer/u);
+		const transport = readFileSync(
+			"packages/manager/src/lifecycle/supervisor-transport.ts",
+			"utf8",
+		);
+		expect(transport).toMatch(/socket\.end\([\s\S]+afterReply/u);
+		expect(supervisor).toMatch(/createSupervisorTransport\([\s\S]+activateChannelTimer/u);
 		expect(update).toContain('"enable",');
 		expect(update).not.toMatch(
 			/name === channel \? "enable" : "disable", "--now"/u,
@@ -43,6 +54,41 @@ describe("manager scheduling and privilege split", () => {
 			expect(unit).toContain("--disable-warning=ExperimentalWarning");
 			expect(unit).not.toContain("NODE_NO_WARNINGS");
 		}
+	});
+
+	it("writes TLS SAN extensions without relying on systemd stdin", () => {
+		const stage = mkdtempSync(join(tmpdir(), "treeai-tls-"));
+		try {
+			const path = writeServerExtensions(stage, [
+				"DNS:chat.treeai.localhost",
+				"IP:127.0.0.1",
+			]);
+			expect(statSync(path).mode & 0o777).toBe(0o600);
+			expect(readFileSync(path, "utf8")).toBe(
+				"subjectAltName=DNS:chat.treeai.localhost,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n",
+			);
+			expect(
+				readFileSync("packages/manager/src/bin/converge.ts", "utf8"),
+			).not.toContain('"/dev/stdin"');
+		} finally {
+			rmSync(stage, { recursive: true, force: true });
+		}
+	});
+
+	it("reconciles desired state after a package-only update", async () => {
+		const reconciled = { mode: "awake", services: { lab: "ready" } };
+		const reconcile = vi.fn(async () => reconciled);
+		expect(await reconcileConfiguredPlatform(undefined, reconcile)).toBe(
+			reconciled,
+		);
+		expect(reconcile).toHaveBeenCalledOnce();
+
+		const alreadyReconciled = { mode: "sleep", services: {} };
+		reconcile.mockClear();
+		expect(
+			await reconcileConfiguredPlatform(alreadyReconciled, reconcile),
+		).toBe(alreadyReconciled);
+		expect(reconcile).not.toHaveBeenCalled();
 	});
 
 	it("runs the API unprivileged and supervisor without a listener", () => {
@@ -63,6 +109,8 @@ describe("manager scheduling and privilege split", () => {
 		const postinst = readFileSync("debian/bootstrap/postinst", "utf8");
 		expect(postinst).not.toContain("apt-get");
 		expect(postinst).toContain("start --no-block");
+		expect(postinst).toContain("treeseed-ai-manager-update.service");
+		expect(postinst).toContain("active|activating|reloading");
 		expect(postinst).toContain("migrate-0.4.sh apply --confirm");
 		expect(readFileSync("scripts/bootstrap/bootstrap.sh", "utf8")).toContain(
 			"DPkg::Lock::Timeout=600",

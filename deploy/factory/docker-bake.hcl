@@ -1,7 +1,7 @@
 variable "AI_SOURCE_REVISION" { default = "unknown" }
 variable "AI_SOURCE_DIGEST" { default = "unknown" }
 variable "AI_BUILD_DATE" { default = "unknown" }
-variable "AI_VERSION" { default = "0.7.0" }
+variable "AI_VERSION" { default = "0.8.0" }
 
 group "factory" {
   targets = ["inference-api", "inference-manager", "inference-vllm", "inference-evaluator", "inference-migrations", "training-api", "training-manager", "axolotl-worker", "marker-worker", "artifact-worker", "training-migrations"]

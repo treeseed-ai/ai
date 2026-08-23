@@ -1,3 +1,13 @@
+treeseed-ai (0.8.0-1) stable; urgency=high
+
+  * Add private, authenticated Hermes agent routing beside direct inference.
+  * Isolate Hermes tools and provide bounded web search and extraction.
+  * Capture linked inference, trajectory, action-sequence, and artifact evidence.
+  * Add hash-only Hermes dashboard credentials and transactional rotation.
+  * Keep continual pretraining, corrective SFT, and KTO execution disabled.
+
+ -- TreeSeed AI Releases <releases@treeseed.ai>  Sun, 23 Aug 2026 02:50:00 -0400
+
 treeseed-ai (0.7.0-1) stable; urgency=medium
 
   * Add loopback-only, authentication-disabled Open WebUI development mode.
