@@ -75,11 +75,11 @@ jobs:
           APT_GPG_PRIVATE_KEY: "${{ secrets.APT_GPG_PRIVATE_KEY }}"
           APT_GPG_PASSPHRASE: "${{ secrets.APT_GPG_PASSPHRASE }}"
         run: |
-          mkdir -p development-debs pages
+          mkdir -p development-debs pages/apt
           gh release download "dev-${{ inputs.generation }}" --pattern '*.deb' --dir development-debs
-          wget --quiet --mirror --no-parent --no-host-directories --cut-dirs=1 --directory-prefix=pages https://treeseed-ai.github.io/ai/apt/ || true
+          sh scripts/release/mirror-apt-suite.sh https://treeseed-ai.github.io/ai/apt stable pages/apt || true
           export APT_RELEASE_FINGERPRINT="$(cat release/apt-development/RELEASE_KEY_FINGERPRINT)"
-          sh scripts/release/build-apt-repository.sh development-debs pages '${{ inputs.debian_version }}' development
+          sh scripts/release/build-apt-repository.sh development-debs pages/apt '${{ inputs.debian_version }}' development
       - uses: actions/upload-artifact@v4
         with: { name: development-apt-pages-site, path: pages, if-no-files-found: error }
 
