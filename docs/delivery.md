@@ -23,7 +23,9 @@ matching public archive key and fingerprint as described in `release/apt`.
 Jobs that consume Docker Hub or APT signing credentials run in `production`.
 The final secret-free Pages deployment runs separately in `github-pages`.
 
-Development generations use the manually dispatched **Publish protected TreeAI development generation** workflow from `staging`. Its APT signing material is held only in the protected `staging` environment and differs from the stable key. Versions follow `0.6.2~dev.YYYYMMDD.HHMMSS+g<commit>-1`; changed images receive immutable `dev-<commit>` tags while unchanged signed digests are reused. No floating development tag is published.
+Development generations use the manually dispatched **Publish protected TreeAI development generation** workflow from `staging`. Its APT signing material is held only in the protected `staging` environment and differs from the stable key. Versions follow `0.6.3~dev.YYYYMMDD.HHMMSS+g<commit>-1`. This workflow never builds or publishes containers. It verifies the latest stable image manifest and signatures, reuses those production digests, and records whether the generation is `package-only` or `local-images-required`. No development container tag or registry credential is involved.
+
+For `local-images-required`, the catalog names the exact roles, build identities, and source revision. The development host must explicitly build them from that checkout with `treeai local-build`; the manager verifies the atomic receipt and current Docker image IDs before it permits package installation. This keeps repository execution outside the automatic privileged update path. Unchanged roles continue to use their production digests.
 
 After GitHub Pages publication, clients can install the archive with a
 dedicated keyring and deb822 source:
@@ -46,8 +48,10 @@ sudo apt install treeseed-ai
 ```
 
 If only Pages publication fails after a GitHub Release exists, dispatch
-**Repair TreeSeed AI APT publication**. It reconstructs the complete repository
-from immutable release assets without rebuilding images or packages.
+**Repair TreeAI APT repository** with the existing stable version. It reconstructs
+the stable suite from immutable GitHub Release packages, preserves the currently
+signed development suite, and republishes both beneath `/apt` without rebuilding
+images or packages.
 
 If checksum publication alone is malformed, dispatch **Repair TreeSeed AI
 release checksums**. It verifies the existing signature and payloads, then

@@ -115,7 +115,9 @@ function catalog(base: string) {
 			origin: "TreeSeed AI",
 			order: index,
 		})),
-		imageManifest = JSON.parse(readFileSync(process.env.TREEAI_IMAGE_MANIFEST ?? resolve(root, "release/image-manifest.json"), "utf8")) as { images?: Record<string, { digest: string }> };
+		imageManifest = JSON.parse(readFileSync(process.env.TREEAI_IMAGE_MANIFEST ?? resolve(root, "release/image-manifest.json"), "utf8")) as { version?: string; images?: Record<string, { repository: string; digest: string; buildIdentity: string }> },
+		imagePlanPath = process.env.TREEAI_IMAGE_PLAN,
+		imagePlan = imagePlanPath ? JSON.parse(readFileSync(imagePlanPath, "utf8")) as { images?: Record<string, { action: "built" | "reused"; buildIdentity: string }> } : undefined;
 	value.release = process.env.TREEAI_RELEASE_VERSION ?? release.version;
 	value.channel = process.env.TREEAI_RELEASE_CHANNEL ?? value.channel;
 	value.suite = value.channel;
@@ -126,13 +128,25 @@ function catalog(base: string) {
 		value.signingKeyFingerprint = readFileSync(resolve(root, "release/apt-development/RELEASE_KEY_FINGERPRINT"), "utf8").trim();
 	}
 	value.packages = packages;
+	const requiredLocalImages = release.images.flatMap((role) => {
+		const planned = imagePlan?.images?.[role];
+		return planned?.action === "built" ? [{ role, buildIdentity: planned.buildIdentity }] : [];
+	});
+	value.imagePolicy = {
+		mode: requiredLocalImages.length ? "local-images-required" : "package-only",
+		productionManifestVersion: imageManifest.version ?? release.version,
+		sourceRevision: process.env.TREEAI_SOURCE_REVISION ?? "release-source",
+		requiredLocalImages,
+	};
 	value.images = release.images.flatMap((role, index) => {
-		const digest = imageManifest.images?.[role]?.digest;
+		const image = imageManifest.images?.[role], planned = imagePlan?.images?.[role], digest = image?.digest;
 		return /^sha256:[a-f0-9]{64}$/u.test(digest ?? "")
 			? [
 					{
 						role,
+						repository: image!.repository,
 						digest,
+						buildIdentity: planned?.action === "built" ? planned.buildIdentity : image!.buildIdentity,
 						consumers: [role.split("-")[0]],
 						restartImpact: role,
 						firstBuildGeneration: Number(value.generation) + index,

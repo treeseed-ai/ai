@@ -5,12 +5,30 @@ import{describe,expect,it}from'vitest';
 import{computeBuildIdentity,type ImageBuild}from'../../scripts/release/plan-image-builds.js';
 
 describe('selective image build identities',()=>{
+  it('rewrites the current changelog version for development publications',()=>{
+    const workflow=readFileSync('.github/workflows/publish-development.yml','utf8');
+    expect(workflow).toContain('1s/([^)]*)/(${{ inputs.debian_version }})/');
+    expect(workflow).not.toContain('1s/(0.6.0-1)/');
+    expect(workflow).toContain('0.6.3~dev.');
+    expect(workflow).not.toContain('docker/login-action');
+    expect(workflow).not.toContain('docker buildx build');
+    expect(workflow).not.toContain('cosign sign');
+    expect(workflow).toContain('publishedDevelopmentImages:0');
+    expect(workflow).toContain('TREEAI_IMAGE_PLAN');
+    expect(workflow).toContain('TREEAI_DEVELOPMENT_BASE');
+    expect(workflow).not.toContain('validate-image-metadata.ts prior');
+    expect(workflow).toContain('(cd prior && sha256sum -c SHA256SUMS)');
+    expect(workflow).toContain('development-debs pages/apt');
+    expect(workflow).toContain('mirror-apt-suite.sh');
+  });
+
   it('covers every coordinated role with explicit inputs',()=>{
     const release=JSON.parse(readFileSync('release/manifest.json','utf8'))as{images:string[]};
     const builds=JSON.parse(readFileSync('release/image-builds.json','utf8'))as{platform:string;images:Record<string,ImageBuild>};
     expect(Object.keys(builds.images).sort()).toEqual([...release.images].sort());
     expect(builds.platform).toBe('linux/amd64');
     for(const [role,build]of Object.entries(builds.images)){expect(build.inputs.length,role).toBeGreaterThan(0);expect(build.inputs).toContain(build.dockerfile);}
+		for(const role of['inference-api','inference-manager','training-api','training-manager','lab-controller','lab-experience-proxy'])expect(builds.images[role]?.inputs).not.toContain('packages');
   });
 
   it('changes for Dockerfiles, context, arguments, and platforms',()=>{

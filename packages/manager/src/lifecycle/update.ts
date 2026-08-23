@@ -8,6 +8,7 @@ import { event, setSetting, setting } from "../core/store.js";
 import { paths } from "../core/paths.js";
 import { securePlatformConfiguration } from "../core/configuration-file.js";
 import { ensureManagedRuntime, persistMode, reconcilePlatform } from "./platform.js";
+import { localImageReadiness } from "./local-build.js";
 const allowedPackages = new Set(["treeseed-ai", "treeseed-ai-archive-keyring", "treeseed-ai-development-archive-keyring", "treeseed-ai-host-js-runtime", "treeseed-ai-manager", "treeseed-ai-cli", "treeseed-ai-release-catalog", "treeseed-ai-host-runtime", "treeseed-ai-inference", "treeseed-ai-training", "treeseed-ai-lab", "treeseed-ai-factory"]);
 function configuration() {
 	return validatePlatformConfiguration(JSON.parse(readFileSync(paths.configuration, "utf8")));
@@ -42,6 +43,12 @@ function candidateCatalog(channel: "stable" | "development") {
 	mkdirSync(unpack);
 	command("dpkg-deb", ["--extract", join(stage, packages[0]!), unpack]);
 	return validateCatalog(JSON.parse(readFileSync(join(unpack, "usr/share/treeseed-ai/release/catalog.json"), "utf8")));
+}
+function persistCandidate(catalog: ReleaseCatalog) {
+	const target = join(paths.state, `staged-catalog-${catalog.generation}.json`),
+		temporary = `${target}.tmp-${process.pid}`;
+	writeFileSync(temporary, `${JSON.stringify(catalog, null, 2)}\n`, { mode: 0o600 });
+	renameSync(temporary, target);
 }
 function previousReceipt() {
 	const generation = setting<number>("knownGoodGeneration", 0),
@@ -78,6 +85,7 @@ export function checkForUpdate() {
 		known = setting<number>("catalogGeneration", 0),
 		changed = catalog.generation !== known;
 	if (catalog.channel !== channel) throw new Error("Candidate catalog channel differs from configured channel.");
+	persistCandidate(catalog);
 	setSetting("lastMetadataCheck", new Date().toISOString());
 	setSetting("catalogGeneration", catalog.generation);
 	if (changed) setSetting("stagedGeneration", catalog.generation);
@@ -99,6 +107,7 @@ export function planUpdate(input?: ReleaseCatalog) {
 		packages = exactPackages(catalog),
 		installed = setting<number>("knownGoodGeneration", 0);
 	if (catalog.channel !== config.updates.channel) throw new Error("Selected APT suite does not match the catalog.");
+	persistCandidate(catalog);
 	if (catalog.generation < installed) throw new Error("Implicit catalog downgrade refused.");
 	if (catalog.classification === "blocked") throw new Error("The candidate catalog is blocked.");
 	const simulation = command("apt-get", [...aptOptions(config.updates.channel), "-s", "--no-remove", "--no-install-recommends", "install", ...packages]);
@@ -113,6 +122,8 @@ export function planUpdate(input?: ReleaseCatalog) {
 		migrations: catalog.migrations,
 		gates: catalog.gates,
 		automatic: catalog.automatic && catalog.classification === "automatic",
+		imagePolicy: catalog.imagePolicy,
+		localImages: localImageReadiness(catalog),
 		simulationDigest: createHash("sha256").update(simulation).digest("hex"),
 	};
 	event("update.planned", {
@@ -181,6 +192,7 @@ function receipt(catalog: ReleaseCatalog, packages: string[], state: string) {
 		const environment = `/etc/treeseed-ai/${product}/environment`;
 		if (existsSync(environment)) copyFileSync(environment, join(knownGood, `${product}.environment`));
 	}
+	const localImages = localImageReadiness(catalog);
 	const value = {
 			schemaVersion: "treeai.update-receipt/v1",
 			generation: catalog.generation,
@@ -188,6 +200,7 @@ function receipt(catalog: ReleaseCatalog, packages: string[], state: string) {
 			mode: setting("mode", "awake"),
 			packages,
 			images: selectedImages(catalog),
+			localImages: [...localImages.images].map(([role, imageId]) => ({ role, imageId })),
 			runtimeImages: selectedRuntimeImages(catalog),
 			rollback: catalog.rollback,
 			knownGood,
@@ -231,7 +244,8 @@ async function pullImage(role: string, reference: string) {
 }
 async function acquireImages(catalog: ReleaseCatalog) {
 	for (const image of changedImages(catalog)) {
-		const reference = `treeseed/${image.role}@${image.digest}`;
+		if (catalog.imagePolicy.requiredLocalImages.some((item) => item.role === image.role)) continue;
+		const reference = `${image.repository}@${image.digest}`;
 		await pullImage(image.role, reference);
 		const actual = command("docker", ["image", "inspect", "--format", "{{index .RepoDigests 0}}", reference]).trim();
 		if (!actual.endsWith(`@${image.digest}`)) throw new Error(`Pulled digest differs for ${image.role}.`);
@@ -266,6 +280,22 @@ export async function applyUpdate() {
 	if (!plan.automatic && setting("automaticInvocation", false)) return { state: "postponed", reason: "local_approval_required" };
 	event("update.acquiring", { generation: catalog.generation });
 	command("apt-get", [...aptOptions(config.updates.channel), "--download-only", "--no-remove", "--no-install-recommends", "install", ...packages]);
+	if (!plan.localImages.ready) {
+		setSetting("stagedGeneration", catalog.generation);
+		event("update.postponed", {
+			generation: catalog.generation,
+			reason: plan.localImages.reason,
+			requiredLocalImages: plan.localImages.required,
+		});
+		return {
+			state: "postponed",
+			reason: plan.localImages.reason,
+			staged: true,
+			generation: catalog.generation,
+			requiredLocalImages: plan.localImages.required,
+			next: "Run treeai local-build plan --source PATH, then treeai local-build build --source PATH.",
+		};
+	}
 	ensureManagedRuntime();
 	await acquireImages(catalog);
 	if (activeWork()) {
@@ -358,6 +388,10 @@ export function setChannel(channel: unknown, approveDowngrade = false) {
 }
 export function updateStatus() {
 	const config = configuration();
+	const stagedGeneration = setting<number | null>("stagedGeneration", null),
+		stagedPath = stagedGeneration ? join(paths.state, `staged-catalog-${stagedGeneration}.json`) : undefined,
+		stagedCatalog = stagedPath && existsSync(stagedPath) ? validateCatalog(JSON.parse(readFileSync(stagedPath, "utf8"))) : undefined,
+		localImages = stagedCatalog ? localImageReadiness(stagedCatalog) : undefined;
 	const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"],
 		[hour, minute] = config.updates.maintenanceWindow.localTime.split(":").map(Number),
 		next = new Date();
@@ -370,7 +404,9 @@ export function updateStatus() {
 		lastMetadataCheck: setting("lastMetadataCheck", null),
 		catalogGeneration: setting("catalogGeneration", 0),
 		knownGoodGeneration: setting("knownGoodGeneration", 0),
-		stagedGeneration: setting("stagedGeneration", null),
+		stagedGeneration,
+		imagePolicy: stagedCatalog?.imagePolicy ?? null,
+		localImages: localImages ? { ready: localImages.ready, reason: localImages.reason ?? null, required: localImages.required } : null,
 		nextApplyWindow: config.updates.channel === "stable" ? { startsAt: next.toISOString(), jitterMinutes: config.updates.maintenanceWindow.jitterMinutes } : "after-safe-drain",
 		paused: setting("updatesPaused", false),
 		platformState: setting("platformState", "ready"),

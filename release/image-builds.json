@@ -2,19 +2,19 @@
   "schemaVersion": "treeai.image-builds/v1",
   "platform": "linux/amd64",
   "images": {
-    "inference-api": {"dockerfile":"containers/inference/api.Dockerfile","inputs":["containers/inference/api.Dockerfile",".dockerignore","package.json","pnpm-lock.yaml","pnpm-workspace.yaml","tsconfig.base.json","packages"]},
-    "inference-manager": {"dockerfile":"containers/inference/manager.Dockerfile","inputs":["containers/inference/manager.Dockerfile",".dockerignore","package.json","pnpm-lock.yaml","pnpm-workspace.yaml","tsconfig.base.json","packages"]},
+    "inference-api": {"dockerfile":"containers/inference/api.Dockerfile","inputs":["containers/inference/api.Dockerfile",".dockerignore","package.json","pnpm-lock.yaml","pnpm-workspace.yaml","tsconfig.base.json","packages/common","packages/inference-api"]},
+    "inference-manager": {"dockerfile":"containers/inference/manager.Dockerfile","inputs":["containers/inference/manager.Dockerfile",".dockerignore","package.json","pnpm-lock.yaml","pnpm-workspace.yaml","tsconfig.base.json","packages/common","packages/inference-manager"]},
     "inference-vllm": {"dockerfile":"containers/inference/vllm.Dockerfile","inputs":["containers/inference/vllm.Dockerfile",".dockerignore"]},
     "inference-evaluator": {"dockerfile":"containers/inference/evaluator.Dockerfile","inputs":["containers/inference/evaluator.Dockerfile",".dockerignore","workers/common","workers/evaluator"]},
     "inference-migrations": {"dockerfile":"containers/inference/migrations.Dockerfile","inputs":["containers/inference/migrations.Dockerfile",".dockerignore","migrations/inference"]},
-    "training-api": {"dockerfile":"containers/training/api.Dockerfile","inputs":["containers/training/api.Dockerfile",".dockerignore","package.json","pnpm-lock.yaml","pnpm-workspace.yaml","tsconfig.base.json","packages"]},
-    "training-manager": {"dockerfile":"containers/training/manager.Dockerfile","inputs":["containers/training/manager.Dockerfile",".dockerignore","package.json","pnpm-lock.yaml","pnpm-workspace.yaml","tsconfig.base.json","packages"]},
+    "training-api": {"dockerfile":"containers/training/api.Dockerfile","inputs":["containers/training/api.Dockerfile",".dockerignore","package.json","pnpm-lock.yaml","pnpm-workspace.yaml","tsconfig.base.json","packages/common","packages/training-api"]},
+    "training-manager": {"dockerfile":"containers/training/manager.Dockerfile","inputs":["containers/training/manager.Dockerfile",".dockerignore","package.json","pnpm-lock.yaml","pnpm-workspace.yaml","tsconfig.base.json","packages/common","packages/training-manager"]},
     "axolotl-worker": {"dockerfile":"containers/training/axolotl.Dockerfile","inputs":["containers/training/axolotl.Dockerfile",".dockerignore","workers/common","workers/axolotl"]},
     "marker-worker": {"dockerfile":"containers/training/marker.Dockerfile","inputs":["containers/training/marker.Dockerfile",".dockerignore","workers/common","workers/marker"]},
     "artifact-worker": {"dockerfile":"containers/training/artifact.Dockerfile","inputs":["containers/training/artifact.Dockerfile",".dockerignore","workers/common","workers/artifact"]},
     "training-migrations": {"dockerfile":"containers/training/migrations.Dockerfile","inputs":["containers/training/migrations.Dockerfile",".dockerignore","migrations/training"]},
-    "lab-controller": {"dockerfile":"containers/lab/service.Dockerfile","buildArgs":{"LAB_ENTRY":"controller"},"inputs":["containers/lab/service.Dockerfile",".dockerignore","package.json","pnpm-lock.yaml","pnpm-workspace.yaml","tsconfig.base.json","packages"]},
-    "lab-experience-proxy": {"dockerfile":"containers/lab/service.Dockerfile","buildArgs":{"LAB_ENTRY":"proxy"},"inputs":["containers/lab/service.Dockerfile",".dockerignore","package.json","pnpm-lock.yaml","pnpm-workspace.yaml","tsconfig.base.json","packages"]},
+    "lab-controller": {"dockerfile":"containers/lab/service.Dockerfile","buildArgs":{"LAB_ENTRY":"controller"},"inputs":["containers/lab/service.Dockerfile",".dockerignore","package.json","pnpm-lock.yaml","pnpm-workspace.yaml","tsconfig.base.json","packages/common","packages/lab"]},
+    "lab-experience-proxy": {"dockerfile":"containers/lab/service.Dockerfile","buildArgs":{"LAB_ENTRY":"proxy"},"inputs":["containers/lab/service.Dockerfile",".dockerignore","package.json","pnpm-lock.yaml","pnpm-workspace.yaml","tsconfig.base.json","packages/common","packages/lab"]},
     "hermes-agent": {"dockerfile":"containers/lab/hermes.Dockerfile","inputs":["containers/lab/hermes.Dockerfile",".dockerignore","containers/lab/hermes-entrypoint.sh","containers/lab/hermes-password-auth.patch"]}
   }
 }
