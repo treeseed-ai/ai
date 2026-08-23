@@ -47,7 +47,7 @@ function candidateCatalog(channel: "stable" | "development") {
 function persistCandidate(catalog: ReleaseCatalog) {
 	const target = join(paths.state, `staged-catalog-${catalog.generation}.json`),
 		temporary = `${target}.tmp-${process.pid}`;
-	writeFileSync(temporary, `${JSON.stringify(catalog, null, 2)}\n`, { mode: 0o600 });
+	writeFileSync(temporary, `${JSON.stringify(catalog, null, 2)}\n`, { mode: 0o640 });
 	renameSync(temporary, target);
 }
 function previousReceipt() {
