@@ -66,6 +66,15 @@ function edgeLogs() {
 	}
 }
 
+function controllerLogs() {
+	try {
+		return docker(["logs", "--tail", "80", edgeContainers.controller]);
+	} catch (error) {
+		const value = error as { stdout?: string; stderr?: string };
+		return `${value.stdout ?? ""}${value.stderr ?? ""}`;
+	}
+}
+
 export function hermesDiagnostics() {
 	const state = JSON.parse(
 		docker(["inspect", "--format", "{{json .State}}", container]),
@@ -96,6 +105,7 @@ export function hermesDiagnostics() {
 		logs: sanitized(logs).split("\n").filter(Boolean),
 		edge: edgeEvidence(),
 		gatewayLogs: sanitized(edgeLogs()).split("\n").filter(Boolean),
+		controllerLogs: sanitized(controllerLogs()).split("\n").filter(Boolean),
 		privateRuntime: Object.fromEntries(
 			Object.entries(privateRuntimeEvidence()).map(([name, value]) => [
 				name,
