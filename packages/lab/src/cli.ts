@@ -1,16 +1,158 @@
 #!/usr/bin/env node
-import{execFileSync,spawn}from'node:child_process';import{chmodSync,copyFileSync,existsSync,mkdirSync,readFileSync,writeFileSync}from'node:fs';import{randomBytes,scryptSync}from'node:crypto';import{resolve}from'node:path';
-const command=process.argv[2],root='/etc/treeseed-ai/lab',envFile=`${root}/environment`,compose='/usr/lib/treeseed-ai/lab/compose.yml',json=process.argv.includes('--json'),version='0.6.2';
-function run(file:string,args:string[],stdio:any='pipe',cwd?:string){const value=execFileSync(file,args,{encoding:'utf8',stdio,cwd});return typeof value==='string'?value.trim():'';}
-function output(value:unknown){process.stdout.write(`${JSON.stringify(value,null,2)}\n`);}function option(name:string){const index=process.argv.indexOf(name);return index>=0?process.argv[index+1]:undefined;}
-function operator(){return process.env.TREEAI_OPERATOR_KEY_VALUE??readFileSync('/etc/treeseed-ai/treeai/operator.key','utf8').trim();}
-function client(){return JSON.parse(readFileSync('/etc/treeseed-ai/treeai/config.json','utf8'))as{ca:string;deploymentMode:string;endpoints:Record<string,string>};}
-function image(role:string){if(client().deploymentMode!=='published')return`local/${role}:${version}`;const manifest=JSON.parse(readFileSync('/usr/share/treeseed-ai/release/image-manifest.json','utf8'))as{images:Record<string,{repository:string;digest:string}>},value=manifest.images[role];if(!value||!/^sha256:[a-f0-9]{64}$/u.test(value.digest))throw new Error(`Published digest is missing for ${role}.`);return`${value.repository}@${value.digest}`;}
-function call(path:string,method='GET'){const config=client(),args=['--silent','--show-error','--fail-with-body','--cacert',config.ca,'-H',`Authorization: Bearer ${operator()}`,'-H','content-type: application/json','-X',method];if(method==='POST')args.push('-H',`Idempotency-Key: treeai-${path}-${Date.now()}`);args.push(`${config.endpoints.lab}${path}`);return JSON.parse(run('curl',args));}
-function composeRun(args:string[],stdio:any='inherit'){return run('docker',['compose','--env-file',envFile,'-f',compose,...args],stdio);}
-function configure(){if(process.getuid?.()!==0)throw new Error('configure requires root');if(existsSync(envFile))return{status:'ready',configured:false};const source='/etc/treeseed-ai/host-runtime/factory/training-local-source.json',record='/etc/treeseed-ai/treeai/operator-record.json';if(!existsSync(source)||!existsSync(record))throw new Error('Configure the core factory before configuring the lab.');mkdirSync(`${root}/secrets`,{recursive:true,mode:0o750});for(const[sourceName,target]of[['factory-service-key','factory-control-key'],['inference-service-key','factory-inference-key'],['training-service-key','factory-training-key']]){copyFileSync(`/etc/treeseed-ai/host-runtime/factory/${sourceName}`,`${root}/secrets/${target}`);chmodSync(`${root}/secrets/${target}`,0o600);}copyFileSync(source,`${root}/training-source.json`);chmodSync(`${root}/training-source.json`,0o600);
-  const dashboardPassword=randomBytes(24).toString('base64url'),salt=randomBytes(16),dashboardHash=`scrypt$16384$8$1$${salt.toString('base64')}$${scryptSync(dashboardPassword,salt,32,{N:16384,r:8,p:1,maxmem:64*1024*1024}).toString('base64')}`;writeFileSync(`${root}/secrets/hermes-password-hash`,`${dashboardHash}\n`,{mode:0o600});writeFileSync(`${root}/secrets/hermes-session-secret`,`${randomBytes(32).toString('base64')}\n`,{mode:0o600});const apiRecord=readFileSync(record,'utf8').trim(),lines=[`AI_LAB_API_KEYS=${JSON.stringify([JSON.parse(apiRecord)])}`,'FACTORY_URL=https://host.docker.internal:4790','TRAINING_URL=http://training-api:4780','INFERENCE_CONTROL_URL=http://inference-api:4770','INFERENCE_URL=http://inference-api:4771','BASE_MODEL=Qwen/Qwen3.5-4B','BASE_MODEL_REVISION=851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a',`LAB_CONTROLLER_IMAGE=${image('lab-controller')}`,`LAB_PROXY_IMAGE=${image('lab-experience-proxy')}`,`HERMES_IMAGE=${image('hermes-agent')}`,'LAB_MIN_TRAJECTORIES=100','LAB_IDLE_MINUTES=15','LAB_COOLDOWN_HOURS=6'];writeFileSync(envFile,`${lines.join('\n')}\n`,{mode:0o600});return{status:'ready',configured:true,dashboard:{username:'lab',password:dashboardPassword}};}
-try{if(command==='plan'){const checks=[['package',existsSync(compose)],['factory-ca',existsSync('/etc/ssl/certs/treeseed-ai-factory-development-ca.pem')],['operator',existsSync('/etc/treeseed-ai/treeai/operator-record.json')],['training-source',existsSync('/etc/treeseed-ai/host-runtime/factory/training-local-source.json')],['network',run('docker',['network','inspect','ai-shared','--format','{{.Driver}}'])==='bridge']];output({status:checks.every(([,ok])=>ok)?'ready':'blocked',checks:checks.map(([id,ok])=>({id,status:ok?'ready':'blocked'}))});}
-else if(command==='configure')output(configure());else if(command==='build'){if(process.getuid?.()!==0)throw new Error('build requires root');if(client().deploymentMode!=='development')throw new Error('lab build requires development deployment mode');const source=resolve(option('--source')??process.cwd());run('docker',['buildx','bake','--file','deploy/lab/docker-bake.hcl','--load'],'inherit',source);run('docker',['pull','ghcr.io/open-webui/open-webui:v0.9.5@sha256:ef3eaeb6235dd86d8ae7425e6af38272b0cea27896c0d5ae8c5cf23f886de76a'],'inherit');output({status:'ready',source});}
-else if(['start','restart'].includes(command??'')){if(process.getuid?.()!==0)throw new Error(`${command} requires root`);if(!existsSync(envFile))throw new Error('Lab configuration is missing; run treeai lab configure first.');if(command==='restart')composeRun(['down']);composeRun(['up','-d','--wait']);run('systemctl',['enable','treeseed-ai-lab.service']);output({status:'ready'});}else if(command==='stop'){if(process.getuid?.()!==0)throw new Error('stop requires root');composeRun(['down']);output({status:'ready'});}else if(command==='status'||command==='verify')output(call('/v1/status'));else if(['enable','pause','resume'].includes(command??''))output(call(`/v1/loop/${command}`,'POST'));else if(command==='cycle-now')output(call('/v1/loop/cycle-now','POST'));
-else if(command==='watch'){const config=client(),child=spawn('curl',['--no-buffer','--cacert',config.ca,'-H',`Authorization: Bearer ${operator()}`,`${config.endpoints.lab}/v1/events/stream`],{stdio:'inherit'});await new Promise(resolve=>child.on('exit',resolve));}else if(command==='logs'){if(process.getuid?.()!==0)throw new Error('logs requires root');const allowed=['controller','experience-proxy','open-webui','hermes','gateway'],service=process.argv[3];if(service&&!allowed.includes(service))throw new Error('Unsupported lab service');composeRun(['logs','--follow',...(service?[service]:[])])}else throw new Error('Usage: treeai lab <plan|configure|build|start|stop|restart|status|verify|watch|logs|enable|pause|resume|cycle-now>');}catch(error){const message=error instanceof Error?error.message:String(error);if(json)output({error:{code:'lab_error',message}});else console.error(message);process.exitCode=1;}
+import { execFileSync, spawn } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { connect } from "node:net";
+import { resolve } from "node:path";
+
+const command = process.argv[2];
+const args = process.argv.slice(3);
+const root = "/etc/treeseed-ai/lab";
+const envFile = `${root}/environment`;
+const composeFile = "/usr/lib/treeseed-ai/lab/compose.yml";
+const json = args.includes("--json");
+
+interface ClientConfiguration {
+	ca: string;
+	imageSource?: string;
+	deploymentMode?: string;
+	endpoints: Record<string, string>;
+	interfaces?: {
+		openWebUi?: {
+			authentication: "disabled" | "local-users";
+			browserUrl: string;
+			binding: string;
+		};
+	};
+}
+
+function run(file: string, values: string[], stdio: "pipe" | "inherit" = "pipe", cwd?: string) {
+	const result = execFileSync(file, values, { encoding: "utf8", stdio, cwd });
+	return typeof result === "string" ? result.trim() : "";
+}
+function output(value: unknown) {
+	process.stdout.write(`${JSON.stringify(value, null, json ? 2 : 0)}\n`);
+}
+function option(name: string) {
+	const index = args.indexOf(name);
+	return index >= 0 ? args[index + 1] : undefined;
+}
+function requireRoot(operation: string) {
+	if (process.getuid?.() !== 0) throw new Error(`${operation} requires root.`);
+}
+function operator() {
+	return process.env.TREEAI_OPERATOR_KEY_VALUE ?? readFileSync("/etc/treeseed-ai/treeai/operator.key", "utf8").trim();
+}
+function client() {
+	return JSON.parse(readFileSync("/etc/treeseed-ai/treeai/config.json", "utf8")) as ClientConfiguration;
+}
+function call(path: string, method = "GET") {
+	const config = client();
+	const values = ["--silent", "--show-error", "--fail-with-body", "--cacert", config.ca, "-H", `Authorization: Bearer ${operator()}`, "-H", "content-type: application/json", "-X", method];
+	if (method === "POST") values.push("-H", `Idempotency-Key: treeai-${path}-${Date.now()}`);
+	values.push(`${config.endpoints.lab}${path}`);
+	return JSON.parse(run("curl", values)) as unknown;
+}
+function supervisor(operation: "lab.webui.configure" | "lab.webui.reset", parameters?: Record<string, unknown>) {
+	requireRoot(operation);
+	return new Promise<unknown>((resolveRequest, reject) => {
+		const socket = connect("/run/treeseed-ai/manager/control.sock");
+		let response = "";
+		socket.setEncoding("utf8");
+		socket.on("connect", () => socket.end(`${JSON.stringify({ operation, parameters, idempotencyKey: crypto.randomUUID() })}\n`));
+		socket.on("data", (chunk) => { response += chunk; });
+		socket.on("error", reject);
+		socket.on("close", () => {
+			try {
+				const value = JSON.parse(response) as { ok: boolean; result?: unknown; error?: { message: string } };
+				if (value.ok) resolveRequest(value.result);
+				else reject(new Error(value.error?.message ?? "Supervisor rejected the operation."));
+			} catch (error) { reject(error); }
+		});
+	});
+}
+function compose(values: string[], stdio: "pipe" | "inherit" = "inherit") {
+	return run("docker", ["compose", "-p", "treeseed-ai-lab", "--env-file", envFile, "-f", composeFile, ...values], stdio);
+}
+function urls() {
+	const settings = client(), webui = settings.interfaces?.openWebUi;
+	return {
+		status: webui ? "ready" : "warning",
+		interfaces: webui ? [{ id: "open-webui", url: webui.browserUrl, binding: webui.binding, authentication: webui.authentication, certificateAuthority: settings.ca }] : [],
+	};
+}
+function verify() {
+	const controller = call("/v1/status"), settings = client(), webui = settings.interfaces?.openWebUi;
+	if (!webui) return { status: "warning", controller, openWebUi: "not-configured" };
+	const health = run("curl", ["--silent", "--show-error", "--fail", "--cacert", settings.ca, `${webui.browserUrl}/health`]);
+	const providerModels = JSON.parse(run("curl", ["--silent", "--show-error", "--fail", "--cacert", settings.ca, `${webui.browserUrl}/api/models`])) as unknown;
+	return { status: "ready", controller, openWebUi: { url: webui.browserUrl, authentication: webui.authentication, health: health || "ok", models: providerModels } };
+}
+function imageReference(id: string) {
+	const catalog = JSON.parse(readFileSync("/usr/share/treeseed-ai/release/catalog.json", "utf8")) as { runtimeImages: Array<{ id: string; reference: string }> };
+	const image = catalog.runtimeImages.find((item) => item.id === id);
+	if (!image) throw new Error(`Runtime image ${id} is absent from the release catalog.`);
+	return image.reference;
+}
+
+async function main() {
+	if (command === "plan") {
+		const checks = [["package", existsSync(composeFile)], ["factory-ca", existsSync("/etc/ssl/certs/treeseed-ai-ca.pem")], ["operator", existsSync("/etc/treeseed-ai/treeai/operator-record.json")], ["environment", existsSync(envFile)], ["network", run("docker", ["network", "inspect", "ai-shared", "--format", "{{.Driver}}"])]] as Array<[string, boolean | string]>;
+		return output({ status: checks.every(([, ok]) => ok === true || ok === "bridge") ? "ready" : "blocked", checks: checks.map(([id, ok]) => ({ id, status: ok === true || ok === "bridge" ? "ready" : "blocked" })) });
+	}
+	if (command === "configure") {
+		if (!args.includes("--local-single-user")) throw new Error("Usage: treeai lab configure --local-single-user");
+		return output(await supervisor("lab.webui.configure"));
+	}
+	if (command === "reset-webui") return output(await supervisor("lab.webui.reset", { confirm: args.includes("--confirm") }));
+	if (command === "urls") return output(urls());
+	if (command === "open") {
+		const targets = args.filter((item) => !item.startsWith("--"));
+		if (targets.length !== 1 || targets[0] !== "webui") throw new Error("Usage: treeai lab open webui");
+		const webui = client().interfaces?.openWebUi;
+		if (!webui) throw new Error("Open WebUI is not configured.");
+		if ((process.env.DISPLAY || process.env.WAYLAND_DISPLAY) && existsSync("/usr/bin/xdg-open")) { const child = spawn("/usr/bin/xdg-open", [webui.browserUrl], { stdio: "ignore", detached: true }); child.on("error", () => {}); child.unref(); }
+		return output({ status: "ready", url: webui.browserUrl });
+	}
+	if (command === "build") {
+		requireRoot("build");
+		const settings = client();
+		if ((settings.imageSource ?? settings.deploymentMode) !== "local-build" && settings.deploymentMode !== "development") throw new Error("lab build requires local-build image source.");
+		const source = resolve(option("--source") ?? process.cwd());
+		run("docker", ["buildx", "bake", "--file", "deploy/lab/docker-bake.hcl", "--load"], "inherit", source);
+		run("docker", ["pull", imageReference("open-webui")], "inherit");
+		return output({ status: "ready", source });
+	}
+	if (command === "start" || command === "restart") {
+		requireRoot(command);
+		if (!existsSync(envFile)) throw new Error("Lab configuration is missing.");
+		if (command === "restart") compose(["down"]);
+		compose(["up", "-d", "--wait"]);
+		run("systemctl", ["enable", "treeseed-ai-lab.service"]);
+		return output({ status: "ready" });
+	}
+	if (command === "stop") { requireRoot("stop"); compose(["down"]); return output({ status: "ready" }); }
+	if (command === "status") return output(call("/v1/status"));
+	if (command === "verify") return output(verify());
+	if (["enable", "pause", "resume"].includes(command ?? "")) return output(call(`/v1/loop/${command}`, "POST"));
+	if (command === "cycle-now") return output(call("/v1/loop/cycle-now", "POST"));
+	if (command === "watch") {
+		const settings = client(), child = spawn("curl", ["--no-buffer", "--cacert", settings.ca, "-H", `Authorization: Bearer ${operator()}`, `${settings.endpoints.lab}/v1/events/stream`], { stdio: "inherit" });
+		await new Promise((resolveExit) => child.on("exit", resolveExit));
+		return;
+	}
+	if (command === "logs") {
+		requireRoot("logs");
+		const allowed = ["controller", "experience-proxy", "open-webui", "hermes", "gateway"], service = args.find((item) => !item.startsWith("--"));
+		if (service && !allowed.includes(service)) throw new Error("Unsupported lab service.");
+		compose(["logs", "--follow", ...(service ? [service] : [])]);
+		return;
+	}
+	throw new Error("Usage: treeai lab <plan|configure|reset-webui|urls|open|build|start|stop|restart|status|verify|watch|logs|enable|pause|resume|cycle-now>");
+}
+
+main().catch((error) => {
+	const message = error instanceof Error ? error.message : String(error);
+	if (json) output({ error: { code: "lab_error", message } });
+	else process.stderr.write(`${message}\n`);
+	process.exitCode = 1;
+});

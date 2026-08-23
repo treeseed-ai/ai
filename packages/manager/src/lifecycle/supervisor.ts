@@ -32,6 +32,10 @@ import {
 	stopManagedProduct,
 	transitionMode,
 } from "./platform.js";
+import {
+	configureLocalSingleUser,
+	resetOpenWebUi,
+} from "./lab-webui.js";
 function rootOnly() {
 	if (process.getuid?.() !== 0)
 		throw new Error("Manager supervisor must run as root.");
@@ -153,6 +157,10 @@ export async function execute(request: SupervisorRequest) {
 		case "component.disable":
 			component(parameters.component, false);
 			return stopManagedProduct(parameters.component);
+		case "lab.webui.configure":
+			return configureLocalSingleUser();
+		case "lab.webui.reset":
+			return resetOpenWebUi(parameters.confirm === true);
 		case "mode.set": {
 			const config = validatePlatformConfiguration(
 				JSON.parse(readFileSync(paths.configuration, "utf8")),

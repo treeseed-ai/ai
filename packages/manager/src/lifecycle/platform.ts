@@ -2,7 +2,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { randomBytes, scryptSync } from "node:crypto";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { hashApiKey } from "@ai-platform/common";
+import { hashApiKey, validatePlatformConfiguration } from "@ai-platform/common";
 import { readCatalog } from "../core/catalog.js";
 import { localImageReadiness } from "./local-build.js";
 import { event, setSetting, setting } from "../core/store.js";
@@ -145,6 +145,11 @@ function image(role: string) {
 	if (catalog.imagePolicy.requiredLocalImages.some((value) => value.role === role) && !localId) throw new Error(`Required local image ${role} is not ready.`);
 	return localId ?? (config.imageSource === "local-build" && catalog.channel === "stable" ? `local/${role}:${catalog.release}` : `${item.repository}@${item.digest}`);
 }
+function runtimeImage(id: string) {
+	const item = readCatalog().runtimeImages.find((value) => value.id === id);
+	if (!item) throw new Error(`Catalog runtime image ${id} is missing.`);
+	return item.reference;
+}
 function productGroup(product: "inference" | "training") {
 	const group = `treeseed-ai-${product}`,
 		record = command("getent", ["group", group]),
@@ -280,7 +285,16 @@ function ensureLabConfiguration() {
 		secrets = `${root}/secrets`,
 		factory = "/etc/treeseed-ai/manager/factory",
 		service = ensureServiceCredentials(factory),
-		operator = JSON.parse(readFileSync("/etc/treeseed-ai/treeai/operator-record.json", "utf8")) as unknown;
+		operator = JSON.parse(readFileSync("/etc/treeseed-ai/treeai/operator-record.json", "utf8")) as unknown,
+		config = validatePlatformConfiguration(
+			JSON.parse(readFileSync(paths.configuration, "utf8")),
+		),
+		webui = config.lab?.webui ?? {
+			authentication: "local-users" as const,
+			browserUrl: "https://localhost:4791",
+			binding: "0.0.0.0:4791",
+		},
+		localSingleUser = webui.authentication === "disabled";
 	mkdirSync(secrets, { recursive: true, mode: 0o750 });
 	for (const [name, value] of [
 		["factory-control-key", service.factory!.plain],
@@ -311,6 +325,16 @@ function ensureLabConfiguration() {
 			LAB_CONTROLLER_IMAGE: image("lab-controller"),
 			LAB_PROXY_IMAGE: image("lab-experience-proxy"),
 			HERMES_IMAGE: image("hermes-agent"),
+			OPEN_WEBUI_IMAGE: runtimeImage("open-webui"),
+			OPEN_WEBUI_AUTH: localSingleUser ? "false" : "true",
+			OPEN_WEBUI_ENABLE_SIGNUP: "false",
+			OPEN_WEBUI_ENABLE_LOGIN_FORM: localSingleUser ? "false" : "true",
+			OPEN_WEBUI_BYPASS_MODEL_ACCESS_CONTROL: localSingleUser ? "true" : "false",
+			OPEN_WEBUI_URL: webui.browserUrl,
+			OPEN_WEBUI_CORS_ALLOW_ORIGIN: webui.browserUrl,
+			OPEN_WEBUI_PUBLISH: localSingleUser
+				? "127.0.0.1:443:443"
+				: `${webui.binding}:4791`,
 			LAB_MIN_TRAJECTORIES: "100",
 			LAB_IDLE_MINUTES: "15",
 			LAB_COOLDOWN_HOURS: "6",

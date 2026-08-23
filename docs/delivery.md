@@ -2,7 +2,7 @@
 
 Publication is manual. Merge a reviewed `staging` branch into `main`, configure
 the protected GitHub `production` environment, and dispatch **Publish coordinated
-TreeSeed AI release** with version `0.6.2`. The workflow refuses any other
+TreeSeed AI release** with version `0.7.0`. The workflow refuses any other
 branch/version and does not create a tag until images, scans, signatures, and
 packages succeed.
 

@@ -1,8 +1,8 @@
 {
   "schemaVersion": "treeai.release/v2",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "debianRevision": "1",
-  "debianVersion": "0.6.2-1",
+  "debianVersion": "0.7.0-1",
   "sourceDateEpoch": 1787442636,
   "channel": "stable",
   "githubRepository": "treeseed-ai/ai",

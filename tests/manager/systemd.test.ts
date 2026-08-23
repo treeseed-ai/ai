@@ -118,7 +118,7 @@ describe("manager scheduling and privilege split", () => {
 			"utf8",
 		);
 		const revoke = converge.indexOf("temporaryCredentialsActivated: false");
-		const apply = converge.indexOf("const update = await applyUpdate()");
+		const apply = converge.indexOf("update = await applyUpdate()");
 		expect(revoke).toBeGreaterThan(0);
 		expect(revoke).toBeLessThan(apply);
 	});
