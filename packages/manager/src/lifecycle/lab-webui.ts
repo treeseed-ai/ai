@@ -155,6 +155,19 @@ function createVolume() {
 	]);
 }
 
+export function assertWebUiAuthenticationDisabled(configuration: unknown) {
+	if (
+		typeof configuration !== "object" ||
+		configuration === null ||
+		!("features" in configuration) ||
+		typeof configuration.features !== "object" ||
+		configuration.features === null ||
+		!("auth" in configuration.features) ||
+		configuration.features.auth !== false
+	)
+		throw new Error("Open WebUI still reports authentication enabled.");
+}
+
 function validateLocalWebUi() {
 	command("curl", [
 		"--silent",
@@ -168,7 +181,7 @@ function validateLocalWebUi() {
 		"/etc/ssl/certs/treeseed-ai-ca.pem",
 		`${browserUrl}/health`,
 	]);
-	const configuration = JSON.parse(
+	const configuration: unknown = JSON.parse(
 		command("curl", [
 			"--silent",
 			"--show-error",
@@ -177,9 +190,8 @@ function validateLocalWebUi() {
 			"/etc/ssl/certs/treeseed-ai-ca.pem",
 			`${browserUrl}/api/config`,
 		]),
-	) as { auth?: boolean };
-	if (configuration.auth !== false)
-		throw new Error("Open WebUI still reports authentication enabled.");
+	);
+	assertWebUiAuthenticationDisabled(configuration);
 	const models = compose([
 		"exec",
 		"-T",
