@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import { basename, resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 import { canonicalJson, finalizeConfiguration, validatePlatformConfiguration, type PlatformConfiguration } from "../packages/common/src/platform/index.js";
+import { catalogImageEntries } from "./release/catalog-images.js";
 type Release = {
 	version: string;
 	debianVersion: string;
@@ -150,23 +151,7 @@ function catalog(base: string) {
 			: null,
 		requiredLocalImages: process.env.TREEAI_FORCE_PACKAGE_ONLY === "1" ? [] : requiredLocalImages,
 	};
-	value.images = release.images.flatMap((role, index) => {
-		const image = imageManifest.images?.[role], planned = imagePlan?.images?.[role], digest = image?.digest;
-		return /^sha256:[a-f0-9]{64}$/u.test(digest ?? "") || planned?.action === "built"
-			? [
-					{
-						role,
-						repository: image?.repository ?? `${release.dockerNamespace}/${role}`,
-						digest: /^sha256:[a-f0-9]{64}$/u.test(digest ?? "") ? digest : `sha256:${"0".repeat(64)}`,
-						...(!/^sha256:[a-f0-9]{64}$/u.test(digest ?? "") ? { localBuildOnly: true } : {}),
-						buildIdentity: planned?.action === "built" ? planned.buildIdentity : image!.buildIdentity,
-						consumers: [role.startsWith("lab-") || role === "hermes-agent" ? "lab" : ["axolotl-worker", "marker-worker", "artifact-worker"].includes(role) ? "training" : role.split("-")[0]],
-						restartImpact: role,
-						firstBuildGeneration: Number(value.generation) + index,
-					},
-				]
-			: [];
-	});
+	value.images = catalogImageEntries(release.images, imageManifest.images, imagePlan?.images, Number(value.generation), process.env.TREEAI_FORCE_PACKAGE_ONLY === "1", release.dockerNamespace);
 	writeFileSync(resolve(base, "usr/share/treeseed-ai/release/catalog.json"), JSON.stringify(value, null, 2));
 	return finish("release-catalog", base);
 }
