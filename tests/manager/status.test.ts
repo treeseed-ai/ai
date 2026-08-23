@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { summarizeComposeStatus } from "../../packages/manager/src/lifecycle/status.js";
+import {
+	normalizeStoredComponents,
+	summarizeComposeStatus,
+} from "../../packages/manager/src/lifecycle/status.js";
 
 describe("manager component status", () => {
 	it("reduces Compose JSONL to a stable public summary", () => {
@@ -58,5 +61,73 @@ describe("manager component status", () => {
 		);
 		expect(status.state).toBe("degraded");
 		expect(status.services[0]?.health).toBe("unhealthy");
+	});
+
+	it("converts legacy raw component arrays without leaking Compose details", () => {
+		const components = normalizeStoredComponents({
+			inference: [
+				{
+					Service: "vllm",
+					State: "running",
+					Health: "healthy",
+					Image: "treeseed/inference-vllm@sha256:abc",
+					Labels: "credential=forbidden",
+					Mounts: "/etc/secret",
+				},
+			],
+			lab: { state: "managed", composeProject: "treeseed-ai-lab" },
+		});
+		expect(components).toEqual([
+			{
+				product: "inference",
+				state: "ready",
+				services: [
+					{
+						name: "vllm",
+						state: "running",
+						health: "healthy",
+						image: "treeseed/inference-vllm@sha256:abc",
+					},
+				],
+			},
+			{
+				product: "lab",
+				state: "degraded",
+				services: [],
+				error: "status_unavailable",
+			},
+		]);
+		expect(JSON.stringify(components)).not.toMatch(
+			/Labels|Mounts|credential|etc\/secret/u,
+		);
+	});
+
+	it("keeps already summarized component records stable", () => {
+		const components = normalizeStoredComponents({
+			training: {
+				product: "training",
+				state: "ready",
+				services: [
+					{
+						name: "manager",
+						state: "running",
+						health: "none",
+						image: "treeseed/training-manager@sha256:def",
+					},
+				],
+			},
+		});
+		expect(components[0]).toEqual({
+			product: "training",
+			state: "ready",
+			services: [
+				{
+					name: "manager",
+					state: "running",
+					health: "none",
+					image: "treeseed/training-manager@sha256:def",
+				},
+			],
+		});
 	});
 });

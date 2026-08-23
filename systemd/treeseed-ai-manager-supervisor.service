@@ -6,7 +6,7 @@ After=network-online.target
 Type=simple
 User=root
 Group=treeseed-ai-manager
-ExecStart=/usr/lib/treeseed-ai/runtime/bin/node /usr/lib/treeseed-ai/manager/dist/supervisor-main.js
+ExecStart=/usr/lib/treeseed-ai/runtime/bin/node --disable-warning=ExperimentalWarning /usr/lib/treeseed-ai/manager/dist/supervisor-main.js
 Restart=on-failure
 RestartSec=3
 RuntimeDirectory=treeseed-ai/manager
