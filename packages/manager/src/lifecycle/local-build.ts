@@ -245,8 +245,9 @@ export function buildLocalImages(requested: string, trusted?: TrustedSource) {
 	};
 	const target = receiptPath(), temporary = `${target}.tmp-${process.pid}`;
 	writeFileSync(temporary, `${JSON.stringify(receipt, null, 2)}\n`, {
-		mode: 0o600,
+		mode: 0o640,
 	});
+	run("chown", ["root:treeseed-ai-manager", temporary]);
 	renameSync(temporary, target);
 	return receipt;
 }
@@ -310,10 +311,13 @@ export function localImageReadiness(catalog: ReleaseCatalog): LocalImageReadines
 	const path = receiptPath();
 	if (!existsSync(path))
 		return { ready: false, required: catalog.imagePolicy.requiredLocalImages, reason: "local_build_receipt_missing", images: new Map<string, string>() };
-	const receipt = JSON.parse(
-		readFileSync(path, "utf8"),
-	) as LocalBuildReceipt,
-		images = new Map<string, string>();
+	let receipt: LocalBuildReceipt;
+	try {
+		receipt = JSON.parse(readFileSync(path, "utf8")) as LocalBuildReceipt;
+	} catch {
+		return { ready: false, required: catalog.imagePolicy.requiredLocalImages, reason: "local_build_receipt_unreadable", images: new Map<string, string>() };
+	}
+	const images = new Map<string, string>();
 	if (
 		receipt.schemaVersion !== "treeai.local-build-receipt/v1" ||
 		receipt.generation !== catalog.generation ||

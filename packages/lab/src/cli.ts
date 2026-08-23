@@ -3,6 +3,7 @@ import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { connect } from "node:net";
 import { resolve } from "node:path";
+import { redactSensitiveText, transportFailure } from "@ai-platform/common";
 
 const command = process.argv[2];
 const args = process.argv.slice(3);
@@ -54,8 +55,13 @@ function call(path: string, method = "GET") {
 	const config = client();
 	const values = ["--silent", "--show-error", "--fail-with-body", "--cacert", config.ca, "-H", `Authorization: Bearer ${operator()}`, "-H", "content-type: application/json", "-X", method];
 	if (method === "POST") values.push("-H", `Idempotency-Key: treeai-${path}-${Date.now()}`);
-	values.push(`${config.endpoints.lab}${path}`);
-	return JSON.parse(run("curl", values)) as unknown;
+	const target = `${config.endpoints.lab}${path}`;
+	values.push(target);
+	try {
+		return JSON.parse(run("curl", values)) as unknown;
+	} catch (error) {
+		throw transportFailure(error, target);
+	}
 }
 function supervisor(operation: "lab.webui.configure" | "lab.webui.reset" | "lab.hermes.password.rotate", parameters?: Record<string, unknown>) {
 	requireRoot(operation);
@@ -175,7 +181,7 @@ async function main() {
 }
 
 main().catch((error) => {
-	const message = error instanceof Error ? error.message : String(error);
+	const message = redactSensitiveText(error instanceof Error ? error.message : String(error));
 	if (json) output({ error: { code: "lab_error", message } });
 	else process.stderr.write(`${message}\n`);
 	process.exitCode = 1;
