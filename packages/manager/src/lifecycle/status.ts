@@ -24,8 +24,8 @@ function composeRecords(raw: string) {
 	>;
 }
 function health(record: Record<string, unknown>) {
-	const explicit = String(record.Health ?? "").toLowerCase(),
-		status = String(record.Status ?? "").toLowerCase(),
+	const explicit = String(record.Health ?? record.health ?? "").toLowerCase(),
+		status = String(record.Status ?? record.status ?? "").toLowerCase(),
 		value = explicit || status;
 	if (value.includes("unhealthy")) return "unhealthy" as const;
 	if (value.includes("starting")) return "starting" as const;
@@ -38,10 +38,12 @@ export function summarizeComposeStatus(
 ): ProductStatus {
 	const services = composeRecords(raw)
 		.map((record) => ({
-			name: String(record.Service ?? record.Name ?? "unknown"),
-			state: String(record.State ?? "unknown").toLowerCase(),
+			name: String(
+				record.Service ?? record.Name ?? record.name ?? "unknown",
+			),
+			state: String(record.State ?? record.state ?? "unknown").toLowerCase(),
 			health: health(record),
-			image: String(record.Image ?? "unknown"),
+			image: String(record.Image ?? record.image ?? "unknown"),
 		}))
 		.sort((left, right) => left.name.localeCompare(right.name));
 	const stopped =
@@ -60,4 +62,34 @@ export function summarizeComposeStatus(
 		state: ready ? "ready" : stopped ? "stopped" : "degraded",
 		services,
 	};
+}
+function unavailable(product: ProductName): ProductStatus {
+	return {
+		product,
+		state: "degraded",
+		services: [],
+		error: "status_unavailable",
+	};
+}
+export function normalizeStoredComponents(value: unknown): ProductStatus[] {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+	const stored = value as Record<string, unknown>;
+	return (["inference", "training", "lab"] as const).flatMap((product) => {
+		const entry = stored[product];
+		if (Array.isArray(entry))
+			return [summarizeComposeStatus(product, JSON.stringify(entry))];
+		if (!entry || typeof entry !== "object") return [];
+		const record = entry as Record<string, unknown>;
+		if (!Array.isArray(record.services)) return [unavailable(product)];
+		try {
+			return [
+				summarizeComposeStatus(
+					product,
+					JSON.stringify(record.services),
+				),
+			];
+		} catch {
+			return [unavailable(product)];
+		}
+	});
 }

@@ -373,10 +373,21 @@ export function setChannel(channel: unknown, approveDowngrade = false) {
 		current.provenance.generator = "treeai-manager-channel";
 		writeFileSync(paths.configuration, JSON.stringify(finalizeConfiguration(current), null, 2), { mode: 0o600 });
 		securePlatformConfiguration();
-		for (const name of ["stable", "development"])
-			try {
-				execFileSync("systemctl", [name === channel ? "enable" : "disable", "--now", `treeseed-ai-manager-${name}.timer`]);
-			} catch {}
+		try {
+			execFileSync("systemctl", [
+				"disable",
+				"--now",
+				`treeseed-ai-manager-${channel === "stable" ? "development" : "stable"}.timer`,
+			]);
+			execFileSync("systemctl", [
+				"enable",
+				`treeseed-ai-manager-${channel}.timer`,
+			]);
+		} catch (error) {
+			throw new Error(
+				`Cannot configure the ${channel} update timer: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
 		setSetting("channel", channel);
 		event("update.channel", { channel, installed, candidate });
 		return { channel, installed, candidate };
@@ -385,6 +396,15 @@ export function setChannel(channel: unknown, approveDowngrade = false) {
 		else rmSync(source, { force: true });
 		throw error;
 	}
+}
+export function activateChannelTimer(channel: unknown) {
+	if (channel !== "stable" && channel !== "development")
+		throw new Error("Channel must be stable or development.");
+	execFileSync("systemctl", [
+		"restart",
+		"--no-block",
+		`treeseed-ai-manager-${channel}.timer`,
+	]);
 }
 export function updateStatus() {
 	const config = configuration();

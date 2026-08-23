@@ -8,8 +8,41 @@ describe("manager scheduling and privilege split", () => {
 			"utf8",
 		);
 		expect(timer).toContain("OnUnitInactiveSec=60s");
+		expect(timer).toContain("OnActiveSec=60s");
 		expect(timer).toContain("RandomizedDelaySec=5s");
 		expect(timer).toContain("Persistent=true");
+	});
+
+	it("delays channel timer activation until after the supervisor reply", () => {
+		const supervisor = readFileSync(
+			"packages/manager/src/lifecycle/supervisor.ts",
+			"utf8",
+		);
+		const update = readFileSync(
+			"packages/manager/src/lifecycle/update.ts",
+			"utf8",
+		);
+		expect(supervisor).toContain(
+			'request.operation === "update.channel.set"',
+		);
+		expect(supervisor).toMatch(/socket\.end\([\s\S]+activateChannelTimer/u);
+		expect(update).toContain('"enable",');
+		expect(update).not.toMatch(
+			/name === channel \? "enable" : "disable", "--now"/u,
+		);
+	});
+
+	it("suppresses only the private Node SQLite experimental warning", () => {
+		const cli = readFileSync("packages/cli/src/main.ts", "utf8");
+		expect(cli).toContain("--disable-warning=ExperimentalWarning");
+		for (const name of ["api", "supervisor", "update", "reconcile"]) {
+			const unit = readFileSync(
+				`systemd/treeseed-ai-manager-${name}.service`,
+				"utf8",
+			);
+			expect(unit).toContain("--disable-warning=ExperimentalWarning");
+			expect(unit).not.toContain("NODE_NO_WARNINGS");
+		}
 	});
 
 	it("runs the API unprivileged and supervisor without a listener", () => {

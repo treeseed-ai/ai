@@ -20,6 +20,7 @@ import {
 	setting,
 } from "../core/store.js";
 import { updateStatus } from "../lifecycle/update.js";
+import { normalizeStoredComponents } from "../lifecycle/status.js";
 const VERSION = "0.6.2";
 function keys(): ApiKeyRecord[] {
 	try {
@@ -72,11 +73,8 @@ function components() {
 			return { name, state: "inactive" };
 		}
 	});
-	const products = setting<Record<string, { product: string }>>(
-		"components",
-		{},
-	);
-	return [...manager, ...Object.values(products)];
+	const products = setting<unknown>("components", {});
+	return [...manager, ...normalizeStoredComponents(products)];
 }
 function queue(
 	kind: "transition" | "update-check" | "update-plan" | "reconcile",
