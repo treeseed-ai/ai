@@ -51,14 +51,15 @@ function desiredConfiguration() {
 		throw new Error("The lab component is not enabled in platform desired state.");
 	const desired = structuredClone(current);
 	desired.lab = {
+		...desired.lab,
 		webui: {
 			authentication: "disabled",
 			browserUrl,
 			binding: "127.0.0.1:443",
 		},
 	};
-	if (!desired.network.sans.includes("chat.treeai.localhost"))
-		desired.network.sans.push("chat.treeai.localhost");
+	for (const hostname of ["chat.treeai.localhost", "hermes.treeai.localhost"])
+		if (!desired.network.sans.includes(hostname)) desired.network.sans.push(hostname);
 	desired.generation += 1;
 	desired.provenance.generator = "treeai-lab-local-single-user";
 	desired.provenance.generatedAt = new Date().toISOString();

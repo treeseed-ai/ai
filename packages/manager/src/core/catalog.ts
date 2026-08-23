@@ -11,6 +11,7 @@ export interface CatalogImage {
 	role: string;
 	repository: string;
 	digest: string;
+	localBuildOnly?: boolean;
 	buildIdentity: string;
 	consumers: string[];
 	restartImpact: string;
@@ -132,7 +133,14 @@ export function validateCatalog(input: unknown): ReleaseCatalog {
 			value.imagePolicy.requiredLocalImages.length > 0) ||
 		(value.imagePolicy.mode === "local-images-required" &&
 			(value.imagePolicy.requiredLocalImages.length === 0 ||
-				value.channel === "development" && !value.imagePolicy.sourceBundle))
+				value.channel === "development" && !value.imagePolicy.sourceBundle)) ||
+		value.images.some((image) => {
+			const local = value.imagePolicy?.requiredLocalImages.some((item) => item.role === image.role && item.buildIdentity === image.buildIdentity);
+			const sentinel = image.digest === `sha256:${"0".repeat(64)}`;
+			return sentinel
+				? !(image.localBuildOnly === true && value.channel === "development" && value.imagePolicy?.mode === "local-images-required" && local)
+				: image.localBuildOnly === true;
+		})
 	)
 		throw new Error("Catalog contains an invalid image delivery policy.");
 	if (

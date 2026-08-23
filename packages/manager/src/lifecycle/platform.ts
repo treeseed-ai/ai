@@ -1,12 +1,14 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { randomBytes, scryptSync } from "node:crypto";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { hashApiKey, validatePlatformConfiguration } from "@ai-platform/common";
 import { readCatalog } from "../core/catalog.js";
 import { localImageReadiness } from "./local-build.js";
 import { event, setSetting, setting } from "../core/store.js";
 import { paths } from "../core/paths.js";
+import { hashHermesPassword } from "./hermes/password.js";
+import { imageVariables } from "../core/image-variables.js";
 import {
 	summarizeComposeStatus,
 	type ProductStatus,
@@ -28,19 +30,6 @@ const bases = {
 	inference: ["postgres", "minio", "minio-init", "migrations", "evaluator", "manager", "api"],
 	training: ["postgres", "minio", "minio-init", "migrations", "artifact", "manager", "api"],
 } as const;
-const imageVariables: Record<string, string> = {
-	"inference-api": "INFERENCE_API_IMAGE",
-	"inference-manager": "INFERENCE_MANAGER_IMAGE",
-	"inference-vllm": "INFERENCE_VLLM_IMAGE",
-	"inference-evaluator": "INFERENCE_EVALUATOR_IMAGE",
-	"inference-migrations": "INFERENCE_MIGRATIONS_IMAGE",
-	"training-api": "TRAINING_API_IMAGE",
-	"training-manager": "TRAINING_MANAGER_IMAGE",
-	"axolotl-worker": "AXOLOTL_WORKER_IMAGE",
-	"marker-worker": "MARKER_WORKER_IMAGE",
-	"artifact-worker": "ARTIFACT_WORKER_IMAGE",
-	"training-migrations": "TRAINING_MIGRATIONS_IMAGE",
-};
 function command(file: string, args: string[]) {
 	const result = spawnSync(file, args, { encoding: "utf8", timeout: 900_000 });
 	if (result.status !== 0) throw new Error(`${file} failed: ${(result.stderr || result.stdout).trim()}`);
@@ -129,6 +118,7 @@ function imageValues(product: "inference" | "training") {
 		if (!variable || !owned) continue;
 		const localId = local.images.get(image.role);
 		if (catalog.imagePolicy.requiredLocalImages.some((item) => item.role === image.role) && !localId) throw new Error(`Required local image ${image.role} is not ready.`);
+		if (!localId && image.localBuildOnly) throw new Error(`Catalog image ${image.role} has no production fallback.`);
 		values[variable] = localId ?? (config.imageSource === "local-build" && catalog.channel === "stable" ? `local/${image.role}:${catalog.release}` : `${image.repository}@${image.digest}`);
 	}
 	return values;
@@ -143,6 +133,7 @@ function image(role: string) {
 		localId = local.images.get(role);
 	if (!item) throw new Error(`Catalog image ${role} is missing.`);
 	if (catalog.imagePolicy.requiredLocalImages.some((value) => value.role === role) && !localId) throw new Error(`Required local image ${role} is not ready.`);
+	if (!localId && item.localBuildOnly) throw new Error(`Catalog image ${role} has no production fallback.`);
 	return localId ?? (config.imageSource === "local-build" && catalog.channel === "stable" ? `local/${role}:${catalog.release}` : `${item.repository}@${item.digest}`);
 }
 function runtimeImage(id: string) {
@@ -304,16 +295,20 @@ function ensureLabConfiguration() {
 	] as const)
 		atomic(`${secrets}/${name}`, `${value}\n`);
 	if (existsSync(`${factory}/training-local-source.json`)) copyFileSync(`${factory}/training-local-source.json`, `${root}/training-source.json`);
-	const passwordPath = `${secrets}/hermes-dashboard-password`;
-	if (!existsSync(passwordPath)) {
-		const password = randomBytes(24).toString("base64url"),
-			salt = randomBytes(16),
-			hash = `scrypt$16384$8$1$${salt.toString("base64")}$${scryptSync(password, salt, 32, { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 }).toString("base64")}`;
-		atomic(passwordPath, `${password}\n`);
-		atomic(`${secrets}/hermes-password-hash`, `${hash}\n`);
-		atomic(`${secrets}/hermes-session-secret`, `${randomBytes(32).toString("base64")}\n`);
+	const passwordPath = `${secrets}/hermes-dashboard-password`,
+		hashPath = `${secrets}/hermes-password-hash`,
+		sessionPath = `${secrets}/hermes-session-secret`,
+		apiKeyPath = `${secrets}/hermes-api-key`;
+	if (!existsSync(hashPath))
+		atomic(hashPath, `${hashHermesPassword(randomBytes(24).toString("base64url"))}\n`);
+	if (!existsSync(sessionPath)) atomic(sessionPath, `${randomBytes(32).toString("base64")}\n`);
+	if (!existsSync(apiKeyPath)) atomic(apiKeyPath, `${randomBytes(32).toString("base64url")}\n`);
+	if (existsSync(passwordPath)) {
+		rmSync(passwordPath);
+		event("lab.hermes.plaintext-password-removed", {});
 	}
-	for (const name of ["factory-control-key", "factory-inference-key", "factory-training-key", "hermes-password-hash", "hermes-session-secret"]) secureLabSecret(`${secrets}/${name}`);
+	for (const name of ["factory-control-key", "factory-inference-key", "factory-training-key", "hermes-password-hash", "hermes-session-secret", "hermes-api-key"])
+		secureLabSecret(`${secrets}/${name}`);
 	if (existsSync(`${root}/training-source.json`)) secureLabSecret(`${root}/training-source.json`);
 	environment(
 		`${root}/environment`,
@@ -327,6 +322,7 @@ function ensureLabConfiguration() {
 			BASE_MODEL_REVISION: "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
 			LAB_CONTROLLER_IMAGE: image("lab-controller"),
 			LAB_PROXY_IMAGE: image("lab-experience-proxy"),
+			LAB_WEB_TOOL_IMAGE: image("lab-web-tool-proxy"),
 			HERMES_IMAGE: image("hermes-agent"),
 			OPEN_WEBUI_IMAGE: runtimeImage("open-webui"),
 			RUNTIME_GID: productGroup("lab"),

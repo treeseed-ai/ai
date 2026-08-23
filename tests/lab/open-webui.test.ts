@@ -100,15 +100,15 @@ describe("Open WebUI local single-user integration", () => {
 	it("attributes proxy traffic by its non-secret provider identity", () => {
 		const proxy = readFileSync("packages/lab/src/proxy.ts", "utf8");
 		expect(proxy).toContain("Bearer lab-open-webui");
-		expect(proxy).toContain("return'open-webui'");
-		expect(proxy).toContain("headers.set('authorization'");
+		expect(proxy).toContain('return "open-webui"');
+		expect(proxy).toContain('headers.set("authorization"');
 	});
 
 	it("keeps browser launch fixed and certificate replacement transactional", () => {
 		const cli = readFileSync("packages/lab/src/cli.ts", "utf8");
 		const converge = readFileSync("packages/manager/src/bin/converge.ts", "utf8");
-		expect(cli).toContain('targets.length !== 1 || targets[0] !== "webui"');
-		expect(cli).toContain('spawn("/usr/bin/xdg-open", [webui.browserUrl]');
+		expect(cli).toContain('["webui", "hermes"].includes');
+		expect(cli).toContain('spawn("/usr/bin/xdg-open", [target]');
 		expect(converge).toContain('"-checkhost"');
 		expect(converge).toContain("certificate.rollback()");
 	});

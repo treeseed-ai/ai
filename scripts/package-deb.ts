@@ -152,14 +152,15 @@ function catalog(base: string) {
 	};
 	value.images = release.images.flatMap((role, index) => {
 		const image = imageManifest.images?.[role], planned = imagePlan?.images?.[role], digest = image?.digest;
-		return /^sha256:[a-f0-9]{64}$/u.test(digest ?? "")
+		return /^sha256:[a-f0-9]{64}$/u.test(digest ?? "") || planned?.action === "built"
 			? [
 					{
 						role,
-						repository: image!.repository,
-						digest,
+						repository: image?.repository ?? `${release.dockerNamespace}/${role}`,
+						digest: /^sha256:[a-f0-9]{64}$/u.test(digest ?? "") ? digest : `sha256:${"0".repeat(64)}`,
+						...(!/^sha256:[a-f0-9]{64}$/u.test(digest ?? "") ? { localBuildOnly: true } : {}),
 						buildIdentity: planned?.action === "built" ? planned.buildIdentity : image!.buildIdentity,
-						consumers: [role.split("-")[0]],
+						consumers: [role.startsWith("lab-") || role === "hermes-agent" ? "lab" : ["axolotl-worker", "marker-worker", "artifact-worker"].includes(role) ? "training" : role.split("-")[0]],
 						restartImpact: role,
 						firstBuildGeneration: Number(value.generation) + index,
 					},

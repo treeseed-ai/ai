@@ -9,9 +9,9 @@ chat.treeai.localhost:443 {
   tls /tls/server.crt /tls/server.key
   reverse_proxy open-webui:8080
 }
-:4792 {
+hermes.treeai.localhost:443 {
   tls /tls/server.crt /tls/server.key
-  reverse_proxy hermes:9119
+  reverse_proxy hermes-dashboard:9119
 }
 :4793 {
   tls /tls/server.crt /tls/server.key

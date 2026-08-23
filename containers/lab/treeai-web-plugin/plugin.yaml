@@ -1,0 +1,7 @@
+name: treeai-web
+version: 1.0.0
+description: "TreeAI-managed bounded web search and extraction"
+author: TreeSeed AI
+kind: backend
+provides_web_providers:
+  - treeai

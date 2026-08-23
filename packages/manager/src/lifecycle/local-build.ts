@@ -147,6 +147,7 @@ const smokeCommands: Record<string, string[]> = {
 	"inference-migrations": ["sh", "-c", "test -s /migrations/001_initial.sql"],
 	"training-migrations": ["sh", "-c", "test -s /migrations/001_initial.sql"],
 	"hermes-agent": ["python", "-c", "from importlib.metadata import version;assert version('hermes-agent')=='0.18.2'"],
+	"lab-web-tool-proxy": ["python", "-m", "py_compile", "/app/worker.py"],
 };
 function smoke(role: string, tag: string) {
 	const detail = inspect(tag);
