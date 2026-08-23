@@ -24,9 +24,9 @@ adlfs==2026.8.0 \
     --hash=sha256:858d8999b83ad70baae89ee2ad67f40443f9d94e0257351a74866d643f22d54d \
     --hash=sha256:b78a01bd892c2a99f461b2b2ef4592c2eb45934e728f318472291ccaa6378e06
     # via axolotl
-aiobotocore==2.26.0 \
-    --hash=sha256:50567feaf8dfe2b653570b4491f5bc8c6e7fb9622479d66442462c021db4fadc \
-    --hash=sha256:a793db51c07930513b74ea7a95bd79aaa42f545bdb0f011779646eafa216abec
+aiobotocore==2.25.2 \
+    --hash=sha256:0cec45c6ba7627dd5e5460337291c86ac38c3b512ec4054ce76407d0f7f2a48f \
+    --hash=sha256:ae0a512b34127097910b7af60752956254099ae54402a84c2021830768f92cda
     # via s3fs
 aiofiles==24.1.0 \
     --hash=sha256:22a075c9e5a3810f0c2e48f3008c94d68c65d763b9b03857924c99e57355166c \
@@ -238,10 +238,17 @@ bitsandbytes==0.47.0 \
     --hash=sha256:4880a6d42ca9628b5a571c8cc3093dc3f5f52511e5a9e47d52d569807975531a \
     --hash=sha256:68f3fffd494a47ed1fd7593bfc5dd2ac69b68260599b71b4c4b3a32f90f3b184
     # via axolotl
-botocore==1.41.5 \
-    --hash=sha256:0367622b811597d183bfcaab4a350f0d3ede712031ce792ef183cabdee80d3bf \
-    --hash=sha256:3fef7fcda30c82c27202d232cfdbd6782cb27f20f8e7e21b20606483e66ee73a
-    # via aiobotocore
+boto3==1.40.21 \
+    --hash=sha256:3772fb828864d3b7046c8bdf2f4860aaca4a79f25b7b060206c6a5f4944ea7f9 \
+    --hash=sha256:876ccc0b25517b992bd27976282510773a11ebc771aa5b836a238ea426c82187
+    # via -r workers/axolotl/requirements.in
+botocore==1.40.70 \
+    --hash=sha256:4a394ad25f5d9f1ef0bed610365744523eeb5c22de6862ab25d8c93f9f6d295c \
+    --hash=sha256:61b1f2cecd54d1b28a081116fa113b97bf4e17da57c62ae2c2751fe4c528af1f
+    # via
+    #   aiobotocore
+    #   boto3
+    #   s3transfer
 brotli==1.2.0 \
     --hash=sha256:022426c9e99fd65d9475dce5c195526f04bb8be8907607e27e747893f6ee3e24 \
     --hash=sha256:072e7624b1fc4d601036ab3f4f27942ef772887e876beff0301d261210bca97f \
@@ -1285,6 +1292,7 @@ jmespath==1.1.0 \
     --hash=sha256:a5663118de4908c91729bea0acadca56526eb2698e83de10cd116ae0f4e97c64
     # via
     #   aiobotocore
+    #   boto3
     #   botocore
 joblib==1.5.3 \
     --hash=sha256:5fc3c5039fc5ca8c0276333a188bbd59d6b7ab37fe6632daa76bc7f9ec18e713 \
@@ -3140,6 +3148,10 @@ s3fs==2025.3.0 \
     --hash=sha256:446dd539eb0d0678209723cb7ad1bedbb172185b0d34675b09be1ad81843a644 \
     --hash=sha256:88d803615baa04945156ca0e1498009b7acd3132c07198bd81b3e874846e0aa2
     # via axolotl
+s3transfer==0.13.1 \
+    --hash=sha256:a981aa7429be23fe6dfc13e80e4020057cbab622b08c0315288758d67cabc724 \
+    --hash=sha256:c3fdba22ba1bd367922f27ec8032d6a1cf5f10c934fb5d68cf60fd5a23d936cf
+    # via boto3
 sacrebleu==2.6.0 \
     --hash=sha256:3edc1531575cfe4ad04ce53491a9307e234af1c3f805a1f491cbec844229a8a8 \
     --hash=sha256:91499b6cd46138d95154fff1e863c2f9be57e82f0c719d8dd718d0006cf6c566

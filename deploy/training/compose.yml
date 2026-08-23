@@ -29,7 +29,7 @@ services:
     build: { context: ../.., dockerfile: containers/training/marker.Dockerfile }
     restart: unless-stopped
     environment: *s3-environment
-    volumes: ["${DOCUMENT_INPUTS:-training-inputs}:/inputs:ro", "training-artifacts:/artifacts"]
+    volumes: ["training-artifacts:/artifacts"]
     deploy: { resources: { reservations: { devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }] } } }
     healthcheck: &worker-health { test: ["CMD","python","-c","import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/healthz')"], interval: 10s, timeout: 3s, retries: 10 }
   axolotl:
@@ -70,4 +70,4 @@ services:
     environment: { MINIO_ROOT_USER: "${MINIO_ROOT_USER:-training-root}", MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-training-root-development}", S3_ACCESS_KEY: "${S3_ACCESS_KEY:-training}", S3_SECRET_KEY: "${S3_SECRET_KEY:-training-development}", S3_BUCKET: "${S3_BUCKET:-ai-training}" }
     restart: "no"
 secrets: { artifact-signing-key: { file: "${SIGNING_KEY_FILE:-./secrets/artifact-signing-key.pem}" } }
-volumes: { training-inputs: {}, training-artifacts: {}, training-archive: {}, training-models: {}, training-postgres: {}, training-objects: {} }
+volumes: { training-artifacts: {}, training-archive: {}, training-models: {}, training-postgres: {}, training-objects: {} }
