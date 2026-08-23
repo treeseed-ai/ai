@@ -38,7 +38,6 @@ services:
     group_add: ["${RUNTIME_GID:?RUNTIME_GID is required}"]
     depends_on:
       experience-proxy: { condition: service_healthy }
-      hermes-agent: { condition: service_healthy }
     volumes: [lab-state:/state, hermes-workspace:/workspace:ro, "/etc/ssl/certs/treeseed-ai-ca.pem:/factory-ca.pem:ro"]
     secrets: [training-source, factory-control-key, factory-inference-key, factory-training-key, hermes-api-key]
     environment:
@@ -141,10 +140,6 @@ services:
   gateway:
     image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
     restart: unless-stopped
-    depends_on:
-      controller: { condition: service_healthy }
-      open-webui: { condition: service_healthy }
-      hermes-dashboard: { condition: service_healthy }
     ports: ["${OPEN_WEBUI_PUBLISH:-0.0.0.0:4791:4791}", "${LAB_BIND:-0.0.0.0}:4793:4793"]
     volumes: ["/usr/lib/treeseed-ai/lab/Caddyfile:/etc/caddy/Caddyfile:ro", "/etc/treeseed-ai/manager/tls:/tls:ro"]
     networks: [lab-private]

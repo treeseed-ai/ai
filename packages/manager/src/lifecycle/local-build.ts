@@ -305,7 +305,7 @@ export function buildCatalogLocalImages(catalog: ReleaseCatalog) {
 	writeFileSync(join(paths.state, `root-capability-${catalog.generation}.json`), `${JSON.stringify(capability, null, 2)}\n`, { mode: 0o600 });
 	return { receipt, capability };
 }
-export function localImageReadiness(catalog: ReleaseCatalog): LocalImageReadiness {
+export function localImageReadiness(catalog: ReleaseCatalog, options: { inspect?: boolean } = {}): LocalImageReadiness {
 	if (catalog.imagePolicy.mode === "package-only")
 		return { ready: true, required: [], images: new Map<string, string>() };
 	const path = receiptPath();
@@ -341,11 +341,13 @@ export function localImageReadiness(catalog: ReleaseCatalog): LocalImageReadines
 			!/^sha256:[a-f0-9]{64}$/u.test(built.baseDigest)
 		)
 			return { ready: false, required: catalog.imagePolicy.requiredLocalImages, reason: `local_build_receipt_invalid:${required.role}`, images };
-		try {
-			if (inspect(built.tag).Id !== built.imageId)
-				return { ready: false, required: catalog.imagePolicy.requiredLocalImages, reason: `local_image_moved:${required.role}`, images };
-		} catch {
-			return { ready: false, required: catalog.imagePolicy.requiredLocalImages, reason: `local_image_missing:${required.role}`, images };
+		if (options.inspect !== false) {
+			try {
+				if (inspect(built.tag).Id !== built.imageId)
+					return { ready: false, required: catalog.imagePolicy.requiredLocalImages, reason: `local_image_moved:${required.role}`, images };
+			} catch {
+				return { ready: false, required: catalog.imagePolicy.requiredLocalImages, reason: `local_image_missing:${required.role}`, images };
+			}
 		}
 		images.set(required.role, built.imageId);
 	}

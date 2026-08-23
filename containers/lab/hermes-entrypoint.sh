@@ -4,8 +4,10 @@ set -eu
 install -d -o hermes -g hermes "$HERMES_HOME" /workspace
 chown hermes:hermes "$HERMES_HOME" /workspace
 
-umask 077
-config="$HERMES_HOME/config.yaml.new.$$"
+managed="${HERMES_MANAGED_DIR:-/run/hermes-managed}"
+install -d -o root -g hermes -m 0750 "$managed"
+umask 027
+config="$managed/config.yaml.new.$$"
 printf '%s\n' \
   'model:' \
   '  default: local-model' \
@@ -35,8 +37,10 @@ printf '%s\n' \
   'gateway:' \
   '  api_server:' \
   '    max_concurrent_runs: 2' > "$config"
-chown hermes:hermes "$config"
-mv "$config" "$HERMES_HOME/config.yaml"
+chown root:hermes "$config"
+chmod 0640 "$config"
+mv "$config" "$managed/config.yaml"
+export HERMES_MANAGED_DIR="$managed"
 
 case "${HERMES_SERVICE_MODE:-dashboard}" in
   dashboard)
@@ -45,8 +49,20 @@ case "${HERMES_SERVICE_MODE:-dashboard}" in
     exec gosu hermes hermes dashboard --host 0.0.0.0 --port 9119 --no-open --skip-build
     ;;
   gateway)
-    export API_SERVER_ENABLED=true API_SERVER_HOST=0.0.0.0 API_SERVER_PORT=8642 API_SERVER_MODEL_NAME=hermes-agent
-    export API_SERVER_KEY="$(cat /run/secrets/hermes-api-key)"
+	 managed_env="$managed/.env.new.$$"
+	 {
+	   printf '%s\n' \
+	     'API_SERVER_ENABLED=true' \
+	     'API_SERVER_HOST=0.0.0.0' \
+	     'API_SERVER_PORT=8642' \
+	     'API_SERVER_MODEL_NAME=hermes-agent' \
+	     'OPENAI_BASE_URL=http://experience-proxy:8080/v1' \
+	     'OPENAI_API_KEY=lab-hermes'
+	   printf 'API_SERVER_KEY=%s\n' "$(cat /run/secrets/hermes-api-key)"
+	 } > "$managed_env"
+	 chown root:hermes "$managed_env"
+	 chmod 0640 "$managed_env"
+	 mv "$managed_env" "$managed/.env"
     exec gosu hermes hermes gateway run --force --no-supervise
     ;;
   *)

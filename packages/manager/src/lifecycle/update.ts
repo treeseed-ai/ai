@@ -440,7 +440,7 @@ export function updateStatus() {
 	const stagedGeneration = setting<number | null>("stagedGeneration", null),
 		stagedPath = stagedGeneration ? join(paths.state, `staged-catalog-${stagedGeneration}.json`) : undefined,
 		stagedCatalog = stagedPath && existsSync(stagedPath) ? validateCatalog(JSON.parse(readFileSync(stagedPath, "utf8"))) : undefined,
-		localImages = stagedCatalog ? localImageReadiness(stagedCatalog) : undefined;
+		localImages = stagedCatalog ? localImageReadiness(stagedCatalog, { inspect: false }) : undefined;
 	const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"],
 		[hour, minute] = config.updates.maintenanceWindow.localTime.split(":").map(Number),
 		next = new Date();
