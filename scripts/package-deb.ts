@@ -133,6 +133,7 @@ function catalog(base: string) {
 		value.signingKeyFingerprint = readFileSync(resolve(root, "release/apt-development/RELEASE_KEY_FINGERPRINT"), "utf8").trim();
 	}
 	value.packages = packages;
+	value.packageSet = process.env.TREEAI_CATALOG_PACKAGE_SET === "management" ? "management" : "all";
 	if (process.env.TREEAI_CATALOG_PACKAGE_SET === "management") {
 		value.migrations = [];
 		value.gates = ["manager-health"];
@@ -155,6 +156,15 @@ function catalog(base: string) {
 		value.images = catalogImageEntries(release.images, imageManifest.images, imagePlan?.images, Number(value.generation), false, release.dockerNamespace);
 	} else if (value.images.length !== release.images.length || value.imagePolicy.mode !== "local-images-required") {
 		throw new Error("Package-only publication requires a complete full development catalog base.");
+	} else {
+		// The installed pre-packageSet manager must also recognize this bridge as
+		// image-inert. Image lineage stays complete in `images` and in receipts.
+		value.imagePolicy = {
+			...value.imagePolicy,
+			mode: "package-only",
+			sourceBundle: null,
+			requiredLocalImages: [],
+		};
 	}
 	writeFileSync(resolve(base, "usr/share/treeseed-ai/release/catalog.json"), JSON.stringify(value, null, 2));
 	return finish("release-catalog", base);

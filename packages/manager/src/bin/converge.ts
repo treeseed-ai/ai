@@ -247,10 +247,12 @@ export async function converge() {
 			certificate.commit();
 			return { status: "postponed", update };
 		}
-		platform = await reconcileConfiguredPlatform(
-			"platform" in update ? update.platform : undefined,
-			reconcilePlatform,
-		);
+		platform = "packageOnly" in update && update.packageOnly
+			? undefined
+			: await reconcileConfiguredPlatform(
+				"platform" in update ? update.platform : undefined,
+				reconcilePlatform,
+			);
 		certificate.commit();
 	} catch (error) {
 		certificate.rollback();
