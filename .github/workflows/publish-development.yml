@@ -3,7 +3,7 @@ name: Publish protected TreeAI development generation
 on:
   workflow_dispatch:
     inputs:
-      debian_version: { description: "Exact version, e.g. 0.6.3~dev.20260822.142500+gabcdef123456-1", required: true, type: string }
+      debian_version: { description: "Exact version, e.g. 0.7.1~dev.20260822.142500+gabcdef123456-1", required: true, type: string }
       generation: { description: Monotonic numeric catalog generation, required: true, type: string }
 
 permissions: { contents: read }
@@ -20,7 +20,8 @@ jobs:
       - name: Validate protected development identity
         run: |
           test '${{ github.ref }}' = 'refs/heads/staging'
-          printf '%s' '${{ inputs.debian_version }}' | grep -Eq '^0\.6\.[0-9]+~dev\.[0-9]{8}\.[0-9]{6}\+g[0-9a-f]{12}-1$'
+          base=$(node -p "require('./release/manifest.json').version.split('.').slice(0,2).join('.')")
+          printf '%s' '${{ inputs.debian_version }}' | grep -Eq "^${base//./\\.}\.[0-9]+~dev\.[0-9]{8}\.[0-9]{6}\+g[0-9a-f]{12}-1$"
           printf '%s' '${{ inputs.generation }}' | grep -Eq '^[1-9][0-9]+$'
           test "$(git rev-parse HEAD)" = '${{ github.sha }}'
       - uses: pnpm/action-setup@v4

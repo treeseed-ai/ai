@@ -21,7 +21,7 @@ import {
 } from "../core/store.js";
 import { updateStatus } from "../lifecycle/update.js";
 import { normalizeStoredComponents } from "../lifecycle/status.js";
-const VERSION = "0.6.2";
+const VERSION = "0.7.0";
 function keys(): ApiKeyRecord[] {
 	try {
 		return JSON.parse(readFileSync(paths.apiKeys, "utf8")) as ApiKeyRecord[];

@@ -1,3 +1,11 @@
+treeseed-ai (0.7.0-1) stable; urgency=medium
+
+  * Add loopback-only, authentication-disabled Open WebUI development mode.
+  * Route browser inference through the experience-capturing proxy.
+  * Back up Open WebUI state and extend TLS SANs transactionally.
+
+ -- TreeSeed AI Releases <releases@treeseed.ai>  Sat, 22 Aug 2026 22:30:00 -0400
+
 treeseed-ai (0.6.2-1) stable; urgency=medium
 
   * Compact platform status into stable per-product service summaries.

@@ -7,6 +7,7 @@
   "imageSource": "registry",
   "runtime": { "management": "managed" },
   "state": { "postgresql": "bundled", "objectStorage": "bundled" },
+  "lab": { "webui": { "authentication": "local-users", "browserUrl": "https://localhost:4791", "binding": "0.0.0.0:4791" } },
   "network": {
     "bindings": { "manager": "0.0.0.0:4790", "inference": "0.0.0.0:4770", "openai": "0.0.0.0:4771", "training": "0.0.0.0:4780", "lab": "0.0.0.0:4793" },
     "hostnames": ["localhost"],
@@ -21,5 +22,5 @@
     "drain": { "inferenceSeconds": 120, "trainingSeconds": 300 }
   },
   "secrets": {},
-  "provenance": { "generator": "treeseed-ai-generic/0.6.2", "generatedAt": "2026-08-22T00:00:00.000Z", "configurationDigest": "0000000000000000000000000000000000000000000000000000000000000000" }
+  "provenance": { "generator": "treeseed-ai-generic/0.7.0", "generatedAt": "2026-08-22T00:00:00.000Z", "configurationDigest": "0000000000000000000000000000000000000000000000000000000000000000" }
 }
