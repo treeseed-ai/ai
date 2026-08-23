@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { callSupervisor, type SupervisorOperation } from "../lifecycle/socket.js";
 import { paths } from "../core/paths.js";
+import { buildLocalImages, planLocalBuild } from "../lifecycle/local-build.js";
 const [group, command, ...args] = process.argv.slice(2),
 	json = args.includes("--json");
 function settings() {
@@ -73,18 +74,9 @@ async function localBuild() {
 	root();
 	const requested = option("--source");
 	if (!requested) throw new Error("--source is required.");
-	const source = realpathSync(requested),
-		bake = `${source}/deploy/factory/docker-bake.hcl`;
-	if (!source.startsWith("/") || !existsSync(`${source}/release/manifest.json`) || !existsSync(bake)) throw new Error("The source root is not a complete TreeAI checkout.");
-	if (command === "plan") {
-		execFileSync("docker", ["buildx", "bake", "-f", bake, "--print"], { cwd: source, stdio: "inherit" });
-		return { status: "ready", source };
-	}
-	if (command === "build" || command === "upgrade") {
-		execFileSync("docker", ["buildx", "bake", "-f", bake, "--load"], { cwd: source, stdio: "inherit" });
-		if (command === "upgrade") await local("reconcile");
-		return { status: "ready", source, built: true, reconciled: command === "upgrade" };
-	}
+	if (command === "plan") return planLocalBuild(requested);
+	if (command === "build") return buildLocalImages(requested);
+	if (command === "upgrade") throw new Error("Use local-build build; the staged update continues after its receipt is verified.");
 	throw new Error("Unknown local-build command.");
 }
 async function main() {

@@ -8,4 +8,11 @@ describe('cataloged upstream runtime images',()=>{
     expect(catalog.runtimeImages.map(image=>image.id)).toEqual(expect.arrayContaining(['caddy','postgres','minio','minio-client','open-webui']));
     for(const image of catalog.runtimeImages)expect(image.reference).toContain(`@${image.digest}`);
   });
+  it('declares package and image delivery as independent dimensions',()=>{
+    const catalog=validateCatalog(JSON.parse(readFileSync('release/catalog.json','utf8')));
+    expect(catalog.imagePolicy).toEqual(expect.objectContaining({mode:'package-only',requiredLocalImages:[]}));
+    const invalid=structuredClone(catalog);
+    invalid.imagePolicy={...invalid.imagePolicy,mode:'local-images-required',requiredLocalImages:[]};
+    expect(()=>validateCatalog(invalid)).toThrow(/image delivery policy/u);
+  });
 });

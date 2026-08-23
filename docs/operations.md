@@ -28,7 +28,16 @@ Configured installers may include temporary TreeAI-owned credentials. Initial co
 
 Stable hosts check daily, stage compatible releases, and apply them Sunday at 03:00 local time with jitter. Development hosts use a separately signed suite and a persistent 60-second timer. An unchanged catalog generation causes no package download, image pull, migration, or restart. Network failures use bounded exponential backoff.
 
-Every update is catalog-driven. The manager rejects removals, implicit downgrades, foreign origins, and uncataloged packages; downloads before installation; pulls only changed locally built and upstream runtime image digests; validates prerequisites; drains affected work; records receipts and last-known-good state; migrates in declared order; and reconciles only affected services. Compose reuses unchanged containers, so an unchanged vLLM digest is neither pulled nor restarted. Drain expiry postpones work without killing it. Cancellation ends when dpkg installation begins.
+Every update is catalog-driven. Package channel and image source are independent. A `package-only` development generation reuses signed production image digests and may converge automatically. A `local-images-required` generation is downloaded and staged, but package installation is postponed until an explicit repository build creates a matching receipt:
+
+```bash
+sudo treeai local-build plan --source /home/adrian/Projects/ai
+sudo treeai local-build build --source /home/adrian/Projects/ai
+```
+
+The receipt binds the catalog generation, exact source revision, role build identities, amd64 image IDs/configuration digests, base digests, dirty-tree state, and smoke results. A missing image, moved tag, different commit, or mismatched identity blocks before `dpkg`. The manager never clones source or runs repository Dockerfiles from its timer.
+
+The manager also rejects removals, implicit downgrades, foreign origins, and uncataloged packages; downloads before installation; pulls only changed production and upstream runtime image digests; validates prerequisites; drains affected work; records receipts and last-known-good state; migrates in declared order; and reconciles only affected services. Compose reuses unchanged containers, so an unchanged vLLM digest is neither pulled nor restarted. Drain expiry postpones work without killing it. Cancellation ends when dpkg installation begins.
 
 Use `sudo treeai update channel stable|development` to switch suites. Returning from a development version never performs an implicit Debian downgrade. Major, breaking, destructive, reboot, driver, and downgrade changes require explicit local approval.
 

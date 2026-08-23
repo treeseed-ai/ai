@@ -9,7 +9,9 @@ export interface CatalogPackage {
 }
 export interface CatalogImage {
 	role: string;
+	repository: string;
 	digest: string;
+	buildIdentity: string;
 	consumers: string[];
 	restartImpact: string;
 	firstBuildGeneration: number;
@@ -27,7 +29,7 @@ export interface ReleaseCatalog {
 	channel: "stable" | "development";
 	generation: number;
 	compatibilityId: string;
-	classification: "automatic" | "manual" | "breaking" | "blocked";
+	classification: "patch" | "automatic" | "manual" | "breaking" | "blocked";
 	automatic: boolean;
 	suite: string;
 	signingKeyFingerprint: string;
@@ -40,6 +42,12 @@ export interface ReleaseCatalog {
 	};
 	packages: CatalogPackage[];
 	images: CatalogImage[];
+	imagePolicy: {
+		mode: "package-only" | "local-images-required";
+		productionManifestVersion: string;
+		sourceRevision: string;
+		requiredLocalImages: Array<{ role: string; buildIdentity: string }>;
+	};
 	runtimeImages: RuntimeImage[];
 	composeGeneration: number;
 	configurationGeneration: number;
@@ -89,9 +97,33 @@ export function validateCatalog(input: unknown): ReleaseCatalog {
 		throw new Error("Catalog contains an invalid package.");
 	if (
 		!Array.isArray(value.images) ||
-		value.images.some((item) => !/^sha256:[a-f0-9]{64}$/u.test(item.digest))
+		value.images.some(
+			(item) =>
+				!/^sha256:[a-f0-9]{64}$/u.test(item.digest) ||
+				!/^sha256:[a-f0-9]{64}$/u.test(item.buildIdentity) ||
+				!/^treeseed\/[a-z0-9-]+$/u.test(item.repository),
+		)
 	)
 		throw new Error("Catalog contains an invalid image digest.");
+	if (
+		!value.imagePolicy ||
+		!["package-only", "local-images-required"].includes(value.imagePolicy.mode) ||
+		!value.imagePolicy.productionManifestVersion ||
+		!(/^[a-f0-9]{40}$/u.test(value.imagePolicy.sourceRevision) || value.imagePolicy.sourceRevision === "release-source") ||
+		!Array.isArray(value.imagePolicy.requiredLocalImages) ||
+		value.imagePolicy.requiredLocalImages.some(
+			(item) =>
+				!value.images?.some(
+					(image) =>
+						image.role === item.role && image.buildIdentity === item.buildIdentity,
+				),
+		) ||
+		(value.imagePolicy.mode === "package-only" &&
+			value.imagePolicy.requiredLocalImages.length > 0) ||
+		(value.imagePolicy.mode === "local-images-required" &&
+			value.imagePolicy.requiredLocalImages.length === 0)
+	)
+		throw new Error("Catalog contains an invalid image delivery policy.");
 	if (
 		!Array.isArray(value.runtimeImages) ||
 		value.runtimeImages.some(

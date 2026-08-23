@@ -10,6 +10,12 @@ describe('selective image build identities',()=>{
     expect(workflow).toContain('1s/([^)]*)/(${{ inputs.debian_version }})/');
     expect(workflow).not.toContain('1s/(0.6.0-1)/');
     expect(workflow).toContain('0.6.3~dev.');
+    expect(workflow).not.toContain('docker/login-action');
+    expect(workflow).not.toContain('docker buildx build');
+    expect(workflow).not.toContain('cosign sign');
+    expect(workflow).toContain('publishedDevelopmentImages:0');
+    expect(workflow).toContain('TREEAI_IMAGE_PLAN');
+    expect(workflow).toContain('TREEAI_DEVELOPMENT_BASE');
   });
 
   it('covers every coordinated role with explicit inputs',()=>{
@@ -18,6 +24,7 @@ describe('selective image build identities',()=>{
     expect(Object.keys(builds.images).sort()).toEqual([...release.images].sort());
     expect(builds.platform).toBe('linux/amd64');
     for(const [role,build]of Object.entries(builds.images)){expect(build.inputs.length,role).toBeGreaterThan(0);expect(build.inputs).toContain(build.dockerfile);}
+		for(const role of['inference-api','inference-manager','training-api','training-manager','lab-controller','lab-experience-proxy'])expect(builds.images[role]?.inputs).not.toContain('packages');
   });
 
   it('changes for Dockerfiles, context, arguments, and platforms',()=>{
