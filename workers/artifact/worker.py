@@ -6,6 +6,7 @@ path.insert(0,"/app")
 from common.server import serve
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from library import classify as classify_library
 
 ROOT=Path(os.getenv("ARTIFACT_ROOT","/artifacts")).resolve();ARCHIVE=Path(os.getenv("ARCHIVE_ROOT","/archive")).resolve();ROOT.mkdir(parents=True,exist_ok=True);ARCHIVE.mkdir(parents=True,exist_ok=True)
 KEY_PATH=Path(os.getenv("SIGNING_KEY","/run/secrets/artifact-signing-key"))
@@ -83,4 +84,4 @@ def restore(job):
     source=(ARCHIVE/job["input"].get("archiveId",job["jobId"])).resolve()
     if ARCHIVE not in source.parents or not source.is_dir(): raise ValueError("Archive does not exist")
     target=ROOT/"restored"/job["jobId"];shutil.copytree(source,target);return{"resultManifest":f"file://{target/'manifest.json'}"}
-serve({"/dataset":dataset,"/experience-register":experience_register,"/experience":experience,"/verify":verify,"/archive":archive,"/restore":restore,"/export-adapter":export_adapter})
+serve({"/classify-library-document":classify_library,"/dataset":dataset,"/experience-register":experience_register,"/experience":experience,"/verify":verify,"/archive":archive,"/restore":restore,"/export-adapter":export_adapter})
