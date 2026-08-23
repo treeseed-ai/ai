@@ -3,6 +3,7 @@ import{tmpdir}from'node:os';
 import{join}from'node:path';
 import{afterEach,describe,expect,it,vi}from'vitest';
 import{localImageReadiness}from'../../packages/manager/src/lifecycle/local-build.js';
+import{assertCatalogedSimulation}from'../../packages/manager/src/lifecycle/apt-policy.js';
 import{validateCatalog,type ReleaseCatalog}from'../../packages/manager/src/core/catalog.js';
 
 const digest=`sha256:${'a'.repeat(64)}`,identity=`sha256:${'b'.repeat(64)}`;
@@ -17,6 +18,7 @@ describe('repository-local image admission',()=>{
   it('rejects a receipt for a different build identity before image inspection',()=>{const root=mkdtempSync(join(tmpdir(),'treeai-local-')),path=join(root,'receipt.json');process.env.TREEAI_LOCAL_BUILD_RECEIPT=path;writeFileSync(path,JSON.stringify(receipt(`sha256:${'c'.repeat(64)}`)));expect(localImageReadiness(catalog())).toEqual(expect.objectContaining({ready:false,reason:'local_build_receipt_mismatch:inference-api'}));});
   it('detects a local tag moved away from its receipted image ID',()=>{const root=mkdtempSync(join(tmpdir(),'treeai-local-')),path=join(root,'receipt.json'),docker=join(root,'docker');process.env.TREEAI_LOCAL_BUILD_RECEIPT=path;process.env.PATH=`${root}:${originalPath}`;writeFileSync(path,JSON.stringify(receipt()));writeFileSync(docker,`#!/bin/sh\nprintf '{"Id":"sha256:${'d'.repeat(64)}"}'\n`);chmodSync(docker,0o755);expect(localImageReadiness(catalog())).toEqual(expect.objectContaining({ready:false,reason:'local_image_moved:inference-api'}));});
   it('automatically builds only through catalog authority before admission',()=>{const update=readFileSync('packages/manager/src/lifecycle/update.ts','utf8'),build=readFileSync('packages/manager/src/lifecycle/local-build.ts','utf8');expect(update).toContain('buildCatalogLocalImages(catalog)');expect(update).toContain('root-capability.started');expect(build).toContain('development.local-images.build');expect(build).toContain('requiredRoles: catalog.imagePolicy.requiredLocalImages');expect(build).not.toContain('exec(');});
+  it('rejects TreeAI packages introduced only by dependency solving',()=>{expect(()=>assertCatalogedSimulation('Inst treeseed-ai-manager [old] (new)\nInst treeseed-ai-lab [old] (new)',{...catalog(),packages:[{name:'treeseed-ai-manager',version:'new',architecture:'amd64',origin:'TreeSeed AI',order:0}]})).toThrow(/treeseed-ai-lab/u);});
   it('postpones before runtime image acquisition or dpkg installation',()=>{const update=readFileSync('packages/manager/src/lifecycle/update.ts','utf8'),gate=update.indexOf('if (!plan.localImages.ready)'),acquire=update.indexOf('await acquireImages(catalog)'),install=update.indexOf('event("update.installing"');expect(gate).toBeGreaterThan(0);expect(gate).toBeLessThan(acquire);expect(gate).toBeLessThan(install);});
 });
   it('validates a catalog with exact local image requirements',()=>{expect(validateCatalog(catalog()).imagePolicy.mode).toBe('local-images-required');});

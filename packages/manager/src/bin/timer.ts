@@ -67,5 +67,6 @@ run().catch((error) => {
 		failures,
 		error: error instanceof Error ? error.message : String(error),
 	});
+	console.error(`TreeAI update failed: ${error instanceof Error ? error.message : String(error)}`);
 	process.exitCode = 1;
 });

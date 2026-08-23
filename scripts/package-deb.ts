@@ -107,7 +107,8 @@ function runtime(base: string) {
 }
 function catalog(base: string) {
 	directory(base, "usr/share/treeseed-ai/release");
-	const value = JSON.parse(readFileSync(resolve(root, "release/catalog.json"), "utf8")) as Record<string, unknown>,
+	const catalogSource = process.env.TREEAI_BASE_CATALOG || resolve(root, "release/catalog.json"),
+		value = JSON.parse(readFileSync(catalogSource, "utf8")) as Record<string, unknown>,
 		catalogProducts = process.env.TREEAI_CATALOG_PACKAGE_SET === "management"
 			? release.products.filter((product) => ["archive-keyring", "development-archive-keyring", "host-js-runtime", "manager", "cli", "release-catalog"].includes(product))
 			: release.products,
@@ -131,6 +132,11 @@ function catalog(base: string) {
 		value.signingKeyFingerprint = readFileSync(resolve(root, "release/apt-development/RELEASE_KEY_FINGERPRINT"), "utf8").trim();
 	}
 	value.packages = packages;
+	if (process.env.TREEAI_CATALOG_PACKAGE_SET === "management") {
+		value.migrations = [];
+		value.gates = ["manager-health"];
+		value.rollback = { compatible: true, requiresBackup: false };
+	}
 	const requiredLocalImages = release.images.flatMap((role) => {
 		const planned = imagePlan?.images?.[role];
 		return planned?.action === "built" ? [{ role, buildIdentity: planned.buildIdentity }] : [];
