@@ -1,9 +1,9 @@
-name: Publish protected TreeAI development generation
+name: Publish protected TreeAI release candidate
 
 on:
   workflow_dispatch:
     inputs:
-      debian_version: { description: "Exact version, e.g. 0.7.0~dev.20260822.142500+gabcdef123456-1", required: true, type: string }
+      rc: { description: "Positive release-candidate number, e.g. 1", required: true, type: string }
       generation: { description: Monotonic numeric catalog generation, required: true, type: string }
 
 permissions: { contents: read }
@@ -20,10 +20,12 @@ jobs:
       - name: Validate protected development identity
         run: |
           test '${{ github.ref }}' = 'refs/heads/staging'
-          base=$(node -p "require('./release/manifest.json').version.split('.').slice(0,2).join('.')")
-          printf '%s' '${{ inputs.debian_version }}' | grep -Eq "^${base//./\\.}\.[0-9]+~dev\.[0-9]{8}\.[0-9]{6}\+g[0-9a-f]{12}-1$"
+          printf '%s' '${{ inputs.rc }}' | grep -Eq '^[1-9][0-9]*$'
           printf '%s' '${{ inputs.generation }}' | grep -Eq '^[1-9][0-9]+$'
           test "$(git rev-parse HEAD)" = '${{ github.sha }}'
+          version=$(node -p "require('./release/manifest.json').version")
+          echo "TREEAI_RC_DEBIAN_VERSION=${version}~rc${{ inputs.rc }}-1" >> "$GITHUB_ENV"
+          echo "TREEAI_RC_TAG=${version}-rc${{ inputs.rc }}" >> "$GITHUB_ENV"
       - uses: pnpm/action-setup@v4
         with: { version: 10.15.1 }
       - uses: actions/setup-node@v4
@@ -45,7 +47,7 @@ jobs:
             digest=$(jq -r --arg role "$role" '.images[$role].digest' prior/image-manifest.json)
             cosign verify --certificate-identity 'https://github.com/treeseed-ai/ai/.github/workflows/release.yml@refs/heads/main' --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' "$repository@$digest" >/dev/null
           done
-          TREEAI_RELEASE_VERSION='${{ inputs.debian_version }}' TREEAI_DEVELOPMENT_BASE="$previous" node --import tsx scripts/release/plan-image-builds.ts plan/image-plan.json prior/image-manifest.json
+          TREEAI_RELEASE_VERSION="$TREEAI_RC_TAG" TREEAI_DEVELOPMENT_BASE="$previous" node --import tsx scripts/release/plan-image-builds.ts plan/image-plan.json prior/image-manifest.json
           cp prior/image-manifest.json assets/image-manifest.json
           cp plan/image-plan.json assets/development-image-plan.json
           jq '{status:"ready",policy:(if ([.images[].action]|any(.=="built")) then "local-images-required" else "package-only" end),requiredLocalRoles:[.images|to_entries[]|select(.value.action=="built")|.key],publishedDevelopmentImages:0}' plan/image-plan.json
@@ -53,8 +55,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential debhelper lintian nodejs
-          sed -i "1s/([^)]*)/(${{ inputs.debian_version }})/; 1s/) stable;/) development;/" debian/changelog
-          TREEAI_DEBIAN_VERSION='${{ inputs.debian_version }}' TREEAI_RELEASE_VERSION='${{ inputs.debian_version }}' TREEAI_RELEASE_CHANNEL=development TREEAI_RELEASE_GENERATION='${{ inputs.generation }}' TREEAI_IMAGE_MANIFEST="$PWD/assets/image-manifest.json" TREEAI_IMAGE_PLAN="$PWD/assets/development-image-plan.json" TREEAI_SOURCE_REVISION='${{ github.sha }}' dpkg-buildpackage -b -us -uc
+          sed -i "1s/([^)]*)/($TREEAI_RC_DEBIAN_VERSION)/; 1s/) stable;/) development;/" debian/changelog
+          TREEAI_DEBIAN_VERSION="$TREEAI_RC_DEBIAN_VERSION" TREEAI_RELEASE_VERSION="$TREEAI_RC_TAG" TREEAI_RELEASE_CHANNEL=development TREEAI_RELEASE_GENERATION='${{ inputs.generation }}' TREEAI_IMAGE_MANIFEST="$PWD/assets/image-manifest.json" TREEAI_IMAGE_PLAN="$PWD/assets/development-image-plan.json" TREEAI_SOURCE_REVISION='${{ github.sha }}' dpkg-buildpackage -b -us -uc
           find .. -maxdepth 1 -type f -name 'treeseed-ai*.deb' -exec cp {} assets/ \;
           lintian --fail-on error assets/*.deb
       - name: Sign and publish immutable prerelease
@@ -67,9 +69,8 @@ jobs:
           export APT_RELEASE_FINGERPRINT="$(cat release/apt-development/RELEASE_KEY_FINGERPRINT)"
           (cd assets && find . -maxdepth 1 -type f -printf '%f\n' | sort | xargs sha256sum > SHA256SUMS)
           gpg --batch --yes --pinentry-mode loopback --passphrase "$APT_GPG_PASSPHRASE" --local-user "$APT_RELEASE_FINGERPRINT" --detach-sign --armor assets/SHA256SUMS
-          tag="dev-${{ inputs.generation }}"
           mapfile -t files < <(find assets -type f -print | sort)
-          if gh release view "$tag" >/dev/null 2>&1; then gh release upload "$tag" --clobber "${files[@]}"; else gh release create "$tag" "${files[@]}" --target '${{ github.sha }}' --prerelease --title "TreeAI development ${{ inputs.debian_version }}" --notes "Protected development generation ${{ inputs.generation }}."; fi
+          if gh release view "$TREEAI_RC_TAG" >/dev/null 2>&1; then gh release upload "$TREEAI_RC_TAG" --clobber "${files[@]}"; else gh release create "$TREEAI_RC_TAG" "${files[@]}" --target '${{ github.sha }}' --prerelease --title "TreeAI $TREEAI_RC_TAG" --notes "Protected release candidate; catalog generation ${{ inputs.generation }}."; fi
       - name: Build signed development APT suite
         env:
           GH_TOKEN: "${{ github.token }}"
@@ -77,10 +78,10 @@ jobs:
           APT_GPG_PASSPHRASE: "${{ secrets.APT_GPG_PASSPHRASE }}"
         run: |
           mkdir -p development-debs pages/apt
-          gh release download "dev-${{ inputs.generation }}" --pattern '*.deb' --dir development-debs
+          gh release download "$TREEAI_RC_TAG" --pattern '*.deb' --dir development-debs
           sh scripts/release/mirror-apt-suite.sh https://treeseed-ai.github.io/ai/apt stable pages/apt || true
           export APT_RELEASE_FINGERPRINT="$(cat release/apt-development/RELEASE_KEY_FINGERPRINT)"
-          sh scripts/release/build-apt-repository.sh development-debs pages/apt '${{ inputs.debian_version }}' development
+          sh scripts/release/build-apt-repository.sh development-debs pages/apt "$TREEAI_RC_DEBIAN_VERSION" development
       - uses: actions/upload-artifact@v4
         with: { name: development-apt-pages-site, path: pages, if-no-files-found: error }
 
