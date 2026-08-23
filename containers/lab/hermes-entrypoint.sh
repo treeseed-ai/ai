@@ -27,6 +27,7 @@ printf '%s\n' \
   '  api_key: lab-hermes' \
   '  api_mode: chat_completions' \
   "  context_length: $context_length" \
+  '  max_tokens: 4096' \
   'terminal:' \
   '  backend: local' \
   '  cwd: /workspace' \

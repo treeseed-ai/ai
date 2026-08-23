@@ -4,7 +4,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends gosu patch && r
 COPY containers/lab/hermes-api-requirements.txt /tmp/hermes-api-requirements.txt
 RUN pip install --no-cache-dir --no-deps --require-hashes -r /tmp/hermes-api-requirements.txt && python -c "import aiohttp; assert aiohttp.__version__ == '3.14.1'" && rm /tmp/hermes-api-requirements.txt
 COPY containers/lab/hermes-password-auth.patch /tmp/hermes-password-auth.patch
-RUN patch -d /usr/local/lib/python3.12/site-packages -p1 < /tmp/hermes-password-auth.patch && rm /tmp/hermes-password-auth.patch
+COPY containers/lab/hermes-small-context.patch /tmp/hermes-small-context.patch
+RUN patch -d /usr/local/lib/python3.12/site-packages -p1 < /tmp/hermes-password-auth.patch && patch -d /usr/local/lib/python3.12/site-packages -p1 < /tmp/hermes-small-context.patch && rm /tmp/hermes-password-auth.patch /tmp/hermes-small-context.patch
 COPY containers/lab/treeai-web-plugin /usr/local/lib/python3.12/site-packages/plugins/web/treeai
 COPY containers/lab/hermes-entrypoint.sh /usr/local/bin/hermes-entrypoint
 RUN chmod 0755 /usr/local/bin/hermes-entrypoint
