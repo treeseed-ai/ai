@@ -50,6 +50,13 @@ describe('manager-owned platform reconciliation',()=>{
     for(const product of['inference','training'])expect(readFileSync(`deploy/${product}/factory.override.yml`,'utf8')).not.toContain('minio-init: { condition:');
     expect(platform.indexOf('reconcileObjectStore(product);',platform.indexOf('export async function transitionMode'))).toBeLessThan(platform.indexOf('writeMode(target);',platform.indexOf('export async function transitionMode')));
   });
+	it('keeps the profile verification key readable without exposing the signing key',()=>{
+		const source=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8');
+		expect(source).toContain('command("chown", ["root:treeseed-ai-manager", root])');
+		expect(source).toContain('command("chown", ["root:treeseed-ai-manager", publicKey])');
+		expect(source).toContain('command("chown",["root:treeseed-ai-training",privateKey])');
+		expect(source).not.toContain('root:treeseed-ai-manager", privateKey');
+	});
 
   it('adds bounded redacted migration diagnostics to failed reconciliation',()=>{
     const platform=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8');
