@@ -11,6 +11,8 @@ import { ensureManagedRuntime, persistMode, reconcilePlatform } from "./platform
 import { buildCatalogLocalImages, localImageReadiness } from "./local-build.js";
 import { assertCatalogedSimulation } from "./apt-policy.js";
 import { aptOptions } from "../core/apt-options.js";
+import { activeWork } from "./update/admission.js";
+export { recordsAreActive } from "./update/admission.js";
 export { aptOptions } from "../core/apt-options.js";
 const allowedPackages = new Set(["treeseed-ai", "treeseed-ai-archive-keyring", "treeseed-ai-development-archive-keyring", "treeseed-ai-host-js-runtime", "treeseed-ai-manager", "treeseed-ai-cli", "treeseed-ai-release-catalog", "treeseed-ai-host-runtime", "treeseed-ai-inference", "treeseed-ai-training", "treeseed-ai-lab", "treeseed-ai-factory"]);
 function configuration() { return validatePlatformConfiguration(JSON.parse(readFileSync(paths.configuration, "utf8"))); }
@@ -132,16 +134,6 @@ export function planUpdate(input?: ReleaseCatalog) {
 		images: plan.images.length + plan.runtimeImages.length,
 	});
 	return { ...plan, simulation };
-}
-function activeWork() {
-	for (const file of ["/run/treeseed-ai/inference/status.json", "/run/treeseed-ai/training/status.json"])
-		try {
-			const value = JSON.parse(readFileSync(file, "utf8")) as {
-				active?: number;
-			};
-			if ((value.active ?? 0) > 0) return true;
-		} catch {}
-	return false;
 }
 function snapshot(catalog: ReleaseCatalog) {
 	const root = join(paths.state, `transaction-${catalog.generation}`);
@@ -327,7 +319,7 @@ export async function applyUpdate() {
 	}
 	ensureManagedRuntime();
 	if (!packageOnly) await acquireImages(catalog);
-	if (!packageOnly && activeWork()) {
+	if (!packageOnly && activeWork(config.products)) {
 		setSetting("stagedGeneration", catalog.generation);
 		event("update.postponed", {
 			generation: catalog.generation,
