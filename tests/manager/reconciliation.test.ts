@@ -42,6 +42,7 @@ describe('manager-owned platform reconciliation',()=>{
     const compose=readFileSync('deploy/training/compose.yml','utf8'),platform=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8');
     expect(compose).toContain('inference-import-policy');expect(compose).toContain('s3:GetObject');expect(compose).not.toMatch(/import-policy\.json[^\n]+s3:\*/u);
     expect(compose).toContain('mc admin user add local $$IMPORT_S3_ACCESS_KEY $$IMPORT_S3_SECRET_KEY');expect(compose).not.toContain('user info local $$IMPORT_S3_ACCESS_KEY');
+    expect(compose).toContain('mc ls import-check/$$S3_BUCKET');expect(compose).toContain('$$attempt\\\" -lt 30');
     expect(platform).toContain('accessKeyId: "inference-import"');expect(platform).toContain('trainingImportS3??=secret()');
     expect(platform).toContain('["run","--rm","--no-deps","minio-init"]');
     expect(platform).not.toMatch(/inference: \[[^\n]*"minio-init"/u);expect(platform).not.toMatch(/training: \[[^\n]*"minio-init"/u);
