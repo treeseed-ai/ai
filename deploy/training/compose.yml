@@ -37,7 +37,7 @@ services:
     build: { context: ../.., dockerfile: containers/training/axolotl.Dockerfile }
     restart: unless-stopped
     volumes: ["training-artifacts:/artifacts", "training-models:/models"]
-    environment: { <<: *s3-environment, HF_HOME: /models }
+    environment: { <<: *s3-environment, HF_HOME: /models/huggingface, XDG_CACHE_HOME: /models/cache, TORCH_HOME: /models/torch, TRITON_CACHE_DIR: /models/triton }
     deploy: { resources: { reservations: { devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }] } } }
     healthcheck: *worker-health
   artifact:
