@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { actionSequences, ktoLabel, normalizeEvents, observeArtifacts, sanitizeEvidence } from "../../packages/lab/src/evidence.js";
 import { createExperienceProxy } from "../../packages/lab/src/proxy.js";
+import { AgentProfiles, profileMarker } from "../../packages/lab/src/agents/index.js";
 import { discoverProviderModels, hasSuccessfulWebEvidence } from "../../packages/lab/src/controller.js";
 import { chmodSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -19,7 +20,7 @@ describe("tight Hermes integration", () => {
 		};
 		const app = createExperienceProxy({ inferenceUrl: "http://inference", hermesUrl: "http://hermes-agent:8642", fetch: request as typeof fetch, record: (kind, value) => records.push({ kind, value }) });
 		const models = await (await app.request("/v1/models", { headers: { authorization: "Bearer lab-open-webui" } })).json() as { data: Array<{ id: string }> };
-		expect(models.data.map(({ id }) => id)).toEqual(["local-model", "hermes-agent"]);
+		expect(models.data.map(({ id }) => id)).toEqual(["local-model", "hermes-agent", "agent/auto"]);
 		await app.request("/v1/chat/completions", { method: "POST", headers: { authorization: "Bearer lab-open-webui", "content-type": "application/json" }, body: JSON.stringify({ model: "hermes-agent", messages: [{ role: "user", content: "test" }] }) });
 		expect(calls.at(-1)).toEqual({ url: "http://hermes-agent:8642/v1/chat/completions", authorization: "Bearer hermes-secret" });
 		expect(records).toHaveLength(1);
@@ -40,6 +41,16 @@ describe("tight Hermes integration", () => {
 		expect(ktoLabel({ ...base, score: 0.25 })?.label).toBe("desirable");
 		expect(ktoLabel({ ...base, score: -0.25 })?.label).toBe("undesirable");
 		expect(ktoLabel({ ...base, score: 0 })).toBeUndefined();
+	});
+
+	it("routes adapter agents through Hermes and rewrites only validated inner markers", async () => {
+		process.env.AI_FACTORY_INFERENCE_KEY = "inference-secret"; process.env.HERMES_API_KEY = "hermes-secret";
+		const root=mkdtempSync(join(tmpdir(),"treeai-agent-proxy-")),profiles=new AgentProfiles(root),profile=profiles.promote("library-1","finance","candidate-1",["evaluation-1"]),calls:Array<{url:string;body:Record<string,unknown>}>=[];
+		const request=async(input:string|URL|Request,init?:RequestInit)=>{const body=JSON.parse(String(init?.body??"{}"))as Record<string,unknown>;calls.push({url:String(input),body});if(String(input).endsWith("/v1/models"))return Response.json({object:"list",data:[{id:"local-model"}]});if(String(input).includes("library-deployments"))return Response.json({items:[{modelAlias:"library/finance",candidateId:"candidate-1"}]});return Response.json({choices:[{message:{role:"assistant",content:"ok"}}]},{headers:{"x-hermes-session-id":"session-1"}});};
+		const app=createExperienceProxy({inferenceUrl:"http://inference",inferenceControlUrl:"http://control",hermesUrl:"http://hermes",fetch:request as typeof fetch,record:()=>{},profiles});
+		const models=await(await app.request("/v1/models")).json()as{data:Array<{id:string}>};expect(models.data.map(item=>item.id)).toContain("agent/finance");
+		await app.request("/v1/chat/completions",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({model:"agent/finance",conversation_id:"chat-1",messages:[{role:"user",content:"analyze"}]})});expect(calls.at(-1)?.url).toBe("http://hermes/v1/chat/completions");expect(JSON.stringify(calls.at(-1)?.body)).toContain("TREEAI_AGENT_PROFILE");
+		const segment=crypto.randomUUID();await app.request("/v1/chat/completions",{method:"POST",headers:{"content-type":"application/json","x-treeai-hermes-session-id":"session-1"},body:JSON.stringify({model:"local-model",messages:[{role:"system",content:`${profileMarker(profile,segment)}\nUse evidence.`}]})});expect(calls.at(-1)?.url).toBe("http://inference/v1/chat/completions");expect(calls.at(-1)?.body.model).toBe("library/finance");expect(JSON.stringify(calls.at(-1)?.body)).not.toContain("TREEAI_AGENT_PROFILE");
 	});
 
 	it("normalizes Hermes timestamps and workspace paths for durable evidence", () => {

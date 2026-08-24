@@ -55,7 +55,7 @@ function client() {
 function call(path: string, method = "GET",body?:unknown) {
 	const config = client();
 	const values = ["--silent", "--show-error", "--fail-with-body", "--cacert", config.ca, "-H", `Authorization: Bearer ${operator()}`, "-H", "content-type: application/json", "-X", method];
-	if (method === "POST") values.push("-H", `Idempotency-Key: treeai-${path}-${Date.now()}`);
+	if (method === "POST" || method === "PATCH") values.push("-H", `Idempotency-Key: treeai-${path}-${Date.now()}`);
 	if(body!==undefined)values.push('--data',JSON.stringify(body));
 	const target = `${config.endpoints.lab}${path}`;
 	values.push(target);
@@ -147,6 +147,16 @@ async function main() {
 		throw new Error("Usage: treeai lab hermes <status|tools|sessions|verify|diagnostics|rotate-password>");
 	}
 	if(command==='libraries')return output(call('/v1/libraries'));
+	if(command==='agents')return output(call('/v1/agents'));
+	if(command==='agent'){
+		const action=args.find(item=>!item.startsWith('--')),values=args.filter(item=>!item.startsWith('--')).slice(1),id=values[0];
+		if(!id)throw new Error('An agent profile ID is required.');
+		if(action==='show')return output(call(`/v1/agents/${encodeURIComponent(id)}`));
+		if(action==='enable'||action==='disable')return output(call(`/v1/agents/${encodeURIComponent(id)}/${action}`,'POST'));
+		if(action==='edit'){const name=option('--name'),description=option('--description'),icon=option('--icon'),body=Object.fromEntries(Object.entries({displayName:name,description,icon}).filter(([,value])=>value!==undefined));return output(call(`/v1/agents/${encodeURIComponent(id)}`,'PATCH',body));}
+		throw new Error('Usage: treeai lab agent <show|edit|enable|disable> <id>');
+	}
+	if(command==='routing'&&args.find(item=>!item.startsWith('--'))==='history')return output(call('/v1/routing-decisions'));
 	if(command==='library'){
 		const action=args.find(item=>!item.startsWith('--')),values=args.filter(item=>!item.startsWith('--')).slice(1),id=values[0];
 		if(action==='runs')return output(id?call(`/v1/library-cycles/${encodeURIComponent(id)}`):call('/v1/library-cycles'));
@@ -190,7 +200,7 @@ async function main() {
 		compose(["logs", "--follow", ...(service ? [service] : [])]);
 		return;
 	}
-	throw new Error("Usage: treeai lab <plan|configure|reset-webui|urls|open|hermes|libraries|library|build|start|stop|restart|status|verify|watch|logs|enable|pause|resume|cycle-now>");
+	throw new Error("Usage: treeai lab <plan|configure|reset-webui|urls|open|hermes|agents|agent|routing|libraries|library|build|start|stop|restart|status|verify|watch|logs|enable|pause|resume|cycle-now>");
 }
 
 main().catch((error) => {
