@@ -25,6 +25,8 @@ services:
     restart: "no"
   axolotl:
     restart: "no"
+  artifact:
+    group_add: ["${RUNTIME_GID:?RUNTIME_GID is required}"]
   minio:
     networks:
       default: {}
