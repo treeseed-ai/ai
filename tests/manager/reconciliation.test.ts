@@ -44,6 +44,7 @@ describe('manager-owned platform reconciliation',()=>{
     expect(compose).toContain('mc admin user add local $$IMPORT_S3_ACCESS_KEY $$IMPORT_S3_SECRET_KEY');expect(compose).not.toContain('user info local $$IMPORT_S3_ACCESS_KEY');
     expect(platform).toContain('accessKeyId: "inference-import"');expect(platform).toContain('trainingImportS3??=secret()');
     expect(platform).toContain('["run","--rm","--no-deps","minio-init"]');
+    expect(platform).not.toMatch(/inference: \[[^\n]*"minio-init"/u);expect(platform).not.toMatch(/training: \[[^\n]*"minio-init"/u);
   });
 
   it('adds bounded redacted migration diagnostics to failed reconciliation',()=>{
