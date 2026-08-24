@@ -17,6 +17,8 @@ The authoritative measurement is the usable token count reported after normaliza
 
 Keep each library topically coherent. Its directory tree becomes topic-path context in the dataset, so descriptive filenames, headings, and folders are more valuable than a larger mixture of unrelated material.
 
+Qwen 3.5 currently runs with Axolotl sample packing disabled because the upstream 0.18 packing monkeypatch is incompatible with the pinned 4B decoder. Prepared records still carry explicit EOS document boundaries, and the deterministic builder keeps documents and coherent sections separate.
+
 ## Operator flow
 
 Upload files into an Open WebUI Knowledge Base and attach exactly one Knowledge Base to the current chat. The managed **Train Library** action shows ready, pending, rejected, and estimated-token counts before confirmation. Choose `smoke` to qualify document processing and QLoRA mechanics, or `standard` for an evaluation- and promotion-eligible run.
