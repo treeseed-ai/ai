@@ -37,7 +37,7 @@ function atomic(path: string, value: string, mode = 0o600) {
 	renameSync(next, path);
 	chmodSync(path, mode);
 }
-function secret(bytes = 32) { return randomBytes(bytes).toString("hex"); }
+function mounted(path:string,value:string,mode=0o640){mkdirSync(dirname(path),{recursive:true,mode:0o750});if(existsSync(path))writeFileSync(path,value,{mode});else atomic(path,value,mode);chmodSync(path,mode);}function secret(bytes = 32) { return randomBytes(bytes).toString("hex"); }
 function credential(id: string, scopes: string[]) {
 	const value = randomBytes(32).toString("base64url");
 	return {
@@ -251,7 +251,7 @@ function ensureProductConfiguration() {
 			"treeseed-ai-training",
 		);
 	if (enabled.has("inference") && enabled.has("training")) {
-		atomic(`${signing.root}/artifact-import-token`, stored.artifactToken!);
+		mounted(`${signing.root}/artifact-import-token`, stored.artifactToken!);
 		const source = {
 			sourceId: "training-local",
 			endpoint: "http://training-minio:9000",
@@ -260,7 +260,7 @@ function ensureProductConfiguration() {
 			secretAccessKey: stored.trainingImportS3,
 			trustedPublicKey: readFileSync(signing.publicKey, "utf8"),
 		};
-		atomic(`${signing.root}/training-local-source.json`, `${JSON.stringify(source, null, 2)}\n`);for(const path of[`${signing.root}/artifact-import-token`,`${signing.root}/training-local-source.json`]){chmodSync(path,0o640);command("chown",["root:treeseed-ai-inference",path]);}
+		mounted(`${signing.root}/training-local-source.json`, `${JSON.stringify(source, null, 2)}\n`);for(const path of[`${signing.root}/artifact-import-token`,`${signing.root}/training-local-source.json`]){chmodSync(path,0o640);command("chown",["root:treeseed-ai-inference",path]);}
 	}
 }
 function ensureLabConfiguration() {
