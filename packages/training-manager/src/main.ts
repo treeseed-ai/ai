@@ -4,6 +4,9 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { Pool } from 'pg';
 import type { JobHandler } from '@ai-platform/common';
+import { Agent, setGlobalDispatcher } from 'undici';
+
+setGlobalDispatcher(new Agent({ headersTimeout: 3_900_000, bodyTimeout: 3_900_000 }));
 
 const command = process.argv[2] ?? 'worker';
 const gpuTypes = new Set(['document.process', 'library.document.marker', 'library.training.qlora', 'training.qlora']);
