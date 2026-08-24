@@ -37,6 +37,12 @@ describe('manager-owned platform reconciliation',()=>{
     expect(overlay.match(/TREEAI_SECRET_MOUNT_GENERATION/g)).toHaveLength(2);
   });
 
+  it('provisions a distinct read-only training artifact exchange identity',()=>{
+    const compose=readFileSync('deploy/training/compose.yml','utf8'),platform=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8');
+    expect(compose).toContain('inference-import-policy');expect(compose).toContain('s3:GetObject');expect(compose).not.toMatch(/import-policy\.json[^\n]+s3:\*/u);
+    expect(platform).toContain('accessKeyId: "inference-import"');expect(platform).toContain('trainingImportS3??=secret()');
+  });
+
   it('adds bounded redacted migration diagnostics to failed reconciliation',()=>{
     const platform=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8');
     const diagnostics=readFileSync('packages/manager/src/lifecycle/migrations/diagnostics.ts','utf8');
