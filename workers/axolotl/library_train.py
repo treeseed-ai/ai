@@ -26,7 +26,7 @@ def key(uri):
 def fixed_config(value,dataset,target):
     sequence=int(value["sequenceLength"])
     if sequence not in {1024,2048,3072,4096}:raise ValueError("Training sequence length is not qualified")
-    return{"base_model":BASE_MODEL,"revision":BASE_REVISION,"datasets":[{"path":str(dataset),"type":"completion"}],"sequence_len":sequence,"sample_packing":True,"adapter":"qlora","load_in_4bit":True,"lora_r":16,"lora_alpha":32,"lora_dropout":0.05,"lora_target_modules":TARGETS,"bf16":True,"gradient_checkpointing":True,"micro_batch_size":1,"gradient_accumulation_steps":8,"learning_rate":0.0001,"weight_decay":0.01,"warmup_ratio":0.03,"num_epochs":1,"seed":42,"output_dir":str(target),"save_steps":int(value.get("saveSteps",25)),"evals_per_epoch":1}
+    return{"base_model":BASE_MODEL,"revision":BASE_REVISION,"datasets":[{"path":str(dataset),"type":"completion"}],"sequence_len":sequence,"sample_packing":False,"adapter":"qlora","load_in_4bit":True,"lora_r":16,"lora_alpha":32,"lora_dropout":0.05,"lora_target_modules":TARGETS,"bf16":True,"gradient_checkpointing":True,"micro_batch_size":1,"gradient_accumulation_steps":8,"learning_rate":0.0001,"weight_decay":0.01,"warmup_ratio":0.03,"num_epochs":1,"seed":42,"output_dir":str(target),"save_steps":int(value.get("saveSteps",25)),"evals_per_epoch":1}
 def train(job):
     value=job["input"]
     if value.get("baseModel")!=BASE_MODEL or value.get("baseModelRevision")!=BASE_REVISION:raise ValueError("Library training requires the immutable qualified base revision")
