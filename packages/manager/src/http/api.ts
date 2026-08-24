@@ -21,7 +21,7 @@ import {
 } from "../core/store.js";
 import { updateStatus } from "../lifecycle/update.js";
 import { normalizeStoredComponents } from "../lifecycle/status.js";
-import { campaign, campaigns, profiles, qualificationStatus } from "../lifecycle/qualification.js";
+import { campaign, campaigns, profiles, qualificationStatus } from "../lifecycle/qualification/index.js";
 const VERSION = "0.10.0";
 function keys(): ApiKeyRecord[] {
 	try {

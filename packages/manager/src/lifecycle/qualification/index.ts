@@ -2,8 +2,8 @@ import { execFileSync } from "node:child_process";
 import { createHash, sign, verify } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { event, setSetting, setting } from "../core/store.js";
-import { paths } from "../core/paths.js";
+import { event, setSetting, setting } from "../../core/store.js";
+import { paths } from "../../core/paths.js";
 
 export type ProfileName = "interactive" | "agent-long-context" | "training-text" | "training-multimodal";
 export interface MachineFingerprint {

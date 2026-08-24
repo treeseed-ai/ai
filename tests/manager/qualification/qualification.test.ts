@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { contextPolicy, fingerprint } from "../../packages/manager/src/lifecycle/qualification.js";
+import { contextPolicy, fingerprint } from "../../../packages/manager/src/lifecycle/qualification/index.js";
 
 describe("machine qualification", () => {
 	it("builds tokenizer budget policies without exceeding context", () => {
