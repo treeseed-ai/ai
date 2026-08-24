@@ -155,7 +155,7 @@ function ensureSigningMaterial() {
 		command("openssl", ["pkey", "-in", privateKey, "-pubout", "-out", publicKey]);
 		chmodSync(privateKey, 0o600);
 		chmodSync(publicKey, 0o644);
-	}
+	}if(enabledProducts().has("training")){chmodSync(privateKey,0o640);chmodSync(publicKey,0o644);command("chown",["root:treeseed-ai-training",privateKey]);}
 	return { root, privateKey, publicKey };
 }
 function ensureServiceCredentials(root: string) {

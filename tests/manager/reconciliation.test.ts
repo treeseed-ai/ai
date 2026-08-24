@@ -22,6 +22,13 @@ describe('manager-owned platform reconciliation',()=>{
     expect(gateway).toContain('/etc/treeseed-ai/manager/tls:/tls:ro');
   });
 
+  it('mounts the signing key only for the artifact worker with the training group',()=>{
+    const compose=readFileSync('deploy/training/compose.yml','utf8'),overlay=readFileSync('deploy/training/factory.override.yml','utf8'),platform=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8');
+    expect(compose).toMatch(/artifact:[\s\S]*secrets: \[artifact-signing-key\]/u);
+    expect(overlay).toMatch(/artifact:\n\s+group_add: \["\$\{RUNTIME_GID/u);
+    expect(platform).toContain('chown",["root:treeseed-ai-training",privateKey]');
+  });
+
   it('adds bounded redacted migration diagnostics to failed reconciliation',()=>{
     const platform=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8');
     const diagnostics=readFileSync('packages/manager/src/lifecycle/migrations/diagnostics.ts','utf8');
