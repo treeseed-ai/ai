@@ -23,8 +23,8 @@ const products = {
 	},
 } as const,
 	bases = {
-	inference: ["postgres", "minio", "minio-init", "migrations", "evaluator", "manager", "api"],
-	training: ["postgres", "minio", "minio-init", "migrations", "artifact", "manager", "api"],
+		inference: ["postgres", "minio", "migrations", "evaluator", "manager", "api"],
+		training: ["postgres", "minio", "migrations", "artifact", "manager", "api"],
 } as const;
 function command(file: string, args: string[]) {
 	const result = spawnSync(file, args, { encoding: "utf8", timeout: 900_000 }); if (result.status !== 0) throw new Error(`${file} failed: ${(result.stderr || result.stdout).trim()}`);
