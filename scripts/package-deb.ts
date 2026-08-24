@@ -219,6 +219,7 @@ function build(product: string) {
 		directory(base, "usr/lib/treeseed-ai/lab", "usr/share/treeseed-ai/lab", "usr/lib/systemd/system");
 		cpSync(resolve(root, "packages/lab/dist"), resolve(base, "usr/lib/treeseed-ai/lab/dist"), { recursive: true });
 		for (const file of ["compose.yml", "Caddyfile"]) copyFileSync(resolve(root, `deploy/lab/${file}`), resolve(base, `usr/lib/treeseed-ai/lab/${file}`));
+		cpSync(resolve(root, "deploy/lab/open-webui"), resolve(base, "usr/lib/treeseed-ai/lab/open-webui"), { recursive: true });
 		copyFileSync(resolve(root, "deploy/lab/lab.env.example"), resolve(base, "usr/share/treeseed-ai/lab/lab.env.example"));
 		copyFileSync(resolve(root, "systemd/treeseed-ai-lab.service"), resolve(base, "usr/lib/systemd/system/treeseed-ai-lab.service"));
 		return finish(product, base);

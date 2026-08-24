@@ -5,7 +5,7 @@ import{existsSync,mkdirSync,readFileSync,renameSync,writeFileSync}from'node:fs';
 
 const skippedHeaders = new Set(['connection','content-length','host','keep-alive','transfer-encoding','upgrade']);
 
-export function createInferenceGateway(input: { rawVllmUrl: string; publicModel: string; sourceModel: string; resolveKey: ApiKeyResolver; resolveModel?:()=>Promise<string>; fetch?: typeof fetch }) {
+export function createInferenceGateway(input: { rawVllmUrl: string; publicModel: string; sourceModel: string; resolveModel?:(requested:string)=>Promise<string|null>; listModels?:()=>Promise<Array<{id:string;root:string}>>; resolveKey: ApiKeyResolver; fetch?: typeof fetch }) {
 	const app = new Hono(); const fetcher = input.fetch ?? fetch;let active=0;const modePath=process.env.AI_FACTORY_MODE_FILE,statusPath=process.env.AI_RUNTIME_STATUS;const mode=()=>{try{return modePath&&existsSync(modePath)?JSON.parse(readFileSync(modePath,'utf8')).mode:'awake';}catch{return'degraded';}};const status=()=>{if(!statusPath)return;mkdirSync(dirname(statusPath),{recursive:true});const temporary=`${statusPath}.${process.pid}.tmp`;writeFileSync(temporary,JSON.stringify({active,updatedAt:new Date().toISOString()}));renameSync(temporary,statusPath);};
 	app.get('/healthz', (context) => context.json({ ok: true, service: 'inference-data-plane' }));
 	app.use('/v1/*', apiKeyAuthorization(input.resolveKey));
@@ -15,11 +15,12 @@ export function createInferenceGateway(input: { rawVllmUrl: string; publicModel:
 		active++;status();
 		try{
 		const path = new URL(context.req.url).pathname;
-		const selectedModel=await(input.resolveModel?.()??input.sourceModel);
 		const body = context.req.method === 'GET' ? undefined : await context.req.json().catch(() => ({})) as Record<string,unknown>;
-		if (body?.model === input.publicModel) body.model = selectedModel;
+		const requested=String(body?.model??input.publicModel),selectedModel=await(input.resolveModel?.(requested)??(requested===input.publicModel?input.sourceModel:null));
+		if(!selectedModel){active--;status();return context.json({error:{code:'model_not_found',message:`Model ${requested} is not deployed.`}},404);}
+		if (body?.model) body.model = selectedModel;
 		const upstream = await fetcher(new URL(path, input.rawVllmUrl), { method: context.req.method, headers: { 'content-type': 'application/json', 'x-request-id': context.req.header('x-request-id') ?? crypto.randomUUID() }, body: body ? JSON.stringify(body) : undefined, signal: context.req.raw.signal });
-		if (path === '/v1/models' && upstream.ok){active--;status();return context.json({ object: 'list', data: [{ id: input.publicModel, object: 'model', owned_by: 'local-ai', root: selectedModel }] });}
+		if (path === '/v1/models' && upstream.ok){const models=await(input.listModels?.()??[{id:input.publicModel,root:selectedModel}]);active--;status();return context.json({ object: 'list', data: models.map((model)=>({id:model.id,object:'model',owned_by:'local-ai',root:model.root})) });}
 		const headers = new Headers(); for (const [key,value] of upstream.headers) if (!skippedHeaders.has(key.toLowerCase())) headers.set(key,value);
 		if(!upstream.body){active--;status();return new Response(null,{status:upstream.status,statusText:upstream.statusText,headers});}const reader=upstream.body.getReader();const bodyStream=new ReadableStream({async pull(controller){const value=await reader.read();if(value.done){active--;status();controller.close();}else controller.enqueue(value.value);},async cancel(){await reader.cancel();active--;status();}});return new Response(bodyStream, { status: upstream.status, statusText: upstream.statusText, headers });
 		}catch(error){active--;status();throw error;}

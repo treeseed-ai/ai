@@ -6,6 +6,7 @@ path.insert(0,"/app")
 from common.server import serve
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from library import classify as classify_library
 
 ROOT=Path(os.getenv("ARTIFACT_ROOT","/artifacts")).resolve();ARCHIVE=Path(os.getenv("ARCHIVE_ROOT","/archive")).resolve();ROOT.mkdir(parents=True,exist_ok=True);ARCHIVE.mkdir(parents=True,exist_ok=True)
 KEY_PATH=Path(os.getenv("SIGNING_KEY","/run/secrets/artifact-signing-key"))
@@ -17,7 +18,7 @@ def safe(value,base=ROOT):
 def sign_manifest(manifest):
     key=serialization.load_pem_private_key(KEY_PATH.read_bytes(),password=None)
     if not isinstance(key,Ed25519PrivateKey): raise ValueError("Signing key must be Ed25519")
-    unsigned={**manifest,"signature":""};return{**unsigned,"signature":base64.b64encode(key.sign(canonical(unsigned))).decode()}
+    return{**manifest,"signature":base64.b64encode(key.sign(canonical(manifest))).decode()}
 def client(): return boto3.client("s3",endpoint_url=os.environ["AWS_ENDPOINT_URL"],region_name=os.getenv("AWS_REGION","us-east-1"),aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"])
 def upload(path,key):
     bucket=os.environ["S3_BUCKET"];client().upload_file(str(path),bucket,key);return f"s3://{bucket}/{key}"
@@ -70,7 +71,8 @@ def export_adapter(job):
     for item in sorted(adapter.rglob("*")):
         if item.is_file() and item!=result_path:
             checksum=hashlib.sha256(item.read_bytes()).hexdigest();relative=str(item.relative_to(adapter));uri=upload(item,f"adapters/{job['jobId']}/{relative}");objects.append({"uri":uri,"size":item.stat().st_size,"sha256":checksum})
-    manifest={"schemaVersion":"ai.artifact/v1","artifactId":job["jobId"],"artifactType":"lora-adapter","createdAt":job["input"].get("createdAt"),"baseModel":{"id":result["baseModel"],"revision":revision},"trainingConfigDigest":hashlib.sha256(Path(result["config"]).read_bytes()).hexdigest(),"datasets":job["input"].get("datasetManifests",[]),"adapter":{"format":"peft","architecture":job["input"].get("architecture","causal-lm")},"objects":objects,"evaluations":job["input"].get("evaluations",[]),"provenance":{"trainingJobId":job["jobId"]},"signingKeyId":os.getenv("SIGNING_KEY_ID","default")}
+    library=result.get("schemaVersion")=="ai.library-training-result/v1"
+    manifest={"schemaVersion":"ai.artifact/v2" if library else "ai.artifact/v1","artifactId":job["jobId"],"artifactType":"lora-adapter","createdAt":job["input"].get("createdAt"),"baseModel":{"id":result["baseModel"],"revision":revision},"trainingConfigDigest":hashlib.sha256(Path(result["config"]).read_bytes()).hexdigest(),"datasets":[result["datasetManifest"]] if library else job["input"].get("datasetManifests",[]),"adapter":{"format":"peft","architecture":job["input"].get("architecture","causal-lm"),"purpose":"continual-pretraining" if library else job["input"].get("purpose"),"targetModules":result.get("targetModules",[]),"rank":result.get("rank"),"alpha":result.get("alpha")},"library":({"id":result["libraryId"],"slug":result["librarySlug"],"snapshotId":result["snapshotId"],"mode":result["mode"],"promotionEligible":result["mode"]=="standard"} if library else None),"objects":objects,"evaluations":job["input"].get("evaluations",[]),"provenance":{"trainingJobId":job["jobId"]},"signingKeyId":os.getenv("SIGNING_KEY_ID","default")}
     signed=sign_manifest(manifest);target=adapter/"artifact-manifest.json";target.write_bytes(canonical(signed));return{"resultManifest":upload(target,f"manifests/{job['jobId']}.json")}
 def verify(job):
     target=safe(job["input"].get("path",""));expected=job["input"].get("sha256");actual=hashlib.sha256(target.read_bytes()).hexdigest()
@@ -83,4 +85,4 @@ def restore(job):
     source=(ARCHIVE/job["input"].get("archiveId",job["jobId"])).resolve()
     if ARCHIVE not in source.parents or not source.is_dir(): raise ValueError("Archive does not exist")
     target=ROOT/"restored"/job["jobId"];shutil.copytree(source,target);return{"resultManifest":f"file://{target/'manifest.json'}"}
-serve({"/dataset":dataset,"/experience-register":experience_register,"/experience":experience,"/verify":verify,"/archive":archive,"/restore":restore,"/export-adapter":export_adapter})
+serve({"/classify-library-document":classify_library,"/dataset":dataset,"/experience-register":experience_register,"/experience":experience,"/verify":verify,"/archive":archive,"/restore":restore,"/export-adapter":export_adapter})

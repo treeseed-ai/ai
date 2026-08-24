@@ -39,10 +39,10 @@ Put the returned `record` in the `AI_API_KEYS` JSON array. The plaintext credent
 
 ## Ubuntu 26.04 managed factory
 
-Release 0.8.0 supports Ubuntu 26.04 (Resolute) amd64. Download one generic or generated configuration package and install it locally:
+Release 0.9.0 supports Ubuntu 26.04 (Resolute) amd64. Download one generic or generated configuration package and install it locally:
 
 ```bash
-sudo apt install ./treeseed-ai_0.8.0-1_amd64.deb
+sudo apt install ./treeseed-ai_0.9.0-1_amd64.deb
 systemctl status treeseed-ai-bootstrap.service
 treeai platform status
 treeai platform doctor
@@ -57,7 +57,9 @@ Update channel and image source are independent. `updates.channel=development` p
 
 ### Optional Hermes experience lab
 
-When `lab` is enabled in `platform.json`, the manager generates distinct service credentials and reconciles the Hermes gateway/dashboard, Open WebUI, safe web worker, capture proxy, and controller with the core products. The same `treeai` operator credential controls the lab API. The three training pipelines remain intentionally disabled in 0.8.0; enable and cycle requests return `training_pipeline_not_configured`. The Hermes dashboard stores only a password hash, and root can rotate its password with a one-time response.
+When `lab` is enabled in `platform.json`, the manager generates distinct service credentials and reconciles Hermes, Open WebUI, the safe web worker, experience proxy, library bridge, and controller. In 0.9.0, Open WebUI Knowledge Bases can become immutable continual-pretraining libraries. Smoke cycles qualify mechanics and remain inactive; standard cycles use held-out likelihood and strict behavior gates before updating only `library/<slug>`. Corrective SFT and KTO remain follow-up pipelines. The Hermes dashboard stores only a password hash, and root can rotate its password with a one-time response.
+
+See [Library training](docs/library-training.md) for supported documents, collection-size guidance, and the smoke/standard qualification flow.
 
 Hermes 0.18.2 is built from its official wheel pinned by SHA-256 because that release has no official container image. Open WebUI 0.11.0 is pinned by digest. In local single-user mode it is available only at `https://chat.treeai.localhost`, with the existing TreeAI CA and no login form. It connects through the private experience proxy rather than raw vLLM.
 

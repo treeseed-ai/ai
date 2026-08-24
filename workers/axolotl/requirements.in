@@ -1,2 +1,4 @@
-accelerate==1.10.0
-axolotl==0.12.2
+accelerate==1.13.0
+axolotl==0.18.0
+boto3==1.40.21
+torchvision==0.26.0

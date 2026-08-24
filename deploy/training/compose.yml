@@ -16,7 +16,7 @@ services:
     build: { context: ../.., dockerfile: containers/training/api.Dockerfile }
     restart: unless-stopped
     depends_on: { migrations: { condition: service_completed_successfully } }
-    environment: { DATABASE_URL: "${DATABASE_URL:-postgresql://training:training@postgres:5432/training}", AI_API_KEYS: "${AI_API_KEYS:?AI_API_KEYS is required}", CONTROL_HOST: 0.0.0.0 }
+    environment: { <<: *s3-environment, DATABASE_URL: "${DATABASE_URL:-postgresql://training:training@postgres:5432/training}", S3_ENDPOINT: "${S3_ENDPOINT:-}", S3_ACCESS_KEY: "${S3_ACCESS_KEY:-}", S3_SECRET_KEY: "${S3_SECRET_KEY:-}", AI_API_KEYS: "${AI_API_KEYS:?AI_API_KEYS is required}", CONTROL_HOST: 0.0.0.0 }
     ports: ["${CONTROL_BIND:-127.0.0.1}:4780:4780"]
   manager:
     image: ${TRAINING_MANAGER_IMAGE:?TRAINING_MANAGER_IMAGE is required}
@@ -28,16 +28,16 @@ services:
     image: ${MARKER_WORKER_IMAGE:?MARKER_WORKER_IMAGE is required}
     build: { context: ../.., dockerfile: containers/training/marker.Dockerfile }
     restart: unless-stopped
-    environment: *s3-environment
-    volumes: ["${DOCUMENT_INPUTS:-training-inputs}:/inputs:ro", "training-artifacts:/artifacts"]
+    environment: { <<: *s3-environment, HF_HOME: /models/huggingface, XDG_CACHE_HOME: /models/cache, TORCH_HOME: /models/torch, FONT_DIR: /models/cache/fonts, FONT_PATH: /models/cache/fonts/GoNotoCurrent-Regular.ttf }
+    volumes: ["training-artifacts:/artifacts", "training-models:/models"]
     deploy: { resources: { reservations: { devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }] } } }
-    healthcheck: &worker-health { test: ["CMD","python","-c","import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/healthz')"], interval: 10s, timeout: 3s, retries: 10 }
+    healthcheck: &worker-health { test: ["CMD","python3","-c","import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/healthz')"], interval: 10s, timeout: 3s, retries: 10 }
   axolotl:
     image: ${AXOLOTL_WORKER_IMAGE:?AXOLOTL_WORKER_IMAGE is required}
     build: { context: ../.., dockerfile: containers/training/axolotl.Dockerfile }
     restart: unless-stopped
     volumes: ["training-artifacts:/artifacts", "training-models:/models"]
-    environment: { <<: *s3-environment, HF_HOME: /models }
+    environment: { <<: *s3-environment, HF_HOME: /models/huggingface, XDG_CACHE_HOME: /models/cache, TORCH_HOME: /models/torch, TRITON_CACHE_DIR: /models/triton }
     deploy: { resources: { reservations: { devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }] } } }
     healthcheck: *worker-health
   artifact:
@@ -66,8 +66,8 @@ services:
     profiles: [state]
     depends_on: { minio: { condition: service_healthy } }
     entrypoint: ["/bin/sh", "-c"]
-    command: ["mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD && mc mb --ignore-existing local/$$S3_BUCKET && printf '{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"s3:*\"],\"Resource\":[\"arn:aws:s3:::%s\",\"arn:aws:s3:::%s/*\"]}]}' $$S3_BUCKET $$S3_BUCKET > /tmp/product-policy.json && (mc admin user info local $$S3_ACCESS_KEY >/dev/null 2>&1 || mc admin user add local $$S3_ACCESS_KEY $$S3_SECRET_KEY) && (mc admin policy info local product-policy >/dev/null 2>&1 || mc admin policy create local product-policy /tmp/product-policy.json) && mc admin policy attach local product-policy --user $$S3_ACCESS_KEY"]
-    environment: { MINIO_ROOT_USER: "${MINIO_ROOT_USER:-training-root}", MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-training-root-development}", S3_ACCESS_KEY: "${S3_ACCESS_KEY:-training}", S3_SECRET_KEY: "${S3_SECRET_KEY:-training-development}", S3_BUCKET: "${S3_BUCKET:-ai-training}" }
+    command: ["mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD && mc mb --ignore-existing local/$$S3_BUCKET && printf '{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"s3:*\"],\"Resource\":[\"arn:aws:s3:::%s\",\"arn:aws:s3:::%s/*\"]}]}' $$S3_BUCKET $$S3_BUCKET > /tmp/product-policy.json && printf '{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"s3:GetBucketLocation\",\"s3:ListBucket\"],\"Resource\":[\"arn:aws:s3:::%s\"]},{\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\"],\"Resource\":[\"arn:aws:s3:::%s/*\"]}]}' $$S3_BUCKET $$S3_BUCKET > /tmp/import-policy.json && mc admin user add local $$S3_ACCESS_KEY $$S3_SECRET_KEY && (mc admin policy info local product-policy >/dev/null 2>&1 || mc admin policy create local product-policy /tmp/product-policy.json) && mc admin policy attach local product-policy --user $$S3_ACCESS_KEY && mc admin user add local $$IMPORT_S3_ACCESS_KEY $$IMPORT_S3_SECRET_KEY && (mc admin policy info local inference-import-policy >/dev/null 2>&1 || mc admin policy create local inference-import-policy /tmp/import-policy.json) && mc admin policy attach local inference-import-policy --user $$IMPORT_S3_ACCESS_KEY && mc alias set product-check http://minio:9000 $$S3_ACCESS_KEY $$S3_SECRET_KEY && mc alias set import-check http://minio:9000 $$IMPORT_S3_ACCESS_KEY $$IMPORT_S3_SECRET_KEY && attempt=0 && while ! mc ls product-check/$$S3_BUCKET >/dev/null 2>&1 || ! mc ls import-check/$$S3_BUCKET >/dev/null 2>&1; do attempt=$$((attempt + 1)); [ \"$$attempt\" -lt 30 ] || exit 1; sleep 1; done"]
+    environment: { MINIO_ROOT_USER: "${MINIO_ROOT_USER:-training-root}", MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-training-root-development}", S3_ACCESS_KEY: "${S3_ACCESS_KEY:-training}", S3_SECRET_KEY: "${S3_SECRET_KEY:-training-development}", S3_BUCKET: "${S3_BUCKET:-ai-training}", IMPORT_S3_ACCESS_KEY: "${IMPORT_S3_ACCESS_KEY:-inference-import}", IMPORT_S3_SECRET_KEY: "${IMPORT_S3_SECRET_KEY:-inference-import-development}" }
     restart: "no"
 secrets: { artifact-signing-key: { file: "${SIGNING_KEY_FILE:-./secrets/artifact-signing-key.pem}" } }
-volumes: { training-inputs: {}, training-artifacts: {}, training-archive: {}, training-models: {}, training-postgres: {}, training-objects: {} }
+volumes: { training-artifacts: {}, training-archive: {}, training-models: {}, training-postgres: {}, training-objects: {} }

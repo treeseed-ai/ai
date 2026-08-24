@@ -6,12 +6,10 @@ import { hashApiKey, validatePlatformConfiguration } from "@ai-platform/common";
 import { readCatalog } from "../core/catalog.js";
 import { localImageReadiness } from "./local-build.js";
 import { event, setSetting, setting } from "../core/store.js";
-import { paths } from "../core/paths.js";
-import { hashHermesPassword } from "./hermes/password.js";
-import { ensurePlatformTls } from "./certificates/tls.js";
-import { imageVariables } from "../core/image-variables.js";
+import { paths } from "../core/paths.js";import { hashHermesPassword } from "./hermes/password.js";
+import { ensurePlatformTls } from "./certificates/tls.js";import { activateManagerCertificate } from "./certificates/activation.js";import { imageVariables } from "../core/image-variables.js";
 import { summarizeComposeStatus, type ProductStatus } from "./status.js";
-import { reconcileLabEdge } from "./lab/edge.js";
+import { reconcileLabEdge } from "./lab/edge.js";import { migrationDiagnostics } from "./migrations/diagnostics.js";
 const products = {
 	inference: {
 		compose: "/usr/lib/treeseed-ai/inference/compose.yml",
@@ -25,22 +23,21 @@ const products = {
 	},
 } as const,
 	bases = {
-	inference: ["postgres", "minio", "minio-init", "migrations", "evaluator", "manager", "api"],
-	training: ["postgres", "minio", "minio-init", "migrations", "artifact", "manager", "api"],
+		inference: ["postgres", "minio", "migrations", "evaluator", "manager", "api"],
+		training: ["postgres", "minio", "migrations", "artifact", "manager", "api"],
 } as const;
 function command(file: string, args: string[]) {
-	const result = spawnSync(file, args, { encoding: "utf8", timeout: 900_000 });
-	if (result.status !== 0) throw new Error(`${file} failed: ${(result.stderr || result.stdout).trim()}`);
+	const result = spawnSync(file, args, { encoding: "utf8", timeout: 900_000 }); if (result.status !== 0) throw new Error(`${file} failed: ${(result.stderr || result.stdout).trim()}`);
 	return result.stdout.trim();
 }
 function atomic(path: string, value: string, mode = 0o600) {
-	mkdirSync(dirname(path), { recursive: true, mode: 0o750 });
+	mkdirSync(dirname(path), { recursive: true, mode: 0o750 });if(existsSync(path)&&readFileSync(path,"utf8")===value){chmodSync(path,mode);return;}
 	const next = `${path}.new`;
 	writeFileSync(next, value, { mode });
 	renameSync(next, path);
 	chmodSync(path, mode);
 }
-function secret(bytes = 32) { return randomBytes(bytes).toString("hex"); }
+function mounted(path:string,value:string,mode=0o640){mkdirSync(dirname(path),{recursive:true,mode:0o750});if(existsSync(path))writeFileSync(path,value,{mode});else atomic(path,value,mode);chmodSync(path,mode);}function secret(bytes = 32) { return randomBytes(bytes).toString("hex"); }
 function credential(id: string, scopes: string[]) {
 	const value = randomBytes(32).toString("base64url");
 	return {
@@ -78,6 +75,7 @@ function environment(path: string, values: Record<string, string>, group: string
 	} catch {}
 }
 function compose(product: keyof typeof products, args: string[]) { const item = products[product]; return command("docker", ["compose", "-p", `treeseed-ai-${product}`, "--env-file", item.environment, "-f", item.compose, "-f", item.overlay, ...args]); }
+function reconcileProduct(product:keyof typeof products,args:string[]){try{return compose(product,args);}catch(error){const diagnostics=migrationDiagnostics(product,products[product]),message=error instanceof Error?error.message:String(error);throw new Error(diagnostics?`${message}\nMigration diagnostics:\n${diagnostics}`:message);}}function reconcileObjectStore(product:keyof typeof products){reconcileProduct(product,["up","-d","--wait","--wait-timeout","600","minio"]);reconcileProduct(product,["run","--rm","--no-deps","minio-init"]);}
 export function ensureManagedRuntime() {
 	const config = JSON.parse(readFileSync(paths.configuration, "utf8")) as {
 		runtime: { management: string };
@@ -156,13 +154,12 @@ function ensureSigningMaterial() {
 		command("openssl", ["pkey", "-in", privateKey, "-pubout", "-out", publicKey]);
 		chmodSync(privateKey, 0o600);
 		chmodSync(publicKey, 0o644);
-	}
+	}if(enabledProducts().has("training")){chmodSync(privateKey,0o640);chmodSync(publicKey,0o644);command("chown",["root:treeseed-ai-training",privateKey]);}
 	return { root, privateKey, publicKey };
 }
 function ensureServiceCredentials(root: string) {
 	const path = `${root}/service-api-credentials.json`;
-	if (existsSync(path))
-		return JSON.parse(readFileSync(path, "utf8")) as Record<
+	const existing=existsSync(path)?JSON.parse(readFileSync(path,"utf8"))as Record<
 			string,
 			{
 				plain: string;
@@ -173,11 +170,13 @@ function ensureServiceCredentials(root: string) {
 					revoked: boolean;
 				};
 			}
-		>;
+		>:{};
 	const values = {
-		factory: credential("lab-factory", ["platform:read", "platform:mode"]),
-		inference: credential("lab-inference", ["*"]),
-		training: credential("lab-training", ["*"]),
+		factory: existing.factory??credential("lab-factory", ["platform:read", "platform:mode"]),
+		inference: existing.inference??credential("lab-inference", ["*"]),
+		training: existing.training??credential("lab-training", ["*"]),
+		libraryIngest:existing.libraryIngest??credential('lab-library-ingest',['libraries:read','libraries:write','libraries:train']),
+		libraryAction:existing.libraryAction??credential('lab-library-action',['lab:read','lab:write']),
 	};
 	atomic(path, JSON.stringify(values), 0o600);
 	return values;
@@ -206,20 +205,20 @@ function ensureProductConfiguration() {
 			trainingMinio: (migrated && training.MINIO_ROOT_PASSWORD) || secret(),
 			artifactToken: existsSync(`${signing.root}/artifact-import-token`) ? readFileSync(`${signing.root}/artifact-import-token`, "utf8").trim() : secret(),
 		};
-		atomic(secretsPath, JSON.stringify(stored), 0o600);
 	}
+	stored.trainingImportS3??=secret();atomic(secretsPath, JSON.stringify(stored), 0o600);
 	const operator = JSON.parse(readFileSync("/etc/treeseed-ai/treeai/operator-record.json", "utf8")) as unknown,
 		common = (product: "inference" | "training") => ({
 			COMPOSE_PROFILES: "state",
-			AI_API_KEYS: `'${JSON.stringify([operator, service[product]!.record])}'`,
+			AI_API_KEYS: `'${JSON.stringify([operator, service[product]!.record,...product==='training'?[service.libraryIngest!.record]:[]])}'`,
 			DATABASE_URL: `postgresql://${product}:${stored[`${product}Db`]}@postgres:5432/${product}`,
 			POSTGRES_PASSWORD: stored[`${product}Db`]!,
 			S3_ENDPOINT: "http://minio:9000",
 			S3_BUCKET: `ai-${product}`,
-			S3_ACCESS_KEY: product,
-			S3_SECRET_KEY: stored[`${product}S3`]!,
+			S3_ACCESS_KEY: product,S3_SECRET_KEY: stored[`${product}S3`]!,
 			MINIO_ROOT_USER: `${product}-root`,
 			MINIO_ROOT_PASSWORD: stored[`${product}Minio`]!,
+			...(product==="training"?{IMPORT_S3_ACCESS_KEY:"inference-import",IMPORT_S3_SECRET_KEY:stored.trainingImportS3}:{}),
 		});
 	atomic(paths.apiKeys, `${JSON.stringify([operator, service.factory!.record], null, 2)}\n`, 0o640);
 	try {
@@ -252,16 +251,16 @@ function ensureProductConfiguration() {
 			"treeseed-ai-training",
 		);
 	if (enabled.has("inference") && enabled.has("training")) {
-		atomic(`${signing.root}/artifact-import-token`, stored.artifactToken!);
+		mounted(`${signing.root}/artifact-import-token`, stored.artifactToken!);
 		const source = {
 			sourceId: "training-local",
 			endpoint: "http://training-minio:9000",
 			bucket: "ai-training",
-			accessKeyId: "training",
-			secretAccessKey: stored.trainingS3,
+			accessKeyId: "inference-import",
+			secretAccessKey: stored.trainingImportS3,
 			trustedPublicKey: readFileSync(signing.publicKey, "utf8"),
 		};
-		atomic(`${signing.root}/training-local-source.json`, `${JSON.stringify(source, null, 2)}\n`);
+		mounted(`${signing.root}/training-local-source.json`, `${JSON.stringify(source, null, 2)}\n`);for(const path of[`${signing.root}/artifact-import-token`,`${signing.root}/training-local-source.json`]){chmodSync(path,0o640);command("chown",["root:treeseed-ai-inference",path]);}
 	}
 }
 function ensureLabConfiguration() {
@@ -285,6 +284,8 @@ function ensureLabConfiguration() {
 		["factory-control-key", service.factory!.plain],
 		["factory-inference-key", service.inference!.plain],
 		["factory-training-key", service.training!.plain],
+		['training-ingest-key',service.libraryIngest!.plain],
+		['lab-library-action-key',service.libraryAction!.plain],
 	] as const)
 		atomic(`${secrets}/${name}`, `${value}\n`);
 	if (existsSync(`${factory}/training-local-source.json`)) copyFileSync(`${factory}/training-local-source.json`, `${root}/training-source.json`);
@@ -300,13 +301,13 @@ function ensureLabConfiguration() {
 		rmSync(passwordPath);
 		event("lab.hermes.plaintext-password-removed", {});
 	}
-	for (const name of ["factory-control-key", "factory-inference-key", "factory-training-key", "hermes-password-hash", "hermes-session-secret", "hermes-api-key"])
+	for (const name of ["factory-control-key", "factory-inference-key", "factory-training-key",'training-ingest-key','lab-library-action-key', "hermes-password-hash", "hermes-session-secret", "hermes-api-key"])
 		secureLabSecret(`${secrets}/${name}`);
 	if (existsSync(`${root}/training-source.json`)) secureLabSecret(`${root}/training-source.json`);
 	environment(
 		`${root}/environment`,
 		{
-			AI_LAB_API_KEYS: `'${JSON.stringify([operator])}'`,
+			AI_LAB_API_KEYS: `'${JSON.stringify([operator,service.libraryAction!.record])}'`,
 			FACTORY_URL: "https://host.docker.internal:4790",
 			TRAINING_URL: "http://training-api:4780",
 			INFERENCE_CONTROL_URL: "http://inference-api:4770",
@@ -316,6 +317,7 @@ function ensureLabConfiguration() {
 			HERMES_MODEL_CONTEXT_LENGTH: "16384",
 			LAB_CONTROLLER_IMAGE: image("lab-controller"),
 			LAB_PROXY_IMAGE: image("lab-experience-proxy"),
+			LAB_LIBRARY_BRIDGE_IMAGE:image('lab-library-bridge'),
 			LAB_WEB_TOOL_IMAGE: image("lab-web-tool-proxy"),
 			HERMES_IMAGE: image("hermes-agent"),
 			OPEN_WEBUI_IMAGE: runtimeImage("open-webui"),
@@ -358,9 +360,7 @@ function active(path: string) {
 			activeGpuJobs?: number;
 		};
 		return Number(value.active ?? value.activeGpuJobs ?? 0);
-	} catch {
-		return 0;
-	}
+		} catch { return 0; }
 }
 async function waitIdle(path: string, seconds: number) {
 	for (let elapsed = 0; elapsed < seconds; elapsed++) {
@@ -426,30 +426,31 @@ export async function reconcilePlatform() {
 	const mode = setting<string>("mode", "awake"),
 		enabled = enabledProducts();
 	if (!existsSync(paths.mode)) writeMode(mode);
+	if(configuration.state.objectStorage==="bundled")for(const product of["inference","training"]as const)if(enabled.has(product))reconcileObjectStore(product);
 	if (mode === "awake") {
 		if (enabled.has("training")) {
 			compose("training", ["stop", "marker", "axolotl"]);
-			compose("training", ["up", "-d", "--wait", "--wait-timeout", "600", ...bases.training]);
+			reconcileProduct("training", ["up", "-d", "--wait", "--wait-timeout", "600", ...bases.training]);
 		}
 		if (enabled.has("inference")) {
-			compose("inference", ["up", "-d", "--wait", "--wait-timeout", "900", ...bases.inference, "vllm"]);
+			reconcileProduct("inference", ["up", "-d", "--wait", "--wait-timeout", "900", ...bases.inference, "vllm"]);
 			warmInference();
 		}
 	} else if (mode === "sleep") {
 		if (enabled.has("inference")) {
 			compose("inference", ["stop", "vllm"]);
-			compose("inference", ["up", "-d", "--wait", "--wait-timeout", "600", ...bases.inference]);
+			reconcileProduct("inference", ["up", "-d", "--wait", "--wait-timeout", "600", ...bases.inference]);
 		}
-		if (enabled.has("training")) compose("training", ["up", "-d", "--wait", "--wait-timeout", "900", ...bases.training, "marker", "axolotl"]);
+		if (enabled.has("training")) reconcileProduct("training", ["up", "-d", "--wait", "--wait-timeout", "900", ...bases.training, "marker", "axolotl"]);
 	} else throw new Error(`Unsafe persisted mode ${mode}; manual recovery is required.`);
 	if (enabled.has("inference") || enabled.has("training")) gateway(["up", "-d", "--wait"]);
 	try {
 		if (enabled.has("lab")) reconcileLabEdge(lab, command, event);
-		certificate.commit();
 	} catch (error) {
 		certificate.rollback();
 		throw error;
 	}
+	activateManagerCertificate(certificate, command);
 	const services = serviceStatus();
 	setSetting("components", services);
 	event("components.reconciled", { mode });
@@ -457,8 +458,7 @@ export async function reconcilePlatform() {
 }
 export async function transitionMode(target: unknown, drain: { inferenceSeconds: number; trainingSeconds: number }) {
 	if (target !== "awake" && target !== "sleep") throw new Error("Mode must be awake or sleep.");
-	const current = setting<string>("mode", "awake"),
-		enabled = enabledProducts();
+	const configuration=validatePlatformConfiguration(JSON.parse(readFileSync(paths.configuration,"utf8"))),current=setting<string>("mode","awake"),enabled=enabledProducts();
 	if (current === target) return { mode: target, changed: false };
 	writeMode(target === "awake" ? "transitioning_awake" : "transitioning_sleep");
 	let lifecycleChanged = false;
@@ -487,6 +487,7 @@ export async function transitionMode(target: unknown, drain: { inferenceSeconds:
 				warmInference();
 			}
 		}
+		if(configuration.state.objectStorage==="bundled")for(const product of["inference","training"]as const)if(enabled.has(product))reconcileObjectStore(product);
 		writeMode(target);
 		event("mode.changed", { from: current, to: target });
 		return { mode: target, changed: true };
