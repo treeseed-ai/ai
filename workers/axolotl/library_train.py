@@ -15,6 +15,8 @@ def safe_diagnostic(value,limit=2000):
 def run_axolotl(config_path,timeout):
     command=["accelerate","launch","-m","axolotl.cli.train",str(config_path)]
     return subprocess.run(command,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=timeout)
+def fixed_steps(config,steps,save_steps):
+    config.pop("num_epochs",None);config.update({"max_steps":steps,"save_steps":save_steps});return config
 
 def client():return boto3.client("s3",endpoint_url=os.environ["AWS_ENDPOINT_URL"],region_name=os.getenv("AWS_REGION","us-east-1"),aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"])
 def key(uri):
@@ -34,7 +36,7 @@ def train(job):
         existing=json.loads(result.read_text());return{"resultManifest":f"file://{result}","configurationDigest":existing["configDigest"]}
     dataset=root/"train.jsonl";dataset.write_bytes(client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(value["trainUri"]))["Body"].read())
     target=root/"adapter";config=fixed_config(value,dataset,target)
-    if value["mode"]=="smoke":config.update({"max_steps":16,"num_epochs":None,"save_steps":8})
+    if value["mode"]=="smoke":fixed_steps(config,16,8)
     config_path=root/"axolotl.json";config_path.write_text(json.dumps(config,sort_keys=True,separators=(",",":")))
     execution=run_axolotl(config_path,int(os.getenv("TRAIN_TIMEOUT","86400")))
     if execution.returncode:raise RuntimeError(f"Axolotl training exited {execution.returncode}: {safe_diagnostic(execution.stdout,12000) or 'no diagnostic output'}")
@@ -45,7 +47,7 @@ def qualify(job):
     if not dataset.exists():dataset.write_bytes(client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(value["trainUri"]))["Body"].read())
     failures=[]
     for sequence in [4096,3072,2048,1024]:
-        target=root/f"seq-{sequence}";config=fixed_config({"sequenceLength":sequence},dataset,target);config.update({"max_steps":1,"num_epochs":None,"save_steps":1});config_path=root/f"seq-{sequence}.json";config_path.write_text(json.dumps(config,sort_keys=True,separators=(",",":")))
+        target=root/f"seq-{sequence}";config=fixed_steps(fixed_config({"sequenceLength":sequence},dataset,target),1,1);config_path=root/f"seq-{sequence}.json";config_path.write_text(json.dumps(config,sort_keys=True,separators=(",",":")))
         try:
             execution=run_axolotl(config_path,int(os.getenv("QUALIFY_TIMEOUT","3600")))
             if execution.returncode==0:shutil.rmtree(target,ignore_errors=True);return{"resultManifest":f"profile://{sequence}","sequenceLength":sequence,"fingerprint":fingerprint,"diagnostics":{"failed":failures}}
