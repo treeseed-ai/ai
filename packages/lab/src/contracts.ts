@@ -47,3 +47,14 @@ export interface AdapterLineageV1 {
 	baseModelRevision: string; targetModules: string[]; rank: number; alpha: number;
 	parentAdapterIds: string[]; datasetManifestIds: string[]; createdAt: string;
 }
+export interface AgentProfileV1 {
+	schemaVersion: "ai.agent-profile/v1"; id: string; slug: string; displayName: string; description: string; icon?: string;
+	status: "draft" | "enabled" | "disabled"; modelAlias: string; adapterArtifactId?: string; baseModelRevision: string;
+	systemInstructions: string; allowedTools: string[]; memoryPolicy: "session" | "none"; contextPolicy: string;
+	lineage: string[]; evaluations: string[]; createdAt: string; updatedAt: string;
+}
+export interface AgentRoutingDecisionV1 {
+	schemaVersion: "ai.agent-routing-decision/v1"; id: string; conversationId?: string; segmentId: string; requestedModel: string;
+	candidates: string[]; selectedProfileId: string; selectedModelAlias: string; confidence: number; rationale: string;
+	priorSegmentId?: string; structuredStateDigest?: string; createdAt: string;
+}
