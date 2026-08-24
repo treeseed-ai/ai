@@ -23,7 +23,7 @@ services:
       S3_ACCESS_KEY: "${S3_ACCESS_KEY:-inference}"
       S3_SECRET_KEY: "${S3_SECRET_KEY:-inference-development}"
       S3_BUCKET: "${S3_BUCKET:-ai-inference}"
-      TREEAI_SECRET_MOUNT_GENERATION: "1"
+      TREEAI_SECRET_MOUNT_GENERATION: "2"
   manager:
     group_add: ["${RUNTIME_GID:?RUNTIME_GID is required}"]
     depends_on: !override
@@ -32,7 +32,7 @@ services:
       minio-init: { condition: service_completed_successfully }
     volumes: ["/var/lib/treeseed-ai/platform:/factory:ro"]
     secrets: [artifact-import-token]
-    environment: { AI_FACTORY_MODE_FILE: /factory/mode.json, ARTIFACT_IMPORT_URL: "http://api:4770/internal/artifacts/import", ARTIFACT_IMPORT_TOKEN_FILE: /run/secrets/artifact-import-token, TREEAI_SECRET_MOUNT_GENERATION: "1" }
+    environment: { AI_FACTORY_MODE_FILE: /factory/mode.json, ARTIFACT_IMPORT_URL: "http://api:4770/internal/artifacts/import", ARTIFACT_IMPORT_TOKEN_FILE: /run/secrets/artifact-import-token, TREEAI_SECRET_MOUNT_GENERATION: "2" }
   vllm:
     restart: "no"
     command: ["--model","${SOURCE_MODEL:-Qwen/Qwen3.5-4B}","--revision","${SOURCE_MODEL_REVISION:-851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a}","--served-model-name","${SOURCE_MODEL:-Qwen/Qwen3.5-4B}","--max-model-len","${MAX_MODEL_LENGTH:-65536}","--max-num-seqs","2","--gpu-memory-utilization","${GPU_MEMORY_UTILIZATION:-0.85}","--enable-lora","--enable-auto-tool-choice","--tool-call-parser","qwen3_coder","--reasoning-parser","qwen3","--language-model-only"]
