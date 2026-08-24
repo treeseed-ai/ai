@@ -101,7 +101,7 @@ describe('local factory contracts', () => {
     expect(markerInput).toContain('torch==2.7.1');
     expect(markerLock).toContain('torch==2.7.1');
     expect(markerLock).not.toContain('cuda-toolkit==13.0.4.0');
-    expect(readFileSync('workers/axolotl/requirements.lock', 'utf8')).toContain('accelerate==1.10.0');
+    expect(readFileSync('workers/axolotl/requirements.lock', 'utf8')).toContain('accelerate==1.13.0');
   });
   it('uses read-only worker syntax probes and retains smoke-test diagnostics', () => {
     const build = readFileSync('packages/host-runtime/src/factory/build.ts', 'utf8');
