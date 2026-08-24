@@ -7,7 +7,7 @@ const checks:Record<string,string[]>= {
   'inference-api':['node','--check','/app/packages/inference-api/dist/main.js'],'inference-manager':['node','--check','/app/packages/inference-manager/dist/main.js'],
   'training-api':['node','--check','/app/packages/training-api/dist/main.js'],'training-manager':['node','--check','/app/packages/training-manager/dist/main.js'],
   'inference-evaluator':['python','-c',"import ast,pathlib; ast.parse(pathlib.Path('/app/evaluator/worker.py').read_text())"],'artifact-worker':['python','-c',"import ast,pathlib; ast.parse(pathlib.Path('/app/artifact/worker.py').read_text())"],
-  'marker-worker':['python3','-c','import marker; import boto3'],'axolotl-worker':['python3','-c',"import axolotl, accelerate; from transformers.models.qwen3_5 import Qwen3_5Config; assert Qwen3_5Config.model_type == 'qwen3_5'"],
+  'marker-worker':['python3','-c','import marker; import boto3'],'axolotl-worker':['python3','-c',"import axolotl, accelerate, torchvision; from transformers.models.qwen3_5 import Qwen3_5Config; assert Qwen3_5Config.model_type == 'qwen3_5'"],
   'inference-vllm':['python3','-c','import vllm'],'inference-migrations':['sh','-c','test -s /migrations/001_initial.sql'],'training-migrations':['sh','-c','test -s /migrations/001_initial.sql'],
 };
 const healthWorkers=new Set(['inference-evaluator','artifact-worker','marker-worker','axolotl-worker']);
