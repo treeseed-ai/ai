@@ -21,7 +21,8 @@ import {
 } from "../core/store.js";
 import { updateStatus } from "../lifecycle/update.js";
 import { normalizeStoredComponents } from "../lifecycle/status.js";
-const VERSION = "0.9.0";
+import { campaign, campaigns, profiles, qualificationStatus } from "../lifecycle/qualification/index.js";
+const VERSION = "0.10.0";
 function keys(): ApiKeyRecord[] {
 	try {
 		return JSON.parse(readFileSync(paths.apiKeys, "utf8")) as ApiKeyRecord[];
@@ -47,6 +48,11 @@ function openapi() {
 			"/v1/status": { get: secured },
 			"/v1/components": { get: secured },
 			"/v1/diagnostics/hermes": { get: secured },
+			"/v1/qualification/profile": { get: secured },
+			"/v1/qualification/profiles": { get: secured },
+			"/v1/qualification/campaigns": { get: secured, post: secured },
+			"/v1/qualification/campaigns/{id}": { get: secured },
+			"/v1/qualification/campaigns/{id}/cancel": { post: secured },
 			"/v1/mode": { get: secured, post: secured },
 			"/v1/transitions/{id}": { get: secured },
 			"/v1/updates": { get: secured },
@@ -78,7 +84,7 @@ function components() {
 	return [...manager, ...normalizeStoredComponents(products)];
 }
 function queue(
-	kind: "transition" | "update-check" | "update-plan" | "reconcile",
+	kind: "transition" | "update-check" | "update-plan" | "reconcile" | "qualification",
 	operation: SupervisorOperation,
 	request: unknown,
 	idempotencyKey: string,
@@ -143,6 +149,12 @@ export function createManagerApp() {
 			}),
 		),
 	);
+	app.get("/v1/qualification/profile", requireScope("platform:read"), (c) => c.json(qualificationStatus()));
+	app.get("/v1/qualification/profiles", requireScope("platform:read"), (c) => c.json({ items: profiles() }));
+	app.get("/v1/qualification/campaigns", requireScope("platform:read"), (c) => c.json({ items: campaigns() }));
+	app.get("/v1/qualification/campaigns/:id", requireScope("platform:read"), (c) => { const value = campaign(c.req.param("id")); return value ? c.json(value) : c.json({ error: { code: "not_found", message: "Qualification campaign not found." } }, 404); });
+	app.post("/v1/qualification/campaigns", requireScope("platform:reconcile"), async (c) => { const body = await c.req.json().catch(() => ({})) as { preset?: string; idempotencyKey?: string }, key = body.idempotencyKey ?? c.req.header("idempotency-key"); if (!key || !["baseline", "balanced"].includes(body.preset ?? "")) return c.json({ error: { code: "invalid_request", message: "preset and idempotencyKey are required." } }, 400); return c.json(queue("qualification", body.preset === "baseline" ? "qualification.baseline" : "qualification.run", { preset: body.preset }, key), 202); });
+	app.post("/v1/qualification/campaigns/:id/cancel", requireScope("platform:reconcile"), async (c) => { const body = await c.req.json().catch(() => ({})) as { idempotencyKey?: string }, key = body.idempotencyKey ?? c.req.header("idempotency-key"); if (!key) return c.json({ error: { code: "idempotency_required", message: "An idempotency key is required." } }, 400); return c.json(await callSupervisor({ operation: "qualification.cancel", parameters: { id: c.req.param("id") }, idempotencyKey: key })); });
 	app.get("/v1/mode", requireScope("platform:read"), (c) =>
 		c.json({ mode: setting("mode", "awake") }),
 	);

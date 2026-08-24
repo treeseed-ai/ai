@@ -6,7 +6,8 @@ export type WorkKind =
 	| "transition"
 	| "update-check"
 	| "update-plan"
-	| "reconcile";
+	| "reconcile"
+	| "qualification";
 export interface WorkRecord {
 	id: string;
 	kind: WorkKind;

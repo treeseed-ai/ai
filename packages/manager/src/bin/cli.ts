@@ -49,6 +49,16 @@ async function stream() {
 		child.on("exit", (code) => (code ? reject(new Error(`Event stream exited with ${code}.`)) : resolve()));
 	});
 }
+async function qualify() {
+	if (command === "status") return api("/v1/qualification/profile");
+	if (command === "profiles") return api("/v1/qualification/profiles");
+	if (command === "baseline") return api("/v1/qualification/campaigns", "POST", { preset: "baseline", idempotencyKey: crypto.randomUUID() });
+	if (command === "run") { if (option("--preset") !== "balanced") throw new Error("Only --preset balanced is supported."); return api("/v1/qualification/campaigns", "POST", { preset: "balanced", idempotencyKey: crypto.randomUUID() }); }
+	if (command === "watch") { const id = args.find((item) => !item.startsWith("--")); if (!id) throw new Error("A campaign ID is required."); for (;;) { const value = api(`/v1/qualification/campaigns/${encodeURIComponent(id)}`) as { state?: string }; process.stdout.write(`${JSON.stringify(value)}\n`); if (!["queued", "running"].includes(value.state ?? "")) return value; await new Promise((resolve) => setTimeout(resolve, 2000)); } }
+	if (command === "activate") { const id = args.find((item) => !item.startsWith("--")); if (!id) throw new Error("A profile ID is required."); return local("qualification.activate", { id }); }
+	if (command === "rollback") return local("qualification.rollback");
+	throw new Error("Unknown qualify command.");
+}
 async function platform() {
 	if (command === "status") return api("/v1/status");
 	if (command === "doctor") return api("/readyz");
@@ -91,6 +101,7 @@ async function main() {
 		if (command !== "rotate") throw new Error("Unknown auth command.");
 		result = await local("auth.rotate");
 	} else if (group === "platform") result = await platform();
+	else if (group === "qualify") result = await qualify();
 	else if (group === "update") result = await update();
 	else if (group === "mode") {
 		if (!command) result = api("/v1/mode");

@@ -9,7 +9,7 @@ import { event, setSetting, setting } from "../core/store.js";
 import { paths } from "../core/paths.js";import { hashHermesPassword } from "./hermes/password.js";
 import { ensurePlatformTls } from "./certificates/tls.js";import { activateManagerCertificate } from "./certificates/activation.js";import { imageVariables } from "../core/image-variables.js";
 import { summarizeComposeStatus, type ProductStatus } from "./status.js";
-import { reconcileLabEdge } from "./lab/edge.js";import { migrationDiagnostics } from "./migrations/diagnostics.js";
+import { activeProfile, qualificationStatus, runCampaign } from "./qualification/index.js";import { reconcileLabEdge } from "./lab/edge.js";import { migrationDiagnostics } from "./migrations/diagnostics.js";
 const products = {
 	inference: {
 		compose: "/usr/lib/treeseed-ai/inference/compose.yml",
@@ -208,6 +208,7 @@ function ensureProductConfiguration() {
 	}
 	stored.trainingImportS3??=secret();atomic(secretsPath, JSON.stringify(stored), 0o600);
 	const operator = JSON.parse(readFileSync("/etc/treeseed-ai/treeai/operator-record.json", "utf8")) as unknown,
+		profile = activeProfile(),
 		common = (product: "inference" | "training") => ({
 			COMPOSE_PROFILES: "state",
 			AI_API_KEYS: `'${JSON.stringify([operator, service[product]!.record,...product==='training'?[service.libraryIngest!.record]:[]])}'`,
@@ -234,7 +235,7 @@ function ensureProductConfiguration() {
 				RUNTIME_GID: productGroup("inference"),
 				SOURCE_MODEL: "Qwen/Qwen3.5-4B",
 				SOURCE_MODEL_REVISION: "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
-				MAX_MODEL_LENGTH: "16384",
+				MAX_MODEL_LENGTH: String(profile?.settings.maxModelLength ?? 16384),
 			},
 			"treeseed-ai-inference",
 		);
@@ -314,7 +315,7 @@ function ensureLabConfiguration() {
 			INFERENCE_URL: "http://inference-api:4771",
 			BASE_MODEL: "Qwen/Qwen3.5-4B",
 			BASE_MODEL_REVISION: "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
-			HERMES_MODEL_CONTEXT_LENGTH: "16384",
+			HERMES_MODEL_CONTEXT_LENGTH: String(activeProfile()?.context.contextTokens ?? 16384),HERMES_OUTPUT_RESERVE: String(activeProfile()?.context.outputReserve ?? 2048),
 			LAB_CONTROLLER_IMAGE: image("lab-controller"),
 			LAB_PROXY_IMAGE: image("lab-experience-proxy"),
 			LAB_LIBRARY_BRIDGE_IMAGE:image('lab-library-bridge'),
@@ -376,9 +377,7 @@ function writeMode(mode: string, error?: string) {
 export function persistMode(mode: "awake" | "sleep") {
 	writeMode(mode);
 }
-function gateway(args: string[]) {
-	return command("docker", ["compose", "-p", "treeseed-ai-manager-gateway", "-f", "/usr/lib/treeseed-ai/manager/factory/compose.yml", ...args]);
-}
+function gateway(args: string[]) { return command("docker", ["compose", "-p", "treeseed-ai-manager-gateway", "-f", "/usr/lib/treeseed-ai/manager/factory/compose.yml", ...args]); }
 function warmInference() {
 	command("docker", ["compose", "-p", "treeseed-ai-inference", "--env-file", products.inference.environment, "-f", products.inference.compose, "-f", products.inference.overlay, "exec", "-T", "vllm", "python3", "-c", "import json,urllib.request; b=json.dumps({'model':'Qwen/Qwen3.5-4B','messages':[{'role':'user','content':'Reply ready.'}],'max_tokens':8}).encode(); r=urllib.request.Request('http://127.0.0.1:8000/v1/chat/completions',data=b,headers={'content-type':'application/json'}); urllib.request.urlopen(r,timeout=120).read()"]);
 }
@@ -420,6 +419,7 @@ export async function reconcilePlatform() {
 	ensureRuntime();
 	ensureNetwork();
 	ensureProductConfiguration();
+	if (qualificationStatus().baselineRequired) { runCampaign("baseline"); ensureProductConfiguration(); }
 	ensureLabConfiguration();
 	const configuration = validatePlatformConfiguration(JSON.parse(readFileSync(paths.configuration, "utf8"))),
 		certificate = ensurePlatformTls(configuration);
