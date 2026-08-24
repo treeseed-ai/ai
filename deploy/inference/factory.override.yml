@@ -24,6 +24,7 @@ services:
       S3_SECRET_KEY: "${S3_SECRET_KEY:-inference-development}"
       S3_BUCKET: "${S3_BUCKET:-ai-inference}"
   manager:
+    group_add: ["${RUNTIME_GID:?RUNTIME_GID is required}"]
     depends_on: !override
       migrations: { condition: service_completed_successfully }
       evaluator: { condition: service_healthy }

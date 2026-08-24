@@ -29,6 +29,12 @@ describe('manager-owned platform reconciliation',()=>{
     expect(platform).toContain('chown",["root:treeseed-ai-training",privateKey]');
   });
 
+  it('grants only inference services mounted with import secrets the inference group',()=>{
+    const overlay=readFileSync('deploy/inference/factory.override.yml','utf8'),platform=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8');
+    expect(overlay).toMatch(/manager:\n\s+group_add: \["\$\{RUNTIME_GID/u);
+    expect(platform).toContain('chown",["root:treeseed-ai-inference",path]');
+  });
+
   it('adds bounded redacted migration diagnostics to failed reconciliation',()=>{
     const platform=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8');
     const diagnostics=readFileSync('packages/manager/src/lifecycle/migrations/diagnostics.ts','utf8');
