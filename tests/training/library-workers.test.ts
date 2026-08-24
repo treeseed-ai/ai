@@ -29,7 +29,7 @@ describe('library document workers',()=>{
 		expect(result).toMatchObject({base_model:'Qwen/Qwen3.5-4B',revision:'851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a',adapter:'qlora',load_in_4bit:true,lora_r:16,lora_alpha:32,lora_dropout:0.05,micro_batch_size:1,gradient_accumulation_steps:8,learning_rate:0.0001,weight_decay:0.01,warmup_ratio:0.03,seed:42});
 		expect(result.datasets[0].type).toBe('completion');expect(result.lora_target_modules).toEqual(['q_proj','k_proj','v_proj','o_proj','gate_proj','up_proj','down_proj']);
 	});
-	it('invokes the pinned Marker 1.10.2 CLI without unsupported mode flags',()=>{const worker=readFileSync('workers/marker/worker.py','utf8');expect(worker).toContain('["marker_single",str(source),"--output_dir",str(target),"--output_format","markdown"]');expect(worker).not.toContain('"--mode"');});
+	it('invokes Marker with writable persistent caches and bounded diagnostics',()=>{const worker=readFileSync('workers/marker/worker.py','utf8'),compose=readFileSync('deploy/training/compose.yml','utf8'),dockerfile=readFileSync('containers/training/marker.Dockerfile','utf8');expect(worker).toContain('["marker_single",str(source),"--output_dir",str(target),"--output_format","markdown"]');expect(worker).not.toContain('"--mode"');expect(worker).toContain('[-12000:]');expect(worker).toContain('SECRET.sub("[REDACTED]"');expect(compose).toContain('HF_HOME: /models/huggingface');expect(compose).toContain('["training-artifacts:/artifacts", "training-models:/models"]');expect(dockerfile).toContain('chown -R worker /inputs /artifacts /models');});
 	it('normalizes stored text and produces a completion-pretraining dataset',()=>{
 		const artifact=JSON.stringify(join(process.cwd(),'workers/artifact/library.py')),dataset=JSON.stringify(join(process.cwd(),'workers/axolotl/library.py'));
 		const result=python(`import hashlib,importlib.util,json,os,pathlib,sys,tempfile,types
@@ -81,7 +81,7 @@ with tempfile.TemporaryDirectory() as target:
  os.environ['OUTPUT_DIR']=target
  spec=importlib.util.spec_from_file_location('marker_worker',${marker});module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
  def run(command,**kwargs):
-  output=pathlib.Path(command[command.index('--output_dir')+1]);output.mkdir(parents=True,exist_ok=True);(output/'document.md').write_text('# PDF Knowledge\\nParsed protocol relationships.');return None
+  output=pathlib.Path(command[command.index('--output_dir')+1]);output.mkdir(parents=True,exist_ok=True);(output/'document.md').write_text('# PDF Knowledge\\nParsed protocol relationships.');return types.SimpleNamespace(returncode=0,stdout='')
  module.subprocess.run=run
  value=module.process({'jobId':'marker-1','input':{'objectUri':f's3://training/library-source/{digest}','sha256':digest,'filename':'protocol.pdf','declaredMimeType':'application/pdf','detectedMimeType':'application/pdf'}})
  manifest=json.loads(objects['documents/marker-1/manifest.json'])

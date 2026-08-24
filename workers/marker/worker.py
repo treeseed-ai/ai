@@ -7,6 +7,12 @@ from common.server import serve
 
 OUTPUT=Path(os.getenv("OUTPUT_DIR","/artifacts/documents"));OUTPUT.mkdir(parents=True,exist_ok=True)
 SECRET=re.compile(r"(?im)(-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|ak_[a-z0-9-]+_[a-z0-9_-]{16,}|(?:api[_-]?key|password|secret|access[_-]?token)\s*[:=]\s*[^\s]{12,})")
+def run_marker(source,target):
+    command=["marker_single",str(source),"--output_dir",str(target),"--output_format","markdown"]
+    result=subprocess.run(command,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=int(os.getenv("MARKER_TIMEOUT","3600")))
+    if result.returncode:
+        detail=SECRET.sub("[REDACTED]",result.stdout or "")[-12000:].strip()
+        raise RuntimeError(f"marker_single exited {result.returncode}: {detail or 'no diagnostic output'}")
 def client():return boto3.client("s3",endpoint_url=os.environ["AWS_ENDPOINT_URL"],region_name=os.getenv("AWS_REGION","us-east-1"),aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"])
 def object_key(uri):
     prefix=f"s3://{os.environ['S3_BUCKET']}/"
@@ -28,7 +34,7 @@ def process(job):
         return{"state":"ready","resultManifest":upload_bundle(target,job["jobId"]),"tokenCount":max(1,len(existing)//4)}
     with tempfile.TemporaryDirectory(prefix="treeai-marker-") as temporary:
         source=Path(temporary)/filename;source.write_bytes(data)
-        subprocess.run(["marker_single",str(source),"--output_dir",str(target),"--output_format","markdown"],check=True,timeout=int(os.getenv("MARKER_TIMEOUT","3600")))
+        run_marker(source,target)
     markdown_files=sorted(target.rglob("*.md"));text="\n".join(item.read_text(errors="replace") for item in markdown_files)
     if not text.strip():return{"state":"quarantined","diagnostics":{"code":"empty_document"}}
     if SECRET.search(text):return{"state":"quarantined","diagnostics":{"code":"suspected_secret"}}
