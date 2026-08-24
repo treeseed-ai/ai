@@ -1,0 +1,42 @@
+import {execFileSync} from 'node:child_process';
+import {join} from 'node:path';
+import {describe,expect,it} from 'vitest';
+
+function python(source:string){return JSON.parse(execFileSync('python3',['-c',source],{cwd:process.cwd(),encoding:'utf8'}));}
+
+describe('multimodal library processing',()=>{
+	it('retains only checksum-bound source-authored image evidence',()=>{
+		const worker=JSON.stringify(join(process.cwd(),'workers/marker/worker.py'));
+		const result=python(`import importlib.util,json,os,pathlib,sys,tempfile,types
+os.environ['OUTPUT_DIR']=tempfile.mkdtemp(prefix='treeai-marker-test-')
+sys.modules['boto3']=types.SimpleNamespace(client=lambda *a,**k:None);sys.modules['common']=types.ModuleType('common');sys.modules['common.server']=types.SimpleNamespace(serve=lambda routes:None)
+spec=importlib.util.spec_from_file_location('marker',${worker});module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+with tempfile.TemporaryDirectory() as root:
+ target=pathlib.Path(root);structured=target/'structured';structured.mkdir();images=target/'images';images.mkdir();(images/'figure.png').write_bytes(b'authored-image')
+ (structured/'document.json').write_text(json.dumps({'type':'Page','page':3,'children':[{'type':'SectionHeader','text':'Engine assembly'},{'type':'Figure','image':'figure.png'},{'type':'Text','text':'The source explains the labeled engine assembly and airflow path.'}]}))
+ blocks,evidence=module.authored_image_evidence(structured,target);print(json.dumps({'blocks':blocks,'evidence':evidence}))`);
+		expect(result.blocks).toHaveLength(4);expect(result.evidence).toHaveLength(1);
+		expect(result.evidence[0]).toMatchObject({imagePath:'images/figure.png',page:3,section:'Engine assembly',eligible:true,mimeType:'image/png'});
+		expect(result.evidence[0].authoredContext).toContain('source explains');
+	});
+
+	it('renders a bounded Qwen 3.5 vision QLoRA config without sample packing',()=>{
+		const modulePath=JSON.stringify(join(process.cwd(),'workers/axolotl/multimodal_train.py'));
+		const result=python(`import importlib.util,json,pathlib,sys,tempfile,types
+sys.modules['boto3']=types.SimpleNamespace(client=lambda *a,**k:None)
+stub=types.ModuleType('library_train');stub.BASE_MODEL='Qwen/Qwen3.5-4B';stub.BASE_REVISION='851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a';stub.fixed_steps=lambda c,*a:c;stub.run_axolotl=lambda *a:None;stub.safe_diagnostic=str;sys.modules['library_train']=stub
+spec=importlib.util.spec_from_file_location('multimodal',${modulePath});module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+with tempfile.TemporaryDirectory() as root:
+ config=module.fixed_config({'sequenceLength':2048,'maxPixels':262144},pathlib.Path(root)/'train.jsonl',pathlib.Path(root)/'adapter');print(json.dumps(config))`);
+		expect(result).toMatchObject({base_model:'Qwen/Qwen3.5-4B',processor_type:'AutoProcessor',chat_template:'qwen3_5',skip_prepare_dataset:true,remove_unused_columns:false,sample_packing:false,image_size:512,adapter:'qlora',load_in_4bit:true,lora_r:16,lora_alpha:32});
+		expect(result.datasets).toEqual([expect.objectContaining({type:'chat_template'})]);
+		expect(result.lora_target_modules).toContain('model\\.visual');
+	});
+
+	it('adds multimodal state without changing existing library rows',()=>{
+		const migration=execFileSync('bash',['-lc','cat migrations/training/005_multimodal_libraries.sql'],{cwd:process.cwd(),encoding:'utf8'});
+		expect(migration).toContain('ADD COLUMN IF NOT EXISTS multimodal_train_uri');
+		expect(migration).toContain('library_multimodal_training_profiles');
+		expect(migration).not.toMatch(/DROP TABLE|DELETE FROM|TRUNCATE/u);
+	});
+});
