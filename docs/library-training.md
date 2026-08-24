@@ -26,6 +26,7 @@ The equivalent CLI flow is:
 ```text
 treeai lab libraries
 treeai training library documents <library-id>
+treeai training library retry <library-id> <document-id>
 treeai lab library train <library-id> --mode smoke
 treeai lab library watch <run-id>
 ```
