@@ -458,8 +458,7 @@ export async function reconcilePlatform() {
 }
 export async function transitionMode(target: unknown, drain: { inferenceSeconds: number; trainingSeconds: number }) {
 	if (target !== "awake" && target !== "sleep") throw new Error("Mode must be awake or sleep.");
-	const current = setting<string>("mode", "awake"),
-		enabled = enabledProducts();
+	const configuration=validatePlatformConfiguration(JSON.parse(readFileSync(paths.configuration,"utf8"))),current=setting<string>("mode","awake"),enabled=enabledProducts();
 	if (current === target) return { mode: target, changed: false };
 	writeMode(target === "awake" ? "transitioning_awake" : "transitioning_sleep");
 	let lifecycleChanged = false;
@@ -488,6 +487,7 @@ export async function transitionMode(target: unknown, drain: { inferenceSeconds:
 				warmInference();
 			}
 		}
+		if(configuration.state.objectStorage==="bundled")for(const product of["inference","training"]as const)if(enabled.has(product))reconcileObjectStore(product);
 		writeMode(target);
 		event("mode.changed", { from: current, to: target });
 		return { mode: target, changed: true };

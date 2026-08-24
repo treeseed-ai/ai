@@ -46,6 +46,7 @@ describe('manager-owned platform reconciliation',()=>{
     expect(platform).toContain('["run","--rm","--no-deps","minio-init"]');
     expect(platform).not.toMatch(/inference: \[[^\n]*"minio-init"/u);expect(platform).not.toMatch(/training: \[[^\n]*"minio-init"/u);
     for(const product of['inference','training'])expect(readFileSync(`deploy/${product}/factory.override.yml`,'utf8')).not.toContain('minio-init: { condition:');
+    expect(platform.indexOf('reconcileObjectStore(product);',platform.indexOf('export async function transitionMode'))).toBeLessThan(platform.indexOf('writeMode(target);',platform.indexOf('export async function transitionMode')));
   });
 
   it('adds bounded redacted migration diagnostics to failed reconciliation',()=>{
