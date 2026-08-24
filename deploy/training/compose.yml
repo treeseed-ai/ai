@@ -28,7 +28,7 @@ services:
     image: ${MARKER_WORKER_IMAGE:?MARKER_WORKER_IMAGE is required}
     build: { context: ../.., dockerfile: containers/training/marker.Dockerfile }
     restart: unless-stopped
-    environment: { <<: *s3-environment, HF_HOME: /models/huggingface, XDG_CACHE_HOME: /models/cache, TORCH_HOME: /models/torch }
+    environment: { <<: *s3-environment, HF_HOME: /models/huggingface, XDG_CACHE_HOME: /models/cache, TORCH_HOME: /models/torch, FONT_DIR: /models/cache/fonts, FONT_PATH: /models/cache/fonts/GoNotoCurrent-Regular.ttf }
     volumes: ["training-artifacts:/artifacts", "training-models:/models"]
     deploy: { resources: { reservations: { devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }] } } }
     healthcheck: &worker-health { test: ["CMD","python3","-c","import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/healthz')"], interval: 10s, timeout: 3s, retries: 10 }
