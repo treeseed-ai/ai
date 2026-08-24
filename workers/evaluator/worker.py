@@ -1,4 +1,4 @@
-import hashlib, json, os, urllib.error, urllib.request
+import base64, hashlib, json, mimetypes, os, re, urllib.error, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from sys import path
@@ -94,9 +94,28 @@ def deployment(job, action):
     return write(job,"deployment",{"action":action,"candidateId":candidate,"warm":True})
 def canary(job):
     candidate=str(job["input"]["candidateId"])
-    with ThreadPoolExecutor(max_workers=2) as pool: responses=list(pool.map(lambda prompt:post("/v1/chat/completions",{"model":candidate,"messages":[{"role":"user","content":prompt}],"temperature":0,"max_tokens":32}),["Reply with canary-one.","Reply with canary-two."]))
+    composed=job["input"].get("manifest",{}).get("sourceManifest",{}).get("adapter",{}).get("modality")=="composed";pixel="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    requests=[{"model":candidate,"messages":[{"role":"user","content":"Reply with canary-one."}],"temperature":0,"max_tokens":32},{"model":candidate,"messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":f"data:image/png;base64,{pixel}"}},{"type":"text","text":"Confirm that an image was supplied without guessing its subject."}]}],"temperature":0,"max_tokens":32}] if composed else [{"model":candidate,"messages":[{"role":"user","content":"Reply with canary-two."}],"temperature":0,"max_tokens":32}]
+    with ThreadPoolExecutor(max_workers=2) as pool: responses=list(pool.map(lambda body:post("/v1/chat/completions",body),requests))
     if any(not json.loads(value)["choices"][0]["message"].get("content") for value in responses):raise ValueError("Canary response was empty")
-    return write(job,"canary",{"candidateId":candidate,"passed":True,"concurrency":2})
+    return write(job,"canary",{"candidateId":candidate,"passed":True,"concurrency":2,"multimodal":composed})
+
+def visual_grounding(job):
+    value=job["input"];model=str(value["candidateId"]);stored=value.get("evaluationObject",{});evaluation=stored.get("evaluation",{});images={item["relativePath"]:item for item in stored.get("images",[])}
+    if not evaluation.get("uri") or not images:raise ValueError("A copied held-out visual corpus and images are required")
+    lines=s3_client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(evaluation["uri"]))["Body"].read().decode();scores=[]
+    for line in lines.splitlines():
+        if not line.strip():continue
+        example=json.loads(line);messages=example.get("messages",[]);expected=" ".join(part.get("text","") for part in messages[-1].get("content",[]) if part.get("type")=="text");prompt=json.loads(json.dumps(messages[:-1]))
+        for message in prompt:
+            for part in message.get("content",[]):
+                if part.get("type")!="image":continue
+                item=images.get(part.get("path"));
+                if not item:raise ValueError("Visual example references an unavailable image")
+                data=s3_client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(item["uri"]))["Body"].read();mime=mimetypes.guess_type(part["path"])[0] or "image/png";part.clear();part.update({"type":"image_url","image_url":{"url":f"data:{mime};base64,{base64.b64encode(data).decode()}"}})
+        response=json.loads(post("/v1/chat/completions",{"model":model,"messages":prompt,"temperature":0,"max_tokens":256}));actual=response["choices"][0]["message"].get("content","");expected_words=set(re.findall(r"[a-z0-9]{4,}",expected.lower()));actual_words=set(re.findall(r"[a-z0-9]{4,}",actual.lower()));scores.append(len(expected_words&actual_words)/max(1,len(expected_words)))
+    if not scores:raise ValueError("Held-out visual corpus has no evaluable examples")
+    return write(job,"visual-grounding",{"candidateId":model,"metric":"authored-context-token-recall","value":sum(scores)/len(scores),"examples":len(scores),"evaluationObject":{"sha256":evaluation.get("sha256"),"size":evaluation.get("size")}})
 def library_likelihood(job):
     value=job["input"];model=str(value["candidateId"]);stored=value.get("evaluationObject",{});uri=stored.get("uri","")
     if not uri:raise ValueError("A copied held-out evaluation object is required")
@@ -129,4 +148,4 @@ def rank_library(job):
     if candidate_nll>base_nll*0.98:reasons.append("held-out completion NLL did not improve by at least 2 percent")
     return write(job,"library-ranking",{"policy":"library-strict-improvement-v1","policyVersion":"1","candidateId":candidate_id,"baseNegativeLogLikelihood":base_nll,"candidateNegativeLogLikelihood":candidate_nll,"improvement":(base_nll-candidate_nll)/base_nll if base_nll else 0,"promotable":not reasons,"ranking":[{"candidate":candidate_id}],"explanation":"; ".join(reasons) if reasons else "Held-out NLL improved by at least 2 percent and all general behavior gates passed."})
 
-serve({"/import": import_adapter, "/evaluate": evaluate, "/library-likelihood":library_likelihood, "/rank": rank, "/rank-library":rank_library, "/authorize":authorize, "/canary":canary, "/promote": lambda job: deployment(job, "promote"), "/rollback": lambda job: deployment(job, "rollback")})
+serve({"/import": import_adapter, "/evaluate": evaluate, "/library-likelihood":library_likelihood, "/visual-grounding":visual_grounding, "/rank": rank, "/rank-library":rank_library, "/authorize":authorize, "/canary":canary, "/promote": lambda job: deployment(job, "promote"), "/rollback": lambda job: deployment(job, "rollback")})

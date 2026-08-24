@@ -235,7 +235,7 @@ function ensureProductConfiguration() {
 				RUNTIME_GID: productGroup("inference"),
 				SOURCE_MODEL: "Qwen/Qwen3.5-4B",
 				SOURCE_MODEL_REVISION: "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
-				MAX_MODEL_LENGTH: String(profile?.settings.maxModelLength ?? 16384),
+				MAX_MODEL_LENGTH: String(profile?.settings.maxModelLength ?? 16384), TREEAI_MULTIMODAL_LORA_ENABLED: String(profile?.settings.multimodalLoraEnabled === true),
 			},
 			"treeseed-ai-inference",
 		);
