@@ -261,7 +261,7 @@ function ensureProductConfiguration() {
 			secretAccessKey: stored.trainingS3,
 			trustedPublicKey: readFileSync(signing.publicKey, "utf8"),
 		};
-		atomic(`${signing.root}/training-local-source.json`, `${JSON.stringify(source, null, 2)}\n`);
+		atomic(`${signing.root}/training-local-source.json`, `${JSON.stringify(source, null, 2)}\n`);for(const path of[`${signing.root}/artifact-import-token`,`${signing.root}/training-local-source.json`]){chmodSync(path,0o640);command("chown",["root:treeseed-ai-inference",path]);}
 	}
 }
 function ensureLabConfiguration() {
