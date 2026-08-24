@@ -1,6 +1,6 @@
 {
   "name": "@ai-platform/manager",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "private": true,
   "type": "module",
   "scripts": { "build": "tsc -p tsconfig.json && esbuild src/http/server.ts --bundle --platform=node --format=esm --outfile=dist/server.js && esbuild src/bin/supervisor-main.ts --bundle --platform=node --format=esm --outfile=dist/supervisor-main.js && esbuild src/bin/cli.ts --bundle --platform=node --format=esm --outfile=dist/cli.js && esbuild src/bin/converge.ts --bundle --platform=node --format=esm --outfile=dist/converge.js && esbuild src/bin/timer.ts --bundle --platform=node --format=esm --outfile=dist/timer.js", "test": "vitest run ../../tests/manager" },

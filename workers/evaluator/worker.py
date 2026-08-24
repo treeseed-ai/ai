@@ -146,6 +146,12 @@ def rank_library(job):
         if regressions:reasons.append("general category regressions: "+", ".join(regressions))
     base_nll=float(base["value"]);candidate_nll=float(candidate["value"])
     if candidate_nll>base_nll*0.98:reasons.append("held-out completion NLL did not improve by at least 2 percent")
-    return write(job,"library-ranking",{"policy":"library-strict-improvement-v1","policyVersion":"1","candidateId":candidate_id,"baseNegativeLogLikelihood":base_nll,"candidateNegativeLogLikelihood":candidate_nll,"improvement":(base_nll-candidate_nll)/base_nll if base_nll else 0,"promotable":not reasons,"ranking":[{"candidate":candidate_id}],"explanation":"; ".join(reasons) if reasons else "Held-out NLL improved by at least 2 percent and all general behavior gates passed."})
+    visual=None
+    if value.get("baseVisualManifest") or value.get("candidateVisualManifest"):
+        if not value.get("baseVisualManifest") or not value.get("candidateVisualManifest"):reasons.append("both base and candidate visual evaluations are required")
+        else:
+            base_visual=state_manifest(value["baseVisualManifest"]);candidate_visual=state_manifest(value["candidateVisualManifest"]);base_score=float(base_visual["value"]);candidate_score=float(candidate_visual["value"]);visual={"base":base_score,"candidate":candidate_score}
+            if candidate_score<=base_score:reasons.append("held-out visual grounding did not improve")
+    return write(job,"library-ranking",{"policy":"library-strict-improvement-v1","policyVersion":"2","candidateId":candidate_id,"baseNegativeLogLikelihood":base_nll,"candidateNegativeLogLikelihood":candidate_nll,"improvement":(base_nll-candidate_nll)/base_nll if base_nll else 0,"visualGrounding":visual,"promotable":not reasons,"ranking":[{"candidate":candidate_id}],"explanation":"; ".join(reasons) if reasons else "Text likelihood, visual grounding, general behavior, and critical gates passed."})
 
 serve({"/import": import_adapter, "/evaluate": evaluate, "/library-likelihood":library_likelihood, "/visual-grounding":visual_grounding, "/rank": rank, "/rank-library":rank_library, "/authorize":authorize, "/canary":canary, "/promote": lambda job: deployment(job, "promote"), "/rollback": lambda job: deployment(job, "rollback")})
