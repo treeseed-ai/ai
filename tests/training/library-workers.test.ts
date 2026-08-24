@@ -8,6 +8,7 @@ function python(source:string){
 }
 
 describe('library document workers',()=>{
+	it('keeps long Axolotl operations on one manager request',()=>{const source=readFileSync('packages/training-manager/src/main.ts','utf8'),manifest=readFileSync('packages/training-manager/package.json','utf8');expect(source).toContain('setGlobalDispatcher(new Agent({ headersTimeout: 3_900_000, bodyTimeout: 3_900_000 }))');expect(manifest).toContain('"undici": "8.10.0"');});
 	it('detects supported content by signature and rejects unsafe containers',()=>{
 		const modulePath=JSON.stringify(join(process.cwd(),'workers/artifact/library.py'));
 		const result=python(`import importlib.util,json,sys,types\nsys.modules['boto3']=types.SimpleNamespace(client=lambda *a,**k:None)\ns=importlib.util.spec_from_file_location('library',${modulePath});m=importlib.util.module_from_spec(s);s.loader.exec_module(m)\nvalues=[m.detect(b'%PDF-1.7\\n','wrong.txt'),m.detect(b'# Heading\\nBody','guide.md')]\nerrors=[]\nfor data,name in [(b'PK\\x03\\x04not-a-zip','payload.zip'),(b'\\x00binary','notes.txt')]:\n try:m.detect(data,name)\n except ValueError as e:errors.append(str(e))\nprint(json.dumps({'values':values,'errors':errors}))`);
