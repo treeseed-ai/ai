@@ -31,6 +31,7 @@ describe('selective image build identities',()=>{
     expect(builds.platform).toBe('linux/amd64');
     for(const [role,build]of Object.entries(builds.images)){expect(build.inputs.length,role).toBeGreaterThan(0);expect(build.inputs).toContain(build.dockerfile);}
 		for(const role of['inference-api','inference-manager','training-api','training-manager','lab-controller','lab-experience-proxy'])expect(builds.images[role]?.inputs).not.toContain('packages');
+		for(const role of['inference-migrations','training-migrations'])expect(builds.images[role]?.inputs).toContain('containers/migrations/run.sh');
   });
 
   it('changes for Dockerfiles, context, arguments, and platforms',()=>{
