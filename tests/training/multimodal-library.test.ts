@@ -12,7 +12,7 @@ os.environ['OUTPUT_DIR']=tempfile.mkdtemp(prefix='treeai-marker-test-')
 sys.modules['boto3']=types.SimpleNamespace(client=lambda *a,**k:None);sys.modules['common']=types.ModuleType('common');sys.modules['common.server']=types.SimpleNamespace(serve=lambda routes:None)
 spec=importlib.util.spec_from_file_location('marker',${worker});module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 with tempfile.TemporaryDirectory() as root:
- target=pathlib.Path(root);structured=target/'structured';structured.mkdir();images=target/'images';images.mkdir();(images/'figure.png').write_bytes(b'authored-image')
+ target=pathlib.Path(root);structured=target/'structured';structured.mkdir();images=target/'images';images.mkdir();(images/'figure.png').write_bytes(b'\\x89PNG\\r\\n\\x1a\\nsource-authored-image')
  (structured/'document.json').write_text(json.dumps({'type':'Page','page':3,'children':[{'type':'SectionHeader','text':'Engine assembly'},{'type':'Figure','image':'figure.png'},{'type':'Text','text':'The source explains the labeled engine assembly and airflow path.'}]}))
  blocks,evidence=module.authored_image_evidence(structured,target);print(json.dumps({'blocks':blocks,'evidence':evidence}))`);
 		expect(result.blocks).toHaveLength(4);expect(result.evidence).toHaveLength(1);

@@ -17,13 +17,15 @@ def download_dataset(value,root):
     if manifest.get("schemaVersion")!="ai.library-dataset/v2":raise ValueError("Multimodal training requires ai.library-dataset/v2")
     multi=manifest.get("multimodal",{});source=multi.get("trainObject")
     if not source:raise ValueError("Dataset contains no qualified source-authored image examples")
-    dataset=root/"multimodal-train.jsonl";dataset.write_bytes(client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(source["uri"]))["Body"].read())
+    dataset_data=client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(source["uri"]))["Body"].read()
+    if hashlib.sha256(dataset_data).hexdigest()!=source["sha256"] or len(dataset_data)!=source["size"]:raise ValueError("Multimodal dataset checksum or size mismatch")
+    dataset=root/"multimodal-train.jsonl";dataset.write_bytes(dataset_data)
     for item in multi.get("imageObjects",[]):
         relative=Path(str(item.get("relativePath","")))
         if relative.is_absolute() or ".." in relative.parts:raise ValueError("Unsafe dataset image path")
         destination=root/relative;destination.parent.mkdir(parents=True,exist_ok=True)
         data=client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(item["uri"]))["Body"].read()
-        if hashlib.sha256(data).hexdigest()!=item["sha256"]:raise ValueError("Multimodal dataset image checksum mismatch")
+        if hashlib.sha256(data).hexdigest()!=item["sha256"] or len(data)!=item["size"]:raise ValueError("Multimodal dataset image checksum or size mismatch")
         destination.write_bytes(data)
     return dataset,manifest
 def fixed_config(value,dataset,target):

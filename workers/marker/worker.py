@@ -7,6 +7,9 @@ from common.server import serve
 
 OUTPUT=Path(os.getenv("OUTPUT_DIR","/artifacts/documents"));OUTPUT.mkdir(parents=True,exist_ok=True)
 SECRET=re.compile(r"(?im)(-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|ak_[a-z0-9-]+_[a-z0-9_-]{16,}|(?:api[_-]?key|password|secret|access[_-]?token)\s*[:=]\s*[^\s]{12,})")
+def supported_image(path):
+    head=path.read_bytes()[:16]
+    return head.startswith(b"\x89PNG\r\n\x1a\n") or head.startswith(b"\xff\xd8\xff") or (head.startswith(b"RIFF") and head[8:12]==b"WEBP")
 def run_marker(source,target,output_format):
     command=["marker_single",str(source),"--output_dir",str(target),"--output_format",output_format]
     result=subprocess.run(command,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=int(os.getenv("MARKER_TIMEOUT","3600")))
@@ -48,7 +51,7 @@ def authored_image_evidence(structured_root,target):
         if not image:continue
         nearby=[candidate["text"] for candidate in blocks[max(0,index-2):index+3] if candidate.get("text")]
         authored="\n".join(dict.fromkeys(nearby)).strip()
-        eligible=bool(authored and (block.get("section") or len(authored)>=24))
+        eligible=bool(supported_image(image) and authored and (block.get("section") or len(authored)>=24))
         evidence.append({"imagePath":str(image.relative_to(target)),"imageSha256":hashlib.sha256(image.read_bytes()).hexdigest(),"mimeType":mimetypes.guess_type(image.name)[0] or "application/octet-stream","page":block.get("page"),"section":block.get("section"),"authoredContext":authored,"eligible":eligible})
     return blocks,evidence
 def client():return boto3.client("s3",endpoint_url=os.environ["AWS_ENDPOINT_URL"],region_name=os.getenv("AWS_REGION","us-east-1"),aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"])
