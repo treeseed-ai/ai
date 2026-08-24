@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash, sign, verify } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { event, setSetting, setting } from "../../core/store.js";
 import { paths } from "../../core/paths.js";
 
@@ -29,7 +29,7 @@ export interface QualificationCampaign {
 }
 type Runner = (file: string, args: string[]) => string;
 const defaultRunner: Runner = (file, args) => execFileSync(file, args, { encoding: "utf8", timeout: 120_000 }).trim();
-function atomic(path: string, value: unknown) { mkdirSync(paths.qualification, { recursive: true, mode: 0o750 }); const next = `${path}.new`; writeFileSync(next, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o640 }); renameSync(next, path); }
+function atomic(path: string, value: unknown) { mkdirSync(dirname(path), { recursive: true, mode: 0o750 }); const next = `${path}.new`; writeFileSync(next, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o640 }); renameSync(next, path); }
 function digest(value: unknown) { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
 function safe(run: Runner, file: string, args: string[], fallback = "unknown") { try { return run(file, args) || fallback; } catch { return fallback; } }
 export function fingerprint(run: Runner = defaultRunner): MachineFingerprint {
@@ -47,7 +47,13 @@ function envelope(profile: MachineProfile) { const payload = Buffer.from(JSON.st
 export function verifyProfile(value: ReturnType<typeof envelope>) { const payload = Buffer.from(JSON.stringify(value.profile)); if (value.digest !== createHash("sha256").update(payload).digest("hex")) return false; const key = publicKey(); return value.signature && key ? verify(null, payload, key, Buffer.from(value.signature, "base64")) : process.env.NODE_ENV === "test"; }
 function profilePath(id: string) { return join(paths.qualification, "profiles", `${id}.json`); }
 function campaignPath(id: string) { return join(paths.qualification, "campaigns", `${id}.json`); }
-export function qualificationStatus(run: Runner = defaultRunner) { const current = fingerprint(run), currentDigest = digest(current), activeId = setting<string | null>("qualification.activeProfile", null), knownGoodId = setting<string | null>("qualification.knownGoodProfile", null); return { status: activeId ? "ready" : "warning", fingerprint: current, fingerprintDigest: currentDigest, baselineRequired: setting("qualification.fingerprint", "") !== currentDigest, activeProfile: activeId ? readProfile(activeId) : null, knownGoodProfile: knownGoodId ? readProfile(knownGoodId) : null }; }
+function observedFingerprint(run?: Runner) {
+	if (run) return fingerprint(run);
+	const receipt = join(paths.qualification, "fingerprint.json");
+	if (existsSync(receipt)) return (JSON.parse(readFileSync(receipt, "utf8")) as { fingerprint: MachineFingerprint }).fingerprint;
+	return fingerprint((file, args) => file === "nvidia-smi" ? defaultRunner(file, args) : "unknown");
+}
+export function qualificationStatus(run?: Runner) { const current = observedFingerprint(run), currentDigest = digest(current), activeId = setting<string | null>("qualification.activeProfile", null), knownGoodId = setting<string | null>("qualification.knownGoodProfile", null); return { status: activeId ? "ready" : "warning", fingerprint: current, fingerprintDigest: currentDigest, baselineRequired: setting("qualification.fingerprint", "") !== currentDigest, activeProfile: activeId ? readProfile(activeId) : null, knownGoodProfile: knownGoodId ? readProfile(knownGoodId) : null }; }
 export function activeProfile() { const id = setting<string | null>("qualification.activeProfile", null); return id ? readProfile(id) : null; }
 export function readProfile(id: string) { const path = profilePath(id); if (!existsSync(path)) return null; const value = JSON.parse(readFileSync(path, "utf8")) as ReturnType<typeof envelope>; if (!verifyProfile(value)) throw new Error("Machine profile signature is invalid."); return value.profile; }
 export function profiles() { const root = join(paths.qualification, "profiles"); if (!existsSync(root)) return []; return (awaitFiles(root)).map((path) => readProfile(path)!).filter(Boolean); }
@@ -82,6 +88,7 @@ export function campaign(id: string) { const path = campaignPath(id); return exi
 export function cancelCampaign(id: string) { const value = campaign(id); if (!value || !["queued", "running"].includes(value.state)) throw new Error("Campaign is not cancellable."); value.state = "cancelled"; value.updatedAt = new Date().toISOString(); atomic(campaignPath(id), value); event("qualification.campaign-cancelled", { id }); return value; }
 export function runCampaign(preset: "baseline" | "balanced", run: Runner = defaultRunner) {
 	const fp = fingerprint(run), createdAt = new Date().toISOString(), maxTrials = preset === "baseline" ? 4 : 24;
+	atomic(join(paths.qualification, "fingerprint.json"), { schemaVersion: "treeai.machine-fingerprint-observation/v1", fingerprint: fp, fingerprintDigest: digest(fp), observedAt: createdAt });
 	const deadline = new Date(Date.now() + (preset === "baseline" ? 30 * 60_000 : 4 * 60 * 60_000)).toISOString();
 	const value: QualificationCampaign = { id: crypto.randomUUID(), preset, state: "running", fingerprintDigest: digest(fp), maxTrials, deadline, trials: [], createdAt, updatedAt: createdAt };
 	atomic(campaignPath(value.id), value); event("qualification.campaign-started", { id: value.id, preset });

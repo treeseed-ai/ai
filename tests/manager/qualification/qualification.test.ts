@@ -1,7 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { contextPolicy, fingerprint, probeCandidate } from "../../../packages/manager/src/lifecycle/qualification/index.js";
 
 describe("machine qualification", () => {
+	afterEach(() => { delete process.env.TREEAI_QUALIFICATION_ROOT; delete process.env.TREEAI_MANAGER_DB; vi.resetModules(); });
 	it("builds tokenizer budget policies without exceeding context", () => {
 		const value = contextPolicy(32768);
 		expect(value.outputReserve).toBeGreaterThanOrEqual(2048);
@@ -23,5 +27,24 @@ describe("machine qualification", () => {
 		const result = probeCandidate(fp, settings, run);
 		expect(result.gates.inferenceContext).toBe(false);
 		expect(result.multimodal).toBe(false);
+	});
+	it("creates first-run campaign directories and reuses the root-observed fingerprint", async () => {
+		const root = mkdtempSync(join(tmpdir(), "treeai-qualification-"));
+		process.env.TREEAI_QUALIFICATION_ROOT = join(root, "qualification");
+		process.env.TREEAI_MANAGER_DB = join(root, "manager.db");
+		const module = await import("../../../packages/manager/src/lifecycle/qualification/index.js?first-run");
+		const run = (file: string, args: string[]) => {
+			if (file === "nvidia-smi") return "GPU-1, RTX 3080, 16384, 595.84";
+			if (args.includes("info")) return '{"path":"nvidia-container-runtime"}';
+			if (args.includes("inspect") && args.includes("treeseed-ai-inference-vllm-1") && args.some((item) => item.includes("Config.Env"))) return "MAX_MODEL_LENGTH=16384";
+			if (args.some((item) => item.includes("concurrent.futures"))) return '{"latencyMs":100,"successes":2}';
+			if (args.includes("sh")) return "failed";
+			return "sha256:image";
+		};
+		const campaign = module.runCampaign("baseline", run);
+		expect(campaign.state).toBe("succeeded");
+		expect(module.campaign(campaign.id)?.id).toBe(campaign.id);
+		const status = module.qualificationStatus();
+		expect(status.fingerprint.images["inference-vllm"]).toBe("sha256:image");
 	});
 });
