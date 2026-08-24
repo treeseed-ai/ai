@@ -419,7 +419,6 @@ export async function reconcilePlatform() {
 	ensureRuntime();
 	ensureNetwork();
 	ensureProductConfiguration();
-	if (qualificationStatus().baselineRequired) { runCampaign("baseline"); ensureProductConfiguration(); }
 	ensureLabConfiguration();
 	const configuration = validatePlatformConfiguration(JSON.parse(readFileSync(paths.configuration, "utf8"))),
 		certificate = ensurePlatformTls(configuration);
@@ -451,6 +450,7 @@ export async function reconcilePlatform() {
 		throw error;
 	}
 	activateManagerCertificate(certificate, command);
+	if (qualificationStatus().baselineRequired && mode === "awake" && runCampaign("baseline").state === "succeeded") ensureProductConfiguration();
 	const services = serviceStatus();
 	setSetting("components", services);
 	event("components.reconciled", { mode });

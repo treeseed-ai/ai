@@ -1,10 +1,10 @@
-treeseed-ai (0.9.0-1) stable; urgency=high
+treeseed-ai (0.10.0-1) stable; urgency=high
 
-  * Add Open WebUI Knowledge Base ingestion through an isolated library bridge.
-  * Normalize immutable S3-backed document revisions and completion datasets.
-  * Add fixed continual-pretraining QLoRA with GPU profile qualification.
-  * Add strict held-out evaluation and library-specific inference aliases.
-  * Add bounded smoke and standard library cycles plus TreeAI controls.
+  * Add signed machine profiles, empirical capability gates, and context budgets.
+  * Expose promoted adapters as Hermes-backed agent profiles with bounded routing.
+  * Preserve Marker text, block, page, caption, and image evidence.
+  * Train and exactly compose compatible language and vision QLoRA adapters.
+  * Add pinned EDGAR and NASA qualification-corpus acquisition catalogs.
 
  -- TreeSeed AI Releases <releases@treeseed.ai>  Sun, 23 Aug 2026 14:10:00 -0400
 

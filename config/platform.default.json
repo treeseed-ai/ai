@@ -25,5 +25,5 @@
     "drain": { "inferenceSeconds": 120, "trainingSeconds": 300 }
   },
   "secrets": {},
-  "provenance": { "generator": "treeseed-ai-generic/0.9.0", "generatedAt": "2026-08-23T00:00:00.000Z", "configurationDigest": "0000000000000000000000000000000000000000000000000000000000000000" }
+  "provenance": { "generator": "treeseed-ai-generic/0.10.0", "generatedAt": "2026-08-23T00:00:00.000Z", "configurationDigest": "0000000000000000000000000000000000000000000000000000000000000000" }
 }

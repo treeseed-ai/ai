@@ -2,7 +2,7 @@
 title: Train Library
 description: Freeze and train the one Open WebUI Knowledge Base attached to this chat.
 author: TreeSeed AI
-version: 0.9.0
+version: 0.10.0
 required_open_webui_version: 0.11.0
 """
 

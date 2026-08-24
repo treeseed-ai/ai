@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "treeai.qualification-corpora/v1",
+  "generation": 10000000,
+  "financial": {
+    "minimumUsableTokens": 500000,
+    "minimumIssuers": 6,
+    "minimumHeldOutTokens": 50000,
+    "maximumRequestsPerSecond": 5,
+    "issuers": [
+      {"name":"Apple","cik":"0000320193"},{"name":"Microsoft","cik":"0000789019"},
+      {"name":"JPMorgan Chase","cik":"0000019617"},{"name":"Exxon Mobil","cik":"0000034088"},
+      {"name":"Johnson & Johnson","cik":"0000200406"},{"name":"Walmart","cik":"0000104169"},
+      {"name":"Boeing","cik":"0000012927"},{"name":"Duke Energy","cik":"0001326160"},
+      {"name":"Union Pacific","cik":"0000100885"},{"name":"Procter & Gamble","cik":"0000080424"},
+      {"name":"Caterpillar","cik":"0000018230"},{"name":"Verizon","cik":"0000732712"}
+    ]
+  },
+  "multimodal": {
+    "reports": [
+      {"id":"20240009657","filename":"20240009657.pdf","url":"https://ntrs.nasa.gov/api/citations/20240009657/downloads/20240009657.pdf","sha256":"fe0c7511f223c5af6f431272859ee64c8cafa683916bedc266179db370d780a4","size":11082271,"provenance":"NASA NTRS; public technical report"},
+      {"id":"20070008232","filename":"20070008232.pdf","url":"https://ntrs.nasa.gov/api/citations/20070008232/downloads/20070008232.pdf","sha256":"20bcaed73188d4a43d35b5a3854b33e8652cf41decaa3539dde8a64f2d19b264","size":1892652,"provenance":"NASA NTRS; work of the US Government"},
+      {"id":"20110005503","filename":"20110005503.pdf","url":"https://ntrs.nasa.gov/api/citations/20110005503/downloads/20110005503.pdf","sha256":"3577ea2085cf12cff9c946f1a1d09338b901bcbbd624889fba3ed64351ebf4b8","size":1196523,"provenance":"NASA NTRS; public use permitted"}
+    ]
+  }
+}

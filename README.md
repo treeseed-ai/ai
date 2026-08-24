@@ -39,10 +39,10 @@ Put the returned `record` in the `AI_API_KEYS` JSON array. The plaintext credent
 
 ## Ubuntu 26.04 managed factory
 
-Release 0.9.0 supports Ubuntu 26.04 (Resolute) amd64. Download one generic or generated configuration package and install it locally:
+Release 0.10.0 supports Ubuntu 26.04 (Resolute) amd64. Download one generic or generated configuration package and install it locally:
 
 ```bash
-sudo apt install ./treeseed-ai_0.9.0-1_amd64.deb
+sudo apt install ./treeseed-ai_0.10.0-1_amd64.deb
 systemctl status treeseed-ai-bootstrap.service
 treeai platform status
 treeai platform doctor
@@ -57,7 +57,7 @@ Update channel and image source are independent. `updates.channel=development` p
 
 ### Optional Hermes experience lab
 
-When `lab` is enabled in `platform.json`, the manager generates distinct service credentials and reconciles Hermes, Open WebUI, the safe web worker, experience proxy, library bridge, and controller. In 0.9.0, Open WebUI Knowledge Bases can become immutable continual-pretraining libraries. Smoke cycles qualify mechanics and remain inactive; standard cycles use held-out likelihood and strict behavior gates before updating only `library/<slug>`. Corrective SFT and KTO remain follow-up pipelines. The Hermes dashboard stores only a password hash, and root can rotate its password with a one-time response.
+When `lab` is enabled in `platform.json`, the manager generates distinct service credentials and reconciles Hermes, Open WebUI, the safe web worker, experience proxy, library bridge, and controller. In 0.10.0, Open WebUI Knowledge Bases become immutable text and multimodal continual-pretraining libraries, and passing promoted adapters appear as Hermes-backed `agent/<slug>` profiles. Smoke cycles qualify mechanics and remain inactive; standard cycles use held-out text, visual, general-behavior, and canary gates before updating only `library/<slug>`. `treeai qualify` manages signed machine profiles, while `treeai lab corpus` acquires pinned public qualification inputs without committing raw corpora. Corrective SFT and KTO remain follow-up pipelines.
 
 See [Library training](docs/library-training.md) for supported documents, collection-size guidance, and the smoke/standard qualification flow.
 

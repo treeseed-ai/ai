@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { connect } from "node:net";
 import { resolve } from "node:path";
 import { redactSensitiveText, transportFailure } from "@ai-platform/common";
+import { acquireQualification, corpusPlan } from "./corpus.js";
 
 const command = process.argv[2];
 const args = process.argv.slice(3);
@@ -157,6 +158,17 @@ async function main() {
 		throw new Error('Usage: treeai lab agent <show|edit|enable|disable> <id>');
 	}
 	if(command==='routing'&&args.find(item=>!item.startsWith('--'))==='history')return output(call('/v1/routing-decisions'));
+	if(command==='corpus'){
+		const action=args.find(item=>!item.startsWith('--'));
+		if(action==='plan')return output(corpusPlan());
+		if(action==='acquire'){
+			if(!args.includes('--qualification'))throw new Error('Usage: treeai lab corpus acquire --qualification');
+			const userAgent=process.env.SEC_USER_AGENT;
+			if(!userAgent)throw new Error('SEC_USER_AGENT must identify an organization and contact email.');
+			return output(await acquireQualification(client(),operator(),userAgent));
+		}
+		throw new Error('Usage: treeai lab corpus <plan|acquire --qualification>');
+	}
 	if(command==='library'){
 		const action=args.find(item=>!item.startsWith('--')),values=args.filter(item=>!item.startsWith('--')).slice(1),id=values[0];
 		if(action==='runs')return output(id?call(`/v1/library-cycles/${encodeURIComponent(id)}`):call('/v1/library-cycles'));
@@ -200,7 +212,7 @@ async function main() {
 		compose(["logs", "--follow", ...(service ? [service] : [])]);
 		return;
 	}
-	throw new Error("Usage: treeai lab <plan|configure|reset-webui|urls|open|hermes|agents|agent|routing|libraries|library|build|start|stop|restart|status|verify|watch|logs|enable|pause|resume|cycle-now>");
+	throw new Error("Usage: treeai lab <plan|configure|reset-webui|urls|open|hermes|agents|agent|routing|corpus|libraries|library|build|start|stop|restart|status|verify|watch|logs|enable|pause|resume|cycle-now>");
 }
 
 main().catch((error) => {
