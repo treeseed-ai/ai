@@ -4,7 +4,7 @@ import boto3
 
 BASE_MODEL="Qwen/Qwen3.5-4B"
 BASE_REVISION="851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a"
-TARGETS=["q_proj","k_proj","v_proj","o_proj","gate_proj","up_proj","down_proj"]
+TARGETS=r"model\.language_model\.layers\.[\d]+\.(mlp|self_attn)\.(up|down|gate|q|k|v|o)_proj"
 SECRET=re.compile(r"(?im)(-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|ak_[a-z0-9-]+_[a-z0-9_-]{16,}|(?:api[_-]?key|password|secret|access[_-]?token)\s*[:=]\s*[^\s]{12,})")
 PRIVATE_PATH=re.compile(r"(?:(?:/home|/root)/[^\s'\"]+|/run/secrets/[^\s'\"]+)")
 
@@ -40,7 +40,7 @@ def train(job):
     config_path=root/"axolotl.json";config_path.write_text(json.dumps(config,sort_keys=True,separators=(",",":")))
     execution=run_axolotl(config_path,int(os.getenv("TRAIN_TIMEOUT","86400")))
     if execution.returncode:raise RuntimeError(f"Axolotl training exited {execution.returncode}: {safe_diagnostic(execution.stdout,12000) or 'no diagnostic output'}")
-    payload={"schemaVersion":"ai.library-training-result/v1","baseModel":BASE_MODEL,"baseModelRevision":BASE_REVISION,"adapterPath":str(target),"config":str(config_path),"configDigest":hashlib.sha256(config_path.read_bytes()).hexdigest(),"mode":value["mode"],"libraryId":value["libraryId"],"librarySlug":value["librarySlug"],"snapshotId":value["snapshotId"],"datasetManifest":value["datasetManifest"],"targetModules":TARGETS,"rank":16,"alpha":32}
+    payload={"schemaVersion":"ai.library-training-result/v1","baseModel":BASE_MODEL,"baseModelRevision":BASE_REVISION,"adapterPath":str(target),"config":str(config_path),"configDigest":hashlib.sha256(config_path.read_bytes()).hexdigest(),"mode":value["mode"],"libraryId":value["libraryId"],"librarySlug":value["librarySlug"],"snapshotId":value["snapshotId"],"datasetManifest":value["datasetManifest"],"targetModules":[TARGETS],"rank":16,"alpha":32}
     result.write_text(json.dumps(payload,sort_keys=True,separators=(",",":")));return{"resultManifest":f"file://{result}","configurationDigest":payload["configDigest"]}
 def qualify(job):
     value=job["input"];identity=subprocess.check_output(["nvidia-smi","--query-gpu=uuid,driver_version","--format=csv,noheader"],text=True).strip();fingerprint=hashlib.sha256(f"{identity}|{os.getenv('TREEAI_IMAGE_ID','unknown')}|{BASE_REVISION}|r16|mb1|ga8".encode()).hexdigest();root=Path(os.getenv("OUTPUT_DIR","/artifacts/training"))/f"qualification-{fingerprint}";root.mkdir(parents=True,exist_ok=True);dataset=root/"train.jsonl"
