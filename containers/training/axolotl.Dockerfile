@@ -5,6 +5,6 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteract
 WORKDIR /app
 COPY workers/common ./common
 COPY workers/axolotl ./axolotl-worker
-RUN useradd --system --uid 10001 worker && mkdir -p /artifacts/training && chown -R worker /artifacts
+RUN useradd --system --uid 10001 worker && mkdir -p /artifacts/training /models/huggingface /models/cache /models/torch /models/triton && chown -R worker /artifacts /models
 USER worker
 CMD ["python3","axolotl-worker/worker.py"]
