@@ -66,12 +66,20 @@ function imageProbe(fp: MachineFingerprint, role: string, source: string, run: R
 	if (!image || image === "unknown") return false;
 	return safe(run, "docker", ["run", "--rm", "--entrypoint", "python3", image, "-c", source], "failed") !== "failed";
 }
+export function configuredContext(command: string) {
+	try {
+		const args = JSON.parse(command) as unknown;
+		if (!Array.isArray(args) || !args.every((item) => typeof item === "string")) return 0;
+		const index = args.indexOf("--max-model-len"), value = index >= 0 ? Number(args[index + 1]) : 0;
+		return Number.isInteger(value) && value > 0 ? value : 0;
+	} catch { return 0; }
+}
 export function probeCandidate(fp: MachineFingerprint, settings: MachineProfile["settings"], run: Runner = defaultRunner) {
 	const started = Date.now(), gpu = fp.gpuUuid !== "unknown" && fp.gpuMemoryMiB >= 12_000, docker = fp.cudaRuntime !== "unknown";
 	const inference = safe(run, "docker", ["exec", "treeseed-ai-inference-vllm-1", "python3", "-c", concurrentCanary], "failed");
 	let canary: { latencyMs?: number; successes?: number } = {};
 	try { canary = JSON.parse(inference) as typeof canary; } catch { /* gate remains false */ }
-	const configured = Number(safe(run, "docker", ["inspect", "treeseed-ai-inference-vllm-1", "--format", "{{range .Config.Env}}{{println .}}{{end}}"], "").match(/^MAX_MODEL_LENGTH=(\d+)$/mu)?.[1] ?? 0);
+	const configured = configuredContext(safe(run, "docker", ["inspect", "treeseed-ai-inference-vllm-1", "--format", "{{json .Config.Cmd}}"], "[]"));
 	const axolotl = imageProbe(fp, "axolotl-worker", "import torch,transformers; print('ready')", run);
 	const marker = imageProbe(fp, "marker-worker", "import torch,marker; print('ready')", run);
 	const multimodalEnabled = safe(run, "docker", ["exec", "treeseed-ai-inference-vllm-1", "sh", "-lc", "test \"${TREEAI_MULTIMODAL_LORA_ENABLED:-false}\" = true"], "failed") !== "failed";

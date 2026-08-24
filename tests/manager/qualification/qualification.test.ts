@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { contextPolicy, fingerprint, probeCandidate } from "../../../packages/manager/src/lifecycle/qualification/index.js";
+import { configuredContext, contextPolicy, fingerprint, probeCandidate } from "../../../packages/manager/src/lifecycle/qualification/index.js";
 
 describe("machine qualification", () => {
 	afterEach(() => { delete process.env.TREEAI_QUALIFICATION_ROOT; delete process.env.TREEAI_MANAGER_DB; vi.resetModules(); });
@@ -22,11 +22,16 @@ describe("machine qualification", () => {
 	});
 	it("rejects requested contexts above the empirically running profile", () => {
 		const fp = fingerprint((file, args) => file === "nvidia-smi" ? "GPU-1, RTX 3080, 16384, 595.84" : args.includes("info") ? '{"path":"nvidia"}' : "sha256:image");
-		const run = (_file: string, args: string[]) => args.includes("treeseed-ai-inference-vllm-1") && args.includes("inspect") ? "MAX_MODEL_LENGTH=16384" : args.some((item) => item.includes("concurrent.futures")) ? '{"latencyMs":100,"successes":2}' : args.includes("sh") ? "failed" : "ready";
+		const run = (_file: string, args: string[]) => args.includes("treeseed-ai-inference-vllm-1") && args.includes("inspect") ? '["--model","Qwen/Qwen3.5-4B","--max-model-len","16384"]' : args.some((item) => item.includes("concurrent.futures")) ? '{"latencyMs":100,"successes":2}' : args.includes("sh") ? "failed" : "ready";
 		const settings = { maxModelLength: 32768, maxSequences: 2, gpuMemoryUtilization: .85, trainingSequenceLength: 4096, multimodalSequenceLength: 2048, maxImagePixels: 262144, loraRank: 16, multimodalLoraEnabled: false };
 		const result = probeCandidate(fp, settings, run);
 		expect(result.gates.inferenceContext).toBe(false);
 		expect(result.multimodal).toBe(false);
+	});
+	it("reads the effective context from the production vLLM command", () => {
+		expect(configuredContext('["--model","Qwen/Qwen3.5-4B","--max-model-len","16384","--enable-lora"]')).toBe(16384);
+		expect(configuredContext('["--max-model-len","invalid"]')).toBe(0);
+		expect(configuredContext("not-json")).toBe(0);
 	});
 	it("creates first-run campaign directories and reuses the root-observed fingerprint", async () => {
 		const root = mkdtempSync(join(tmpdir(), "treeai-qualification-"));
@@ -36,7 +41,7 @@ describe("machine qualification", () => {
 		const run = (file: string, args: string[]) => {
 			if (file === "nvidia-smi") return "GPU-1, RTX 3080, 16384, 595.84";
 			if (args.includes("info")) return '{"path":"nvidia-container-runtime"}';
-			if (args.includes("inspect") && args.includes("treeseed-ai-inference-vllm-1") && args.some((item) => item.includes("Config.Env"))) return "MAX_MODEL_LENGTH=16384";
+			if (args.includes("inspect") && args.includes("treeseed-ai-inference-vllm-1") && args.some((item) => item.includes("Config.Cmd"))) return '["--model","Qwen/Qwen3.5-4B","--max-model-len","16384"]';
 			if (args.some((item) => item.includes("concurrent.futures"))) return '{"latencyMs":100,"successes":2}';
 			if (args.includes("sh")) return "failed";
 			return "sha256:image";
