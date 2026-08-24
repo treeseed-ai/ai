@@ -7,4 +7,5 @@ COPY workers/common ./common
 COPY workers/axolotl ./axolotl-worker
 RUN useradd --system --uid 10001 worker && mkdir -p /artifacts/training /models/huggingface /models/cache /models/torch /models/triton && chown -R worker /artifacts /models
 USER worker
-CMD ["python3","axolotl-worker/worker.py"]
+WORKDIR /artifacts/training
+CMD ["python3","/app/axolotl-worker/worker.py"]
