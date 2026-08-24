@@ -145,7 +145,7 @@ const smokeCommands: Record<string, string[]> = {
 	"inference-evaluator": ["python", "-c", "import ast,pathlib;ast.parse(pathlib.Path('/app/evaluator/worker.py').read_text())"],
 	"artifact-worker": ["python", "-c", "import ast,pathlib;ast.parse(pathlib.Path('/app/artifact/worker.py').read_text())"],
 	"marker-worker": ["python3", "-c", "import marker,boto3"],
-	"axolotl-worker": ["python3", "-c", "import axolotl,accelerate"],
+	"axolotl-worker": ["python3", "-c", "import axolotl,accelerate; from transformers.models.qwen3_5 import Qwen3_5Config; assert Qwen3_5Config.model_type == 'qwen3_5'"],
 	"inference-migrations": ["sh", "-c", "test -s /migrations/001_initial.sql && grep -q \"<<'SQL'\" /usr/local/bin/treeai-run-migrations && ! grep -q -- \"-c 'SELECT checksum\" /usr/local/bin/treeai-run-migrations"],
 	"training-migrations": ["sh", "-c", "test -s /migrations/001_initial.sql && grep -q \"<<'SQL'\" /usr/local/bin/treeai-run-migrations && ! grep -q -- \"-c 'SELECT checksum\" /usr/local/bin/treeai-run-migrations"],
 	"hermes-agent": ["python", "-c", "from importlib.metadata import version;assert version('hermes-agent')=='0.18.2'"],
