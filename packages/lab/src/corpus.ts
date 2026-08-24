@@ -19,6 +19,7 @@ interface Client { ca: string; endpoints: Record<string, string> }
 interface Response { body: Buffer; headers: Record<string, string | string[] | undefined>; status: number }
 
 const catalogPath = process.env.TREEAI_QUALIFICATION_CORPUS_CATALOG ?? "/usr/share/treeseed-ai/lab/qualification-corpora.json";
+const maximumObjectBytes = 100 * 1024 * 1024;
 export function readCorpusCatalog(path = catalogPath) {
 	const value = JSON.parse(readFileSync(path, "utf8")) as Catalog;
 	if (value.schemaVersion !== "treeai.qualification-corpora/v1") throw new Error("Qualification corpus catalog is incompatible.");
@@ -37,7 +38,8 @@ function get(url: string, headers: Record<string, string> = {}) {
 	return new Promise<Response>((resolve, reject) => {
 		const request = httpsRequest(url, { headers }, (response) => {
 			const chunks: Buffer[] = [];
-			response.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+			let bytes = 0;
+			response.on("data", (chunk) => { bytes += chunk.length; if (bytes > maximumObjectBytes) response.destroy(new Error("Qualification object exceeds 100 MiB.")); else chunks.push(Buffer.from(chunk)); });
 			response.on("end", () => {
 				const status = response.statusCode ?? 0;
 				if (status !== 304 && (status < 200 || status >= 300)) return reject(new Error(`GET ${new URL(url).hostname} returned ${status}`));
