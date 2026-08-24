@@ -146,15 +146,14 @@ function productGroup(product: "inference" | "training" | "lab") {
 function secureLabSecret(path: string) { chmodSync(path, 0o640); command("chown", ["root:treeseed-ai-lab", path]); }
 function ensureSigningMaterial() {
 	const root = "/etc/treeseed-ai/manager/factory";
-	mkdirSync(root, { recursive: true, mode: 0o750 });
+	mkdirSync(root, { recursive: true, mode: 0o750 });chmodSync(root, 0o750);command("chown", ["root:treeseed-ai-manager", root]);
 	const privateKey = `${root}/artifact-signing-key.pem`,
 		publicKey = `${root}/artifact-signing-public.pem`;
 	if (!existsSync(privateKey)) {
-		command("openssl", ["genpkey", "-algorithm", "Ed25519", "-out", privateKey]);
-		command("openssl", ["pkey", "-in", privateKey, "-pubout", "-out", publicKey]);
-		chmodSync(privateKey, 0o600);
-		chmodSync(publicKey, 0o644);
-	}if(enabledProducts().has("training")){chmodSync(privateKey,0o640);chmodSync(publicKey,0o644);command("chown",["root:treeseed-ai-training",privateKey]);}
+		command("openssl", ["genpkey", "-algorithm", "Ed25519", "-out", privateKey]);command("openssl", ["pkey", "-in", privateKey, "-pubout", "-out", publicKey]);chmodSync(privateKey, 0o600);
+	}
+	chmodSync(publicKey, 0o644);command("chown", ["root:treeseed-ai-manager", publicKey]);
+	if(enabledProducts().has("training")){chmodSync(privateKey,0o640);command("chown",["root:treeseed-ai-training",privateKey]);}
 	return { root, privateKey, publicKey };
 }
 function ensureServiceCredentials(root: string) {
