@@ -19,4 +19,7 @@ export const paths = {
 	localBuildReceipt:
 		process.env.TREEAI_LOCAL_BUILD_RECEIPT ??
 		"/var/lib/treeseed-ai/manager/local-build-receipt.json",
+	qualification:
+		process.env.TREEAI_QUALIFICATION_ROOT ??
+		"/var/lib/treeseed-ai/manager/qualification",
 };
