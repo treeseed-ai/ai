@@ -33,6 +33,8 @@ describe('manager-owned platform reconciliation',()=>{
     const overlay=readFileSync('deploy/inference/factory.override.yml','utf8'),platform=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8');
     expect(overlay).toMatch(/manager:\n\s+group_add: \["\$\{RUNTIME_GID/u);
     expect(platform).toContain('chown",["root:treeseed-ai-inference",path]');
+    expect(platform).toContain('readFileSync(path,"utf8")===value');
+    expect(overlay.match(/TREEAI_SECRET_MOUNT_GENERATION/g)).toHaveLength(2);
   });
 
   it('adds bounded redacted migration diagnostics to failed reconciliation',()=>{

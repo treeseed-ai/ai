@@ -32,7 +32,7 @@ function command(file: string, args: string[]) {
 	return result.stdout.trim();
 }
 function atomic(path: string, value: string, mode = 0o600) {
-	mkdirSync(dirname(path), { recursive: true, mode: 0o750 });
+	mkdirSync(dirname(path), { recursive: true, mode: 0o750 });if(existsSync(path)&&readFileSync(path,"utf8")===value){chmodSync(path,mode);return;}
 	const next = `${path}.new`;
 	writeFileSync(next, value, { mode });
 	renameSync(next, path);
