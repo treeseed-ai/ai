@@ -18,7 +18,7 @@ def safe(value,base=ROOT):
 def sign_manifest(manifest):
     key=serialization.load_pem_private_key(KEY_PATH.read_bytes(),password=None)
     if not isinstance(key,Ed25519PrivateKey): raise ValueError("Signing key must be Ed25519")
-    unsigned={**manifest,"signature":""};return{**unsigned,"signature":base64.b64encode(key.sign(canonical(unsigned))).decode()}
+    return{**manifest,"signature":base64.b64encode(key.sign(canonical(manifest))).decode()}
 def client(): return boto3.client("s3",endpoint_url=os.environ["AWS_ENDPOINT_URL"],region_name=os.getenv("AWS_REGION","us-east-1"),aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"])
 def upload(path,key):
     bucket=os.environ["S3_BUCKET"];client().upload_file(str(path),bucket,key);return f"s3://{bucket}/{key}"

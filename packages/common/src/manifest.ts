@@ -20,5 +20,5 @@ export function signManifest(manifest: Omit<ArtifactManifest, 'signature'>, priv
 }
 
 export function verifyManifest(manifest: ArtifactManifest, publicKey: KeyLike) {
-	return manifest.schemaVersion === 'ai.artifact/v1' && verify(null, unsignedManifest(manifest), publicKey, Buffer.from(manifest.signature, 'base64'));
+	return ['ai.artifact/v1','ai.artifact/v2'].includes(manifest.schemaVersion) && verify(null, unsignedManifest(manifest), publicKey, Buffer.from(manifest.signature, 'base64'));
 }
