@@ -6,10 +6,9 @@ import { hashApiKey, validatePlatformConfiguration } from "@ai-platform/common";
 import { readCatalog } from "../core/catalog.js";
 import { localImageReadiness } from "./local-build.js";
 import { event, setSetting, setting } from "../core/store.js";
-import { paths } from "../core/paths.js";
-import { hashHermesPassword } from "./hermes/password.js";
-import { ensurePlatformTls } from "./certificates/tls.js";import { activateManagerCertificate } from "./certificates/activation.js";
-import { imageVariables } from "../core/image-variables.js";import { summarizeComposeStatus, type ProductStatus } from "./status.js";
+import { paths } from "../core/paths.js";import { hashHermesPassword } from "./hermes/password.js";
+import { ensurePlatformTls } from "./certificates/tls.js";import { activateManagerCertificate } from "./certificates/activation.js";import { imageVariables } from "../core/image-variables.js";
+import { summarizeComposeStatus, type ProductStatus } from "./status.js";
 import { reconcileLabEdge } from "./lab/edge.js";import { migrationDiagnostics } from "./migrations/diagnostics.js";
 const products = {
 	inference: {
@@ -76,7 +75,7 @@ function environment(path: string, values: Record<string, string>, group: string
 	} catch {}
 }
 function compose(product: keyof typeof products, args: string[]) { const item = products[product]; return command("docker", ["compose", "-p", `treeseed-ai-${product}`, "--env-file", item.environment, "-f", item.compose, "-f", item.overlay, ...args]); }
-function reconcileProduct(product:keyof typeof products,args:string[]){try{return compose(product,args);}catch(error){const diagnostics=migrationDiagnostics(product,products[product]),message=error instanceof Error?error.message:String(error);throw new Error(diagnostics?`${message}\nMigration diagnostics:\n${diagnostics}`:message);}}
+function reconcileProduct(product:keyof typeof products,args:string[]){try{return compose(product,args);}catch(error){const diagnostics=migrationDiagnostics(product,products[product]),message=error instanceof Error?error.message:String(error);throw new Error(diagnostics?`${message}\nMigration diagnostics:\n${diagnostics}`:message);}}function reconcileObjectStore(product:keyof typeof products){reconcileProduct(product,["up","-d","--wait","--wait-timeout","600","minio"]);reconcileProduct(product,["run","--rm","--no-deps","minio-init"]);}
 export function ensureManagedRuntime() {
 	const config = JSON.parse(readFileSync(paths.configuration, "utf8")) as {
 		runtime: { management: string };
@@ -427,6 +426,7 @@ export async function reconcilePlatform() {
 	const mode = setting<string>("mode", "awake"),
 		enabled = enabledProducts();
 	if (!existsSync(paths.mode)) writeMode(mode);
+	if(configuration.state.objectStorage==="bundled")for(const product of["inference","training"]as const)if(enabled.has(product))reconcileObjectStore(product);
 	if (mode === "awake") {
 		if (enabled.has("training")) {
 			compose("training", ["stop", "marker", "axolotl"]);
