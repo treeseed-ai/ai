@@ -152,7 +152,16 @@ export function createManagerApp() {
 	app.get("/v1/qualification/profile", requireScope("platform:read"), (c) => c.json(qualificationStatus()));
 	app.get("/v1/qualification/profiles", requireScope("platform:read"), (c) => c.json({ items: profiles() }));
 	app.get("/v1/qualification/campaigns", requireScope("platform:read"), (c) => c.json({ items: campaigns() }));
-	app.get("/v1/qualification/campaigns/:id", requireScope("platform:read"), (c) => { const value = campaign(c.req.param("id")); return value ? c.json(value) : c.json({ error: { code: "not_found", message: "Qualification campaign not found." } }, 404); });
+	app.get("/v1/qualification/campaigns/:id", requireScope("platform:read"), (c) => {
+		const id = c.req.param("id"), value = campaign(id);
+		if (value) return c.json(value);
+		const work = getWork(id);
+		if (work?.kind === "qualification") {
+			if (work.state === "succeeded" && work.result) return c.json(work.result);
+			return c.json(work);
+		}
+		return c.json({ error: { code: "not_found", message: "Qualification campaign not found." } }, 404);
+	});
 	app.post("/v1/qualification/campaigns", requireScope("platform:reconcile"), async (c) => { const body = await c.req.json().catch(() => ({})) as { preset?: string; idempotencyKey?: string }, key = body.idempotencyKey ?? c.req.header("idempotency-key"); if (!key || !["baseline", "balanced"].includes(body.preset ?? "")) return c.json({ error: { code: "invalid_request", message: "preset and idempotencyKey are required." } }, 400); return c.json(queue("qualification", body.preset === "baseline" ? "qualification.baseline" : "qualification.run", { preset: body.preset }, key), 202); });
 	app.post("/v1/qualification/campaigns/:id/cancel", requireScope("platform:reconcile"), async (c) => { const body = await c.req.json().catch(() => ({})) as { idempotencyKey?: string }, key = body.idempotencyKey ?? c.req.header("idempotency-key"); if (!key) return c.json({ error: { code: "idempotency_required", message: "An idempotency key is required." } }, 400); return c.json(await callSupervisor({ operation: "qualification.cancel", parameters: { id: c.req.param("id") }, idempotencyKey: key })); });
 	app.get("/v1/mode", requireScope("platform:read"), (c) =>
