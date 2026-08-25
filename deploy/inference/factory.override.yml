@@ -38,6 +38,8 @@ services:
     environment:
       AWS_ENDPOINT_URL: http://minio:9000
       VLLM_URL: http://inference-vllm:8000
+      NO_PROXY: 127.0.0.1,localhost,minio,inference-minio,vllm,inference-vllm
+      no_proxy: 127.0.0.1,localhost,minio,inference-minio,vllm,inference-vllm
   vllm:
     restart: "no"
     networks:

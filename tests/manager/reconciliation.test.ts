@@ -69,6 +69,8 @@ describe('manager-owned platform reconciliation',()=>{
 		expect(overlay).toMatch(/evaluator:\n\s+depends_on:\n\s+minio: \{ condition: service_healthy \}\n\s+vllm: \{ condition: service_healthy \}/u);
 		expect(overlay).toMatch(/evaluator:[\s\S]*AWS_ENDPOINT_URL: http:\/\/minio:9000/u);
 		expect(overlay).toMatch(/evaluator:[\s\S]*VLLM_URL: http:\/\/inference-vllm:8000/u);
+		expect(overlay).toContain('NO_PROXY: 127.0.0.1,localhost,minio,inference-minio,vllm,inference-vllm');
+		expect(overlay).toContain('no_proxy: 127.0.0.1,localhost,minio,inference-minio,vllm,inference-vllm');
 		expect(overlay).toContain('default: { aliases: [inference-vllm] }');
 		expect(compose).toContain("urllib.parse.urlparse(os.environ['AWS_ENDPOINT_URL'])");
 		expect(compose).toContain("urllib.parse.urlparse(os.environ['VLLM_URL'])");
