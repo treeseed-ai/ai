@@ -81,6 +81,9 @@ def key(uri):
 def post(path, body):
     request=urllib.request.Request(f"{os.getenv('VLLM_URL','http://vllm:8000')}{path}", data=json.dumps(body).encode(), headers={"content-type":"application/json"})
     try:return PRIVATE_OPENER.open(request, timeout=240).read()
+    except urllib.error.HTTPError as error:
+        detail=error.read(1024).decode("utf-8",errors="replace").replace("\n"," ").strip()
+        raise RuntimeError(f"private vLLM HTTP {error.code}: {detail or 'empty response'}") from error
     except urllib.error.URLError as error:raise RuntimeError(f"private vLLM request failed: {type(error.reason).__name__}") from error
 def deployment(job, action):
     candidate=str(job["input"]["candidateId"]); value=job["input"]["manifest"]
