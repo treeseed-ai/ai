@@ -90,7 +90,8 @@ function queue(
 	idempotencyKey: string,
 ) {
 	const work = createWork(kind, idempotencyKey, request);
-	if (work.state === "queued")
+	if (work.state === "queued") {
+		finishWork(work.id, "running");
 		void callSupervisor({
 			operation,
 			parameters: request as Record<string, unknown>,
@@ -113,7 +114,8 @@ function queue(
 					error instanceof Error ? error.message : String(error),
 				),
 			);
-	return work;
+	}
+	return getWork(work.id)!;
 }
 function completedTransition(mode:string,idempotencyKey:string){const work=createWork('transition',idempotencyKey,{mode});return work.state==='queued'?finishWork(work.id,'succeeded',{mode,changed:false,reason:'already_in_mode'}):work;}
 export function createManagerApp() {

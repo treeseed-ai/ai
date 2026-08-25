@@ -12,6 +12,21 @@ afterEach(() => {
 });
 
 describe("manager qualification API", () => {
+	it("reports supervisor work as running while the fixed operation executes", async () => {
+		const root = mkdtempSync(join(tmpdir(), "treeai-qualification-api-")), keys = join(root, "keys.json");
+		roots.push(root);
+		writeFileSync(keys, JSON.stringify([{ id: "operator", hash: hashApiKey("secret", "salt"), scopes: ["*"], revoked: false }]));
+		vi.stubEnv("TREEAI_MANAGER_DB", join(root, "lifecycle.db"));
+		vi.stubEnv("TREEAI_MANAGER_API_KEYS_FILE", keys);
+		vi.stubEnv("TREEAI_QUALIFICATION_ROOT", join(root, "qualification"));
+		vi.stubEnv("TREEAI_MANAGER_SOCKET", join(root, "missing.sock"));
+		vi.resetModules();
+		const { createManagerApp } = await import("../../../packages/manager/src/http/api.js?running");
+		const response = await createManagerApp().request("/v1/qualification/campaigns", { method: "POST", headers: { authorization: "Bearer ak_operator_secret", "content-type": "application/json" }, body: JSON.stringify({ preset: "baseline", idempotencyKey: "qualification-running" }) });
+		expect(response.status).toBe(202);expect(await response.json()).toMatchObject({ kind: "qualification", state: "running" });
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		const { closeStore } = await import("../../../packages/manager/src/core/store.js");closeStore();
+	});
 	it("resolves a submitted work identifier to its completed campaign", async () => {
 		const root = mkdtempSync(join(tmpdir(), "treeai-qualification-api-")), keys = join(root, "keys.json");
 		roots.push(root);
