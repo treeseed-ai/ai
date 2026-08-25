@@ -29,6 +29,7 @@ export interface QualificationCampaign {
 	fingerprintDigest: string; maxTrials: number; deadline: string; trials: Array<{ profileId: string; state: string; score: number; diagnostics?: string }>;
 	selectedProfileId?: string; error?: string; createdAt: string; updatedAt: string;
 }
+export interface SustainedTrainingProfile { schemaVersion: "treeai.sustained-training-profile/v1"; fingerprint: string; sequenceLength: number; diagnostics: unknown; qualifiedAt: string }
 type Runner = (file: string, args: string[]) => string;
 const defaultRunner: Runner = (file, args) => execFileSync(file, args, { encoding: "utf8", timeout: 120_000 }).trim();
 function atomic(path: string, value: unknown) { mkdirSync(dirname(path), { recursive: true, mode: 0o750 }); const next = `${path}.new`; writeFileSync(next, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o640 }); renameSync(next, path); }
@@ -55,7 +56,8 @@ function observedFingerprint(run?: Runner) {
 	if (existsSync(receipt)) return (JSON.parse(readFileSync(receipt, "utf8")) as { fingerprint: MachineFingerprint }).fingerprint;
 	return fingerprint((file, args) => file === "nvidia-smi" ? defaultRunner(file, args) : "unknown");
 }
-export function qualificationStatus(run?: Runner) { const current = observedFingerprint(run), currentDigest = digest(current), activeId = setting<string | null>("qualification.activeProfile", null), knownGoodId = setting<string | null>("qualification.knownGoodProfile", null); return { status: activeId ? "ready" : "warning", fingerprint: current, fingerprintDigest: currentDigest, baselineRequired: setting("qualification.fingerprint", "") !== currentDigest, activeProfile: activeId ? readProfile(activeId) : null, knownGoodProfile: knownGoodId ? readProfile(knownGoodId) : null }; }
+export function observedTrainingProfile(path=process.env.TREEAI_TRAINING_PROFILE_RECEIPT??"/run/treeseed-ai/training/training-profile.json") { try { const value=JSON.parse(readFileSync(path,"utf8")) as SustainedTrainingProfile; return value.schemaVersion==="treeai.sustained-training-profile/v1"&&[1024,2048,3072,4096,6144,8192].includes(value.sequenceLength)?value:null; } catch { return null; } }
+export function qualificationStatus(run?: Runner) { const current = observedFingerprint(run), currentDigest = digest(current), activeId = setting<string | null>("qualification.activeProfile", null), knownGoodId = setting<string | null>("qualification.knownGoodProfile", null); return { status: activeId ? "ready" : "warning", fingerprint: current, fingerprintDigest: currentDigest, baselineRequired: setting("qualification.fingerprint", "") !== currentDigest, sustainedTrainingProfile:observedTrainingProfile(), activeProfile: activeId ? readProfile(activeId) : null, knownGoodProfile: knownGoodId ? readProfile(knownGoodId) : null }; }
 export function activeProfile() { const id = setting<string | null>("qualification.activeProfile", null); return id ? readProfile(id) : null; }
 export function readProfile(id: string) { const path = profilePath(id); if (!existsSync(path)) return null; const value = JSON.parse(readFileSync(path, "utf8")) as ReturnType<typeof envelope>; if (!verifyProfile(value)) throw new Error("Machine profile signature is invalid."); return value.profile; }
 export function profiles() { const root = join(paths.qualification, "profiles"); if (!existsSync(root)) return []; return (awaitFiles(root)).map((path) => readProfile(path)!).filter(Boolean); }
@@ -99,7 +101,7 @@ export function campaign(id: string) { const path = campaignPath(id); return exi
 export function cancelCampaign(id: string) { const value = campaign(id); if (!value || !["queued", "running"].includes(value.state)) throw new Error("Campaign is not cancellable."); value.state = "cancelled"; value.updatedAt = new Date().toISOString(); atomic(campaignPath(id), value); event("qualification.campaign-cancelled", { id }); return value; }
 export function runCampaign(preset: "baseline" | "balanced", run: Runner = defaultRunner) {
 	const multimodalQualification = (run === defaultRunner ? qualifyMultimodalSupport() : undefined) as { supported: boolean; reason?: string; diagnostic?: string } | undefined;
-	const fp = fingerprint(run), createdAt = new Date().toISOString(), maxTrials = preset === "baseline" ? 4 : 24;
+	const fp = fingerprint(run), sustained=observedTrainingProfile(), createdAt = new Date().toISOString(), maxTrials = preset === "baseline" ? 4 : 24;
 	atomic(join(paths.qualification, "fingerprint.json"), { schemaVersion: "treeai.machine-fingerprint-observation/v1", fingerprint: fp, fingerprintDigest: digest(fp), observedAt: createdAt });
 	const deadline = new Date(Date.now() + (preset === "baseline" ? 30 * 60_000 : 4 * 60 * 60_000)).toISOString();
 	const value: QualificationCampaign = { id: crypto.randomUUID(), preset, state: "running", fingerprintDigest: digest(fp), maxTrials, deadline, trials: [], createdAt, updatedAt: createdAt };
@@ -110,7 +112,7 @@ export function runCampaign(preset: "baseline" | "balanced", run: Runner = defau
 	let best = 0, stale = 0;
 	for (let index = 0; index < maxTrials && Date.now() < Date.parse(deadline); index++) {
 		if (campaign(value.id)?.state === "cancelled") return campaign(value.id)!;
-		const name = names[index % names.length]!, maxModelLength = contexts[index % contexts.length]!, trainingSequenceLength = training[Math.floor(index / contexts.length) % training.length]!;
+		const name = names[index % names.length]!, maxModelLength = contexts[index % contexts.length]!, requestedTrainingLength = training[Math.floor(index / contexts.length) % training.length]!, trainingSequenceLength = Math.min(requestedTrainingLength,sustained?.sequenceLength??requestedTrainingLength);
 		const settings = { maxModelLength, maxSequences: 2, gpuMemoryUtilization: index % 3 === 2 ? .9 : .85, trainingSequenceLength, multimodalSequenceLength: Math.min(trainingSequenceLength, 4096), maxImagePixels: index % 2 ? 786432 : 262144, loraRank: index % 3 === 2 ? 32 : 16, multimodalLoraEnabled: false };
 		const observation = probeCandidate(fp, settings, run); settings.multimodalLoraEnabled = observation.multimodal;
 		const gates = { ...observation.gates, ...(name === "training-multimodal" ? { multimodal: observation.multimodal } : {}) };
