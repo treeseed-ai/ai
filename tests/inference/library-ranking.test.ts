@@ -15,4 +15,11 @@ describe('library adapter ranking',()=>{
 		expect(source).toContain('candidateVisualManifest');
 		expect(source).toContain('held-out visual grounding did not improve');
 	});
+	it('packages and validates the versioned default suite in the evaluator image',()=>{
+		const dockerfile=readFileSync('containers/inference/evaluator.Dockerfile','utf8'),suite=JSON.parse(readFileSync('workers/evaluator/suites/default-v1.json','utf8'));
+		expect(dockerfile).toContain('ENV SUITE_DIR=/app/evaluator/suites');
+		expect(dockerfile).toContain("value.get('schemaVersion') == 'ai.evaluation-suite/v1'");
+		expect(suite.schemaVersion).toBe('ai.evaluation-suite/v1');
+		expect(suite.cases.length).toBeGreaterThan(0);
+	});
 });
