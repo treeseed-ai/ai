@@ -34,4 +34,5 @@ describe("qualification corpus acquisition", () => {
 		expect(source).toContain("SEC_USER_AGENT");
 		expect(source).not.toContain("Authorization: Bearer");
 	});
+	it("keeps corpus acquisition scopes fixed and permits NASA without SEC identity",()=>{const source=readFileSync("packages/lab/src/corpus.ts","utf8"),cli=readFileSync("packages/lab/src/cli.ts","utf8");expect(source).toContain('scope:"all"|"financial"|"multimodal"="all"');expect(source).toContain('scope!=="multimodal"');expect(cli).toContain("--scope all|financial|multimodal");});
 });
