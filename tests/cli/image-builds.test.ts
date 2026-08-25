@@ -26,6 +26,10 @@ describe('selective image build identities',()=>{
     expect(workflow).toContain('docker buildx imagetools inspect');
     expect(workflow).not.toContain('docker buildx imagetools create --tag');
     expect(workflow).toContain('.images[$role].disposition="reused"');
+    expect(workflow).toContain('recover_run_id');
+    expect(workflow).toContain('git diff --quiet "$recovery_sha" HEAD');
+    expect(workflow).toContain('.name == "Publish every exact RC image and verify Docker Hub read-back" and .conclusion == "success"');
+    expect(workflow).toContain('.name == "Publish immutable prerelease" and .conclusion == "failure"');
     expect(workflow).toContain('pnpm build:component-release');
     expect(workflow).toContain('TREEAI_DEVELOPMENT_BASE');
     expect(workflow).not.toContain('dpkg-buildpackage');
