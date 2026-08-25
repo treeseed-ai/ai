@@ -2,7 +2,7 @@ import { mkdtempSync,writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { configuredContext, contextPolicy, fingerprint, observedTrainingProfile, probeCandidate } from "../../../packages/manager/src/lifecycle/qualification/index.js";
+import { configuredContext, contextPolicy, fingerprint, observedTrainingProfile, probeCandidate,scoresComparable } from "../../../packages/manager/src/lifecycle/qualification/index.js";
 
 describe("machine qualification", () => {
 	afterEach(() => { delete process.env.TREEAI_QUALIFICATION_ROOT; delete process.env.TREEAI_MANAGER_DB; delete process.env.TREEAI_TRAINING_PROFILE_RECEIPT; vi.resetModules(); });
@@ -35,6 +35,7 @@ describe("machine qualification", () => {
 		expect(configuredContext("not-json")).toBe(0);
 	});
 	it("accepts only bounded sustained training receipts",()=>{const root=mkdtempSync(join(tmpdir(),"treeai-training-profile-")),path=join(root,"profile.json");writeFileSync(path,JSON.stringify({schemaVersion:"treeai.sustained-training-profile/v1",fingerprint:"gpu-runtime",sequenceLength:3072,diagnostics:{failed:[4096]},qualifiedAt:"2026-08-25T00:00:00.000Z"}));expect(observedTrainingProfile(path)).toMatchObject({sequenceLength:3072,fingerprint:"gpu-runtime"});writeFileSync(path,JSON.stringify({schemaVersion:"treeai.sustained-training-profile/v1",fingerprint:"gpu-runtime",sequenceLength:5000}));expect(observedTrainingProfile(path)).toBeNull();});
+	it("compares strict improvement only within the same signed score policy",()=>{expect(scoresComparable({scorePolicy:"balanced-v2",fingerprintDigest:"host"},{scorePolicy:"balanced-v2",fingerprintDigest:"host"})).toBe(true);expect(scoresComparable({scorePolicy:"balanced-v2",fingerprintDigest:"host"},{fingerprintDigest:"host"})).toBe(false);expect(scoresComparable({scorePolicy:"balanced-v2",fingerprintDigest:"host"},{scorePolicy:"balanced-v2",fingerprintDigest:"other"})).toBe(false);});
 	it("does not treat successful empty probe output as a multimodal failure", () => {
 		const fp = fingerprint((file, args) => file === "nvidia-smi" ? "GPU-1, RTX 3080, 16384, 595.84" : args.includes("info") ? '{"path":"nvidia"}' : "sha256:image");
 		const run = (_file: string, args: string[]) => args.includes("inspect") && args.some((item) => item.includes("Config.Cmd")) ? '["--max-model-len","16384"]' : args.some((item) => item.includes("concurrent.futures")) ? '{"latencyMs":100,"successes":2}' : args.some((item) => item.includes("printf true")) ? "true" : "ready";
