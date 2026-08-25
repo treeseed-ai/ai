@@ -11,7 +11,8 @@ describe("qualification corpus acquisition", () => {
 		expect(value.financial.minimumUsableTokens).toBeGreaterThanOrEqual(500_000);
 		expect(value.financial.minimumHeldOutTokens).toBeGreaterThanOrEqual(50_000);
 		expect(value.financial.issuers).toHaveLength(12);
-		expect(value.multimodal.reports.length).toBeGreaterThanOrEqual(3);
+		expect(value.multimodal.reports.length).toBeGreaterThanOrEqual(4);
+		expect(value.multimodal.reports).toContainEqual(expect.objectContaining({ id: "20240000182", sha256: "11bbe5fc664bd1d1d722ee4fb07cf6fa23fe77d1efc84e658a98d841fde434e9", size: 34_497_958 }));
 		for (const report of value.multimodal.reports) {
 			expect(report.url).toMatch(/^https:\/\/ntrs\.nasa\.gov\//u);
 			expect(report.sha256).toMatch(/^[a-f0-9]{64}$/u);
