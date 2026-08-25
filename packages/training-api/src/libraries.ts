@@ -15,7 +15,8 @@ export async function boundedDocumentBytes(path:string,expectedSize:number){
 }
 
 export function sameDocumentRevision(current:Record<string,unknown>,input:DocumentInput){
-	return current.object_sha256===input.sha256&&current.declared_mime_type===input.declaredMimeType;
+	const currentProfile=(current.provenance as Record<string,unknown>|undefined)?.processingProfile,inputProfile=input.provenance?.processingProfile;
+	return current.object_sha256===input.sha256&&current.declared_mime_type===input.declaredMimeType&&currentProfile===inputProfile;
 }
 
 export function sameRelationshipRevision(current:Record<string,unknown>,input:{filename?:string;relativePath?:string;directoryExternalId?:string}){
@@ -46,7 +47,7 @@ export class LibraryRepository {
 			const library=await client.query('SELECT id FROM libraries WHERE id=$1 AND deleted=false FOR UPDATE',[libraryId]);if(!library.rowCount)throw new Error('Library not found');
 			await client.query(`INSERT INTO document_objects(sha256,object_uri,size,detected_mime_type) VALUES($1,$2,$3,$4) ON CONFLICT(sha256) DO NOTHING`,[input.sha256,uri,input.size,input.detectedMimeType]);
 			const document=await client.query(`INSERT INTO library_documents(library_id,external_id) VALUES($1,$2) ON CONFLICT(library_id,external_id) DO UPDATE SET deleted_at=null,updated_at=now() RETURNING id`,[libraryId,input.externalId]);
-			const current=await client.query(`SELECT r.object_sha256,r.filename,r.relative_path,r.directory_external_id,r.declared_mime_type,r.state FROM library_documents d JOIN document_revisions r ON r.id=d.current_revision_id WHERE d.id=$1`,[document.rows[0].id]);
+			const current=await client.query(`SELECT r.object_sha256,r.filename,r.relative_path,r.directory_external_id,r.declared_mime_type,r.state,r.provenance FROM library_documents d JOIN document_revisions r ON r.id=d.current_revision_id WHERE d.id=$1`,[document.rows[0].id]);
 			if(current.rowCount&&sameDocumentRevision(current.rows[0],input)){await client.query('UPDATE library_documents SET state=$1,deleted_at=null,updated_at=now() WHERE id=$2',[current.rows[0].state,document.rows[0].id]);await client.query('COMMIT');return(await this.documents(libraryId)).find((value)=>value.id===String(document.rows[0].id));}
 			const revision=await client.query('SELECT COALESCE(MAX(revision),0)+1 next FROM document_revisions WHERE document_id=$1',[document.rows[0].id]);
 			const inserted=await client.query(`INSERT INTO document_revisions(document_id,object_sha256,revision,filename,relative_path,directory_external_id,declared_mime_type,detected_mime_type,provenance) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,[document.rows[0].id,input.sha256,revision.rows[0].next,input.filename,input.relativePath,input.directoryExternalId??null,input.declaredMimeType,input.detectedMimeType,input.provenance??{}]);

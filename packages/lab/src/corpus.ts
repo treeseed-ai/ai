@@ -107,7 +107,7 @@ async function library(client: Client, key: string, name: string, slug: string) 
 async function upload(client: Client, key: string, libraryId: string, item: { externalId: string; filename: string; relativePath: string; mime: string; body: Buffer; provenance: Record<string, unknown> }) {
 	const sha256 = digest(item.body);
 	const metadata = Buffer.from(JSON.stringify({ externalId: item.externalId, filename: item.filename, relativePath: item.relativePath, declaredMimeType: item.mime, provenance: item.provenance })).toString("base64url");
-	return send(`${client.endpoints.training}/v1/libraries/${libraryId}/documents`, item.body, { authorization: `Bearer ${key}`, "content-type": item.mime, "idempotency-key": `qualification-object:${item.externalId}:${sha256}`, "x-content-sha256": sha256, "x-treeai-document": metadata }, readFileSync(client.ca));
+	return send(`${client.endpoints.training}/v1/libraries/${libraryId}/documents`, item.body, { authorization: `Bearer ${key}`, "content-type": item.mime, "idempotency-key": `qualification-object:${item.externalId}:${sha256}:${String(item.provenance.processingProfile??'direct-v1')}`, "x-content-sha256": sha256, "x-treeai-document": metadata }, readFileSync(client.ca));
 }
 export function selectFiling(recent: Record<string, string[]>) {
 	const rows = (recent.form ?? []).map((form, index) => ({ form, index }));
@@ -137,7 +137,7 @@ export async function acquireQualification(client: Client, key: string, userAgen
 	for (const report of scope!=="financial"?value.multimodal.reports:[]) {
 		const { body, stored } = await cachedGet(report.url, report.filename, { "user-agent": "TreeAI Qualification/0.10 (https://github.com/treeseed-ai/ai)" }, { sourceUrl: report.url, reportId: report.id, provenance: report.provenance, catalogGeneration: value.generation });
 		if (body.length !== report.size || digest(body) !== report.sha256) throw new Error(`NASA report ${report.id} differs from the release catalog.`);
-		await upload(client, key, visual!.id, { externalId: `nasa:${report.id}`, filename: report.filename, relativePath: `Reports/${report.filename}`, mime: "application/pdf", body, provenance: { source: "NASA NTRS", sourceUrl: report.url, reportId: report.id, sha256: stored.sha256, catalogGeneration: value.generation } });
+		await upload(client, key, visual!.id, { externalId: `nasa:${report.id}`, filename: report.filename, relativePath: `Reports/${report.filename}`, mime: "application/pdf", body, provenance: { source: "NASA NTRS", sourceUrl: report.url, reportId: report.id, sha256: stored.sha256, catalogGeneration: value.generation, processingProfile:'marker-balanced-v4' } });
 		acquired.push({ source: "nasa", id: report.id, sha256: stored.sha256, size: stored.size });
 	}
 	return { status: "ready", generation: value.generation, scope, libraries: { financial: financial?.id, multimodal: visual?.id }, acquired };

@@ -20,6 +20,23 @@ with tempfile.TemporaryDirectory() as root:
 		expect(result.evidence[0].authoredContext).toContain('source explains');
 	});
 
+	it('correlates real Marker Markdown image references with authored context',()=>{
+		const worker=JSON.stringify(join(process.cwd(),'workers/marker/worker.py'));
+		const result=python(`import importlib.util,json,os,pathlib,sys,tempfile,types
+os.environ['OUTPUT_DIR']=tempfile.mkdtemp(prefix='treeai-marker-test-')
+sys.modules['boto3']=types.SimpleNamespace(client=lambda *a,**k:None);sys.modules['common']=types.ModuleType('common');sys.modules['common.server']=types.SimpleNamespace(serve=lambda routes:None)
+spec=importlib.util.spec_from_file_location('marker',${worker});module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+with tempfile.TemporaryDirectory() as root:
+ target=pathlib.Path(root);structured=target/'structured';structured.mkdir();markdown=target/'markdown';markdown.mkdir();images=target/'images';images.mkdir()
+ (images/'_page_7_Figure_3.jpeg').write_bytes(b'\\xff\\xd8\\xffsource-authored-image')
+ (structured/'document.json').write_text(json.dumps({'type':'Page','page':7,'children':[]}))
+ (markdown/'document.md').write_text('## Thermal protection system\\n\\nThe report compares measured temperatures across the reusable heat-shield tiles.\\n\\n![](_page_7_Figure_3.jpeg)\\n\\nFigure 3. Measured tile temperatures during atmospheric entry.\\n')
+ blocks,evidence=module.authored_image_evidence(structured,target);print(json.dumps({'blocks':blocks,'evidence':evidence}))`);
+		expect(result.evidence).toHaveLength(1);
+		expect(result.evidence[0]).toMatchObject({imagePath:'images/_page_7_Figure_3.jpeg',section:'Thermal protection system',eligible:true,mimeType:'image/jpeg'});
+		expect(result.evidence[0].authoredContext).toContain('Figure 3');
+	});
+
 	it('renders a bounded Qwen 3.5 vision QLoRA config without sample packing',()=>{
 		const modulePath=JSON.stringify(join(process.cwd(),'workers/axolotl/multimodal_train.py'));
 		const result=python(`import importlib.util,json,pathlib,sys,tempfile,types
