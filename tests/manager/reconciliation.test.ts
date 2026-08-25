@@ -1,7 +1,14 @@
 import{readFileSync}from'node:fs';
 import{describe,expect,it}from'vitest';
+import{objectStoreAccessId}from'../../packages/manager/src/lifecycle/storage/identities.js';
 
 describe('manager-owned platform reconciliation',()=>{
+	it('derives stable, separated bundled object-store access IDs',()=>{
+		const secret='credential-that-must-not-appear',training=objectStoreAccessId('training',secret);
+		expect(training).toBe(objectStoreAccessId('training',secret));expect(training).toMatch(/^trn-[a-f0-9]{12}$/u);expect(training).not.toContain(secret);expect(training.length).toBeLessThanOrEqual(20);
+		expect(new Set([objectStoreAccessId('inference',secret),training,objectStoreAccessId('trainingImport',secret)]).size).toBe(3);
+		expect(()=>objectStoreAccessId('training','')).toThrow('credential material is missing');
+	});
   it('does not start standalone inference and training units',()=>{
     const converge=readFileSync('packages/manager/src/bin/converge.ts','utf8');
     const platform=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8');
@@ -44,7 +51,8 @@ describe('manager-owned platform reconciliation',()=>{
     expect(compose).toContain('inference-import-policy');expect(compose).toContain('s3:GetObject');expect(compose).not.toMatch(/import-policy\.json[^\n]+s3:\*/u);
     expect(compose).toContain('mc admin user add local $$IMPORT_S3_ACCESS_KEY $$IMPORT_S3_SECRET_KEY');expect(compose).not.toContain('user info local $$IMPORT_S3_ACCESS_KEY');
     expect(compose).toContain('mc ls import-check/$$S3_BUCKET');expect(compose).toContain('$$attempt\\\" -lt 30');
-    expect(platform).toContain('accessKeyId: "inference-import"');expect(platform).toContain('trainingImportS3??=secret()');
+    expect(platform).toContain('accessKeyId: accessIds.trainingImport');expect(platform).toContain('trainingImportS3??=secret()');
+		expect(platform).toContain('S3_ACCESS_KEY: accessIds[product]');expect(platform).toContain('IMPORT_S3_ACCESS_KEY:accessIds.trainingImport');
     expect(platform).toContain('["run","--rm","--no-deps","minio-init"]');
     expect(platform).not.toMatch(/inference: \[[^\n]*"minio-init"/u);expect(platform).not.toMatch(/training: \[[^\n]*"minio-init"/u);
     for(const product of['inference','training'])expect(readFileSync(`deploy/${product}/factory.override.yml`,'utf8')).not.toContain('minio-init: { condition:');
