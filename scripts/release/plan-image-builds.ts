@@ -39,6 +39,7 @@ export function reuseEligible(input:{currentVersion:string;priorVersion?:string;
 	const current=/^(\d+\.\d+\.\d+)-rc[1-9]\d*$/u.exec(input.currentVersion),prior=/^(\d+\.\d+\.\d+)-rc[1-9]\d*$/u.exec(input.priorVersion??''),sameCandidateLine=Boolean(current&&prior&&current[1]===prior[1]);
 	if(!input.previousValid)return false;
 	if(sameCandidateLine&&input.declaredChanged===false)return true;
+	if(sameCandidateLine&&input.declaredChanged===true)return false;
 	if(sameCandidateLine)return input.buildIdentityMatches||(input.inputsUnchanged&&input.buildDefinitionMatches===true);
 	return input.declaredChanged===undefined?input.buildIdentityMatches||input.inputsUnchanged:!input.declaredChanged;
 }
