@@ -38,7 +38,7 @@ describe('manager-owned platform reconciliation',()=>{
 
   it('grants only inference services mounted with import secrets the inference group',()=>{
     const overlay=readFileSync('deploy/inference/factory.override.yml','utf8'),platform=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8');
-    expect(overlay).toMatch(/manager:\n\s+group_add: \["\$\{RUNTIME_GID/u);
+		expect(overlay).toMatch(/manager:[\s\S]*group_add: \["\$\{RUNTIME_GID/u);
     expect(platform).toContain('chown",["root:treeseed-ai-inference",path]');
     expect(platform).toContain('readFileSync(path,"utf8")===value');
     expect(platform).toContain('if(existsSync(path))writeFileSync(path,value,{mode})');
@@ -69,8 +69,7 @@ describe('manager-owned platform reconciliation',()=>{
 		expect(overlay).toMatch(/evaluator:[\s\S]*depends_on:\n\s+minio: \{ condition: service_healthy \}\n\s+vllm: \{ condition: service_healthy \}/u);
 		expect(overlay).toMatch(/evaluator:[\s\S]*AWS_ENDPOINT_URL: http:\/\/minio:9000/u);
 		expect(overlay).toMatch(/evaluator:[\s\S]*network_mode: "service:vllm"[\s\S]*VLLM_URL: http:\/\/127\.0\.0\.1:8000/u);
-		expect(overlay).toMatch(/manager:[\s\S]*EVALUATOR_URL: "http:\/\/evaluator:8080"/u);
-		expect(overlay).toContain('default: { aliases: [evaluator] }');
+		expect(overlay).toMatch(/manager:[\s\S]*network_mode: "service:vllm"[\s\S]*EVALUATOR_URL: "http:\/\/127\.0\.0\.1:8080"/u);
 		expect(overlay).toContain('NO_PROXY: 127.0.0.1,localhost,minio,inference-minio,vllm,inference-vllm');
 		expect(overlay).toContain('no_proxy: 127.0.0.1,localhost,minio,inference-minio,vllm,inference-vllm');
 		expect(overlay).not.toContain('default: { aliases: [inference-vllm] }');

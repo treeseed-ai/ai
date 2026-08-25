@@ -36,8 +36,8 @@ describe('library adapter ranking',()=>{
 		const override=readFileSync('deploy/inference/factory.override.yml','utf8'),compose=readFileSync('deploy/inference/compose.yml','utf8');
 		expect(override).toContain('network_mode: "service:vllm"');
 		expect(override).toContain('VLLM_URL: http://127.0.0.1:8000');
-		expect(override).toContain('EVALUATOR_URL: "http://evaluator:8080"');
-		expect(override).toContain('default: { aliases: [evaluator] }');
+		expect(override).toContain('EVALUATOR_URL: "http://127.0.0.1:8080"');
+		expect(override.match(/network_mode: "service:vllm"/gu)).toHaveLength(2);
 		expect(override).not.toContain('aliases: [inference-vllm]');
 		expect(compose).toContain("opener.open(os.environ['VLLM_URL']+'/health'");
 	});
