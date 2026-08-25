@@ -137,8 +137,8 @@ function productGroup(product: "inference" | "training" | "lab") {
 		gid = record.split(":")[2];
 	if (!gid || !/^\d+$/u.test(gid)) throw new Error(`Cannot resolve ${group}.`);
 	const runtime = `/run/treeseed-ai/${product}`;
-	mkdirSync(runtime, { recursive: true, mode: 0o770 });
-	chmodSync(runtime, 0o770);
+	mkdirSync(runtime, { recursive: true, mode: 0o755 });
+	chmodSync(runtime, 0o755);
 	command("chown", [`root:${group}`, runtime]);
 	return gid;
 }
