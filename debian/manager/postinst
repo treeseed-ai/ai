@@ -6,6 +6,14 @@ getent group treeseed-ai-operators >/dev/null || addgroup --system treeseed-ai-o
 install -d -o root -g root -m 0711 /etc/treeseed-ai
 install -d -o root -g treeseed-ai-manager -m 0750 /etc/treeseed-ai/manager /etc/treeseed-ai/manager/tls
 install -d -o treeseed-ai-manager -g treeseed-ai-manager -m 2770 /var/lib/treeseed-ai/manager
+if [ -d /etc/treeseed-ai/manager/factory ]; then
+  chown root:treeseed-ai-manager /etc/treeseed-ai/manager/factory
+  chmod 0750 /etc/treeseed-ai/manager/factory
+fi
+if [ -f /etc/treeseed-ai/manager/factory/artifact-signing-public.pem ]; then
+  chown root:treeseed-ai-manager /etc/treeseed-ai/manager/factory/artifact-signing-public.pem
+  chmod 0644 /etc/treeseed-ai/manager/factory/artifact-signing-public.pem
+fi
 install -d -o root -g root -m 0755 /var/lib/treeseed-ai/platform
 if [ -f /etc/treeseed-ai/platform.json ]; then
   chown root:treeseed-ai-manager /etc/treeseed-ai/platform.json

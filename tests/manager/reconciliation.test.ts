@@ -52,10 +52,14 @@ describe('manager-owned platform reconciliation',()=>{
   });
 	it('keeps the profile verification key readable without exposing the signing key',()=>{
 		const source=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8');
+		const postinst=readFileSync('debian/manager/postinst','utf8');
 		expect(source).toContain('command("chown", ["root:treeseed-ai-manager", root])');
 		expect(source).toContain('command("chown", ["root:treeseed-ai-manager", publicKey])');
 		expect(source).toContain('command("chown",["root:treeseed-ai-training",privateKey])');
 		expect(source).not.toContain('root:treeseed-ai-manager", privateKey');
+		expect(postinst).toContain('chown root:treeseed-ai-manager /etc/treeseed-ai/manager/factory');
+		expect(postinst).toContain('chown root:treeseed-ai-manager /etc/treeseed-ai/manager/factory/artifact-signing-public.pem');
+		expect(postinst).not.toContain('chown root:treeseed-ai-manager /etc/treeseed-ai/manager/factory/artifact-signing-key.pem');
 	});
 
   it('adds bounded redacted migration diagnostics to failed reconciliation',()=>{
