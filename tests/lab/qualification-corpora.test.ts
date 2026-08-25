@@ -1,6 +1,8 @@
-import { readFileSync } from "node:fs";
+import { mkdtempSync,readFileSync,writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { qualificationLibraryInput, readCorpusCatalog, selectFiling } from "../../packages/lab/src/corpus.js";
+import { qualificationLibraryInput, readCorpusCatalog, selectFiling,verifiedGenerationCache } from "../../packages/lab/src/corpus.js";
 
 describe("qualification corpus acquisition", () => {
 	it("pins a fair-access cross-sector EDGAR and NASA catalog", () => {
@@ -23,6 +25,7 @@ describe("qualification corpus acquisition", () => {
 	it("uses the current training API library contract", () => {
 		expect(qualificationLibraryInput("TreeAI EDGAR Qualification", "qualification-edgar")).toEqual({ sourceKind: "api", externalId: "qualification-edgar", slug: "qualification-edgar", name: "TreeAI EDGAR Qualification", description: "Non-production qualification corpus" });
 	});
+	it('reuses only integrity-checked objects from the same catalog generation',()=>{const root=mkdtempSync(join(tmpdir(),'treeai-corpus-')),path=join(root,'source.json'),body=Buffer.from('immutable'),sha256='3e58bada6a180c0d7f817bdae51fba96a461575b309bfbc17a6918d20c6617c7';writeFileSync(path,body);expect(verifiedGenerationCache(path,{catalogGeneration:10,sha256,size:body.length},10)?.body).toEqual(body);expect(verifiedGenerationCache(path,{catalogGeneration:10,sha256,size:body.length},11)).toBeNull();expect(()=>verifiedGenerationCache(path,{catalogGeneration:10,sha256:'0'.repeat(64),size:body.length},10)).toThrow(/integrity/u);expect(()=>verifiedGenerationCache(join(root,'missing'),{catalogGeneration:10,sha256,size:body.length},10)).toThrow(/missing/u);});
 	it("keeps acquisition immutable and does not commit raw corpora", () => {
 		const source = readFileSync("packages/lab/src/corpus.ts", "utf8");
 		expect(source).toContain("if-none-match");
