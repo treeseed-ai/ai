@@ -27,7 +27,7 @@ services:
     group_add: ["${RUNTIME_GID:?RUNTIME_GID is required}"]
   minio:
     networks:
-      default: {}
+      default: { aliases: [training-minio] }
       ai-shared: { aliases: [training-minio] }
 networks:
   ai-shared: { external: true, name: ai-shared }
