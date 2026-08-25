@@ -69,7 +69,8 @@ describe('manager-owned platform reconciliation',()=>{
 		expect(overlay).toMatch(/evaluator:[\s\S]*depends_on:\n\s+minio: \{ condition: service_healthy \}\n\s+vllm: \{ condition: service_healthy \}/u);
 		expect(overlay).toMatch(/evaluator:[\s\S]*AWS_ENDPOINT_URL: http:\/\/minio:9000/u);
 		expect(overlay).toMatch(/evaluator:[\s\S]*network_mode: "service:vllm"[\s\S]*VLLM_URL: http:\/\/127\.0\.0\.1:8000/u);
-		expect(overlay).toMatch(/manager:[\s\S]*EVALUATOR_URL: "http:\/\/vllm:8080"/u);
+		expect(overlay).toMatch(/manager:[\s\S]*EVALUATOR_URL: "http:\/\/evaluator:8080"/u);
+		expect(overlay).toContain('default: { aliases: [evaluator] }');
 		expect(overlay).toContain('NO_PROXY: 127.0.0.1,localhost,minio,inference-minio,vllm,inference-vllm');
 		expect(overlay).toContain('no_proxy: 127.0.0.1,localhost,minio,inference-minio,vllm,inference-vllm');
 		expect(overlay).not.toContain('default: { aliases: [inference-vllm] }');
