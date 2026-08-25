@@ -51,8 +51,8 @@ describe('manager-owned platform reconciliation',()=>{
     expect(platform.indexOf('reconcileObjectStore(product);',platform.indexOf('export async function transitionMode'))).toBeLessThan(platform.indexOf('writeMode(target);',platform.indexOf('export async function transitionMode')));
   });
 	it('gates training API readiness on its effective object-store identity',()=>{
-		const compose=readFileSync('deploy/training/compose.yml','utf8'),storage=readFileSync('packages/common/src/storage.ts','utf8'),main=readFileSync('packages/training-api/src/main.ts','utf8');
-		expect(storage).toContain('HeadBucketCommand');expect(main).toContain('objects.ready()');expect(compose).toContain("fetch('http://127.0.0.1:4780/readyz')");
+		const compose=readFileSync('deploy/training/compose.yml','utf8'),main=readFileSync('packages/training-api/src/main.ts','utf8');
+		expect(main).toContain('HeadBucketCommand');expect(main).toContain('readiness.send');expect(compose).toContain("fetch('http://127.0.0.1:4780/readyz')");
 	});
 	it('preserves configured images for image-inert package generations',()=>{
 		const platform=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8');
