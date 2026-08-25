@@ -10,7 +10,7 @@ import { paths } from "../core/paths.js";import { hashHermesPassword } from "./h
 import { ensurePlatformTls } from "./certificates/tls.js";import { activateManagerCertificate } from "./certificates/activation.js";import { imageVariables } from "../core/image-variables.js";
 import { summarizeComposeStatus, type ProductStatus } from "./status.js";
 import { activeProfile, qualificationStatus, runCampaign } from "./qualification/index.js";import { reconcileLabEdge } from "./lab/edge.js";import { migrationDiagnostics } from "./migrations/diagnostics.js";
-import { objectStoreAccessId } from "./storage/identities.js";
+import { objectStoreAccessId, secretGeneration } from "./storage/identities.js";
 const products = {
 	inference: {
 		compose: "/usr/lib/treeseed-ai/inference/compose.yml",
@@ -251,7 +251,7 @@ function ensureProductConfiguration() {
 			"treeseed-ai-training",
 		);
 	if (enabled.has("inference") && enabled.has("training")) {
-		mounted(`${signing.root}/artifact-import-token`, stored.artifactToken!);
+		const artifactImportToken=`${stored.artifactToken!}\n`;mounted(`${signing.root}/artifact-import-token`, artifactImportToken);
 		const source = {
 			sourceId: "training-local",
 			endpoint: "http://training-minio:9000",
@@ -260,7 +260,8 @@ function ensureProductConfiguration() {
 			secretAccessKey: stored.trainingImportS3,
 			trustedPublicKey: readFileSync(signing.publicKey, "utf8"),
 		};
-		mounted(`${signing.root}/training-local-source.json`, `${JSON.stringify(source, null, 2)}\n`);for(const path of[`${signing.root}/artifact-import-token`,`${signing.root}/training-local-source.json`]){chmodSync(path,0o640);command("chown",["root:treeseed-ai-inference",path]);}
+		const sourceValue=`${JSON.stringify(source, null, 2)}\n`;mounted(`${signing.root}/training-local-source.json`, sourceValue);for(const path of[`${signing.root}/artifact-import-token`,`${signing.root}/training-local-source.json`]){chmodSync(path,0o640);command("chown",["root:treeseed-ai-inference",path]);}
+		environment(products.inference.environment,{ARTIFACT_SOURCE_SECRET_GENERATION:secretGeneration(sourceValue),ARTIFACT_IMPORT_TOKEN_GENERATION:secretGeneration(artifactImportToken)},"treeseed-ai-inference");
 	}
 }
 function ensureLabConfiguration() {

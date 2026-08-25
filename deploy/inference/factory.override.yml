@@ -22,7 +22,8 @@ services:
       S3_ACCESS_KEY: "${S3_ACCESS_KEY:-inference}"
       S3_SECRET_KEY: "${S3_SECRET_KEY:-inference-development}"
       S3_BUCKET: "${S3_BUCKET:-ai-inference}"
-      TREEAI_SECRET_MOUNT_GENERATION: "3"
+      ARTIFACT_SOURCE_SECRET_GENERATION: "${ARTIFACT_SOURCE_SECRET_GENERATION:?ARTIFACT_SOURCE_SECRET_GENERATION is required}"
+      ARTIFACT_IMPORT_TOKEN_GENERATION: "${ARTIFACT_IMPORT_TOKEN_GENERATION:?ARTIFACT_IMPORT_TOKEN_GENERATION is required}"
   manager:
     network_mode: "service:vllm"
     group_add: ["${RUNTIME_GID:?RUNTIME_GID is required}"]
@@ -31,7 +32,7 @@ services:
       evaluator: { condition: service_healthy }
     volumes: ["/var/lib/treeseed-ai/platform:/factory:ro"]
     secrets: [artifact-import-token]
-    environment: { AI_FACTORY_MODE_FILE: /factory/mode.json, ARTIFACT_IMPORT_URL: "http://api:4770/internal/artifacts/import", ARTIFACT_IMPORT_TOKEN_FILE: /run/secrets/artifact-import-token, EVALUATOR_URL: "http://127.0.0.1:8080", TREEAI_SECRET_MOUNT_GENERATION: "3" }
+    environment: { AI_FACTORY_MODE_FILE: /factory/mode.json, ARTIFACT_IMPORT_URL: "http://api:4770/internal/artifacts/import", ARTIFACT_IMPORT_TOKEN_FILE: /run/secrets/artifact-import-token, EVALUATOR_URL: "http://127.0.0.1:8080", ARTIFACT_IMPORT_TOKEN_GENERATION: "${ARTIFACT_IMPORT_TOKEN_GENERATION:?ARTIFACT_IMPORT_TOKEN_GENERATION is required}" }
   evaluator:
     network_mode: "service:vllm"
     depends_on:
