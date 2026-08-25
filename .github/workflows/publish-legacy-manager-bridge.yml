@@ -1,0 +1,125 @@
+name: Publish one-time TreeAI legacy manager bridge
+
+on:
+  workflow_dispatch:
+    inputs:
+      rc: { description: "One-time 0.10 release-candidate number", required: true, type: string }
+      generation: { description: "One-time legacy catalog generation", required: true, type: string }
+
+permissions: { contents: read }
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 120
+    permissions: { contents: write, id-token: write }
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Require the exact transitional release
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          test '${{ github.ref }}' = 'refs/heads/staging'
+          test '${{ inputs.rc }}' = '6'
+          test '${{ inputs.generation }}' = '10000006'
+          test "$(node -p "require('./release/manifest.json').version")" = '0.10.0'
+          test "$(git rev-parse HEAD)" = '${{ github.sha }}'
+          tag="0.10.0-rc${{ inputs.rc }}"
+          test "$(gh release view "$tag" --json targetCommitish --jq .targetCommitish)" = '${{ github.sha }}'
+          echo "TREEAI_RC_TAG=$tag" >> "$GITHUB_ENV"
+          echo "TREEAI_RC_DEBIAN_VERSION=0.10.0~rc${{ inputs.rc }}-1" >> "$GITHUB_ENV"
+      - uses: pnpm/action-setup@v4
+        with: { version: 10.15.1 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24.19.0, cache: pnpm }
+      - run: pnpm install --frozen-lockfile && pnpm verify
+      - name: Verify component release and select the last legacy catalog
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          mkdir -p assets component prior-catalog
+          gh release download "$TREEAI_RC_TAG" --pattern image-manifest.json --pattern development-image-plan.json --pattern treeai-source.tar.gz --dir component
+          cp component/image-manifest.json assets/image-manifest.json
+          cp component/development-image-plan.json assets/development-image-plan.json
+          source_sha=$(sha256sum component/treeai-source.tar.gz | awk '{print $1}')
+          echo "TREEAI_SOURCE_ARCHIVE_SHA256=$source_sha" >> "$GITHUB_ENV"
+          echo "TREEAI_SOURCE_ARCHIVE_URL=https://github.com/treeseed-ai/ai/releases/download/$TREEAI_RC_TAG/treeai-source.tar.gz" >> "$GITHUB_ENV"
+          expected=$(jq '.images | length' release/manifest.json)
+          selected=''
+          while read -r candidate; do
+            candidate_dir=$(mktemp -d)
+            if gh release download "$candidate" --pattern 'treeseed-ai-release-catalog_*.deb' --dir "$candidate_dir" >/dev/null 2>&1; then
+              candidate_deb=$(find "$candidate_dir" -maxdepth 1 -type f -name 'treeseed-ai-release-catalog_*.deb' -print -quit)
+              mkdir "$candidate_dir/catalog"
+              dpkg-deb --extract "$candidate_deb" "$candidate_dir/catalog"
+              candidate_catalog="$candidate_dir/catalog/usr/share/treeseed-ai/release/catalog.json"
+              if jq -e --argjson expected "$expected" '(.images | length) == $expected and .imagePolicy.mode == "local-images-required" and .imagePolicy.sourceBundle != null' "$candidate_catalog" >/dev/null; then
+                cp "$candidate_catalog" assets/prior-catalog.json
+                selected="$candidate"
+                break
+              fi
+            fi
+          done < <(gh release list --limit 100 --json tagName,isDraft,isPrerelease --jq '.[] | select(.isDraft == false and .isPrerelease == true) | .tagName')
+          test -n "$selected"
+          echo "TREEAI_PACKAGE_ONLY_BASE=$selected" >> "$GITHUB_ENV"
+      - name: Build only legacy management packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential debhelper lintian nodejs
+          sed -i "1s/([^)]*)/($TREEAI_RC_DEBIAN_VERSION)/; 1s/) stable;/) development;/" debian/changelog
+          TREEAI_DEBIAN_VERSION="$TREEAI_RC_DEBIAN_VERSION" \
+          TREEAI_RELEASE_VERSION="$TREEAI_RC_TAG" \
+          TREEAI_RELEASE_CHANNEL=development \
+          TREEAI_RELEASE_GENERATION='${{ inputs.generation }}' \
+          TREEAI_IMAGE_MANIFEST="$PWD/assets/image-manifest.json" \
+          TREEAI_IMAGE_PLAN="$PWD/assets/development-image-plan.json" \
+          TREEAI_SOURCE_REVISION='${{ github.sha }}' \
+          TREEAI_SOURCE_ARCHIVE_URL="$TREEAI_SOURCE_ARCHIVE_URL" \
+          TREEAI_SOURCE_ARCHIVE_SHA256="$TREEAI_SOURCE_ARCHIVE_SHA256" \
+          TREEAI_FORCE_PACKAGE_ONLY=1 \
+          TREEAI_CATALOG_PACKAGE_SET=management \
+          TREEAI_BASE_CATALOG="$PWD/assets/prior-catalog.json" \
+          dpkg-buildpackage -b -us -uc
+          for package in archive-keyring development-archive-keyring host-js-runtime manager release-catalog cli; do
+            cp ../treeseed-ai-$package\_*.deb assets/
+          done
+          lintian --fail-on error assets/*.deb
+      - name: Sign and attach the isolated legacy package set
+        env:
+          GH_TOKEN: "${{ github.token }}"
+          APT_GPG_PRIVATE_KEY: "${{ secrets.APT_GPG_PRIVATE_KEY }}"
+          APT_GPG_PASSPHRASE: "${{ secrets.APT_GPG_PASSPHRASE }}"
+        run: |
+          printf '%s' "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
+          export APT_RELEASE_FINGERPRINT="$(cat release/apt-development/RELEASE_KEY_FINGERPRINT)"
+          (cd assets && find . -maxdepth 1 -type f -name '*.deb' -printf '%f\n' | sort | xargs sha256sum > legacy-manager-SHA256SUMS)
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$APT_GPG_PASSPHRASE" --local-user "$APT_RELEASE_FINGERPRINT" --detach-sign --armor assets/legacy-manager-SHA256SUMS
+          gh release upload "$TREEAI_RC_TAG" --clobber assets/*.deb assets/legacy-manager-SHA256SUMS assets/legacy-manager-SHA256SUMS.asc
+      - name: Build the signed transitional development APT suite
+        env:
+          GH_TOKEN: "${{ github.token }}"
+          APT_GPG_PRIVATE_KEY: "${{ secrets.APT_GPG_PRIVATE_KEY }}"
+          APT_GPG_PASSPHRASE: "${{ secrets.APT_GPG_PASSPHRASE }}"
+        run: |
+          mkdir -p development-debs pages/apt
+          cp assets/*.deb development-debs/
+          sh scripts/release/mirror-apt-suite.sh https://treeseed-ai.github.io/ai/apt stable pages/apt
+          sh scripts/release/mirror-apt-suite.sh https://treeseed-ai.github.io/ai/apt development pages/apt
+          export APT_RELEASE_FINGERPRINT="$(cat release/apt-development/RELEASE_KEY_FINGERPRINT)"
+          sh scripts/release/build-apt-repository.sh development-debs pages/apt "$TREEAI_RC_DEBIAN_VERSION" development
+      - uses: actions/upload-artifact@v4
+        with: { name: legacy-manager-bridge-apt-site, path: pages, if-no-files-found: error }
+
+  pages:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions: { contents: read, pages: write, id-token: write }
+    environment: { name: github-pages, url: "${{ steps.deploy.outputs.page_url }}" }
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: legacy-manager-bridge-apt-site, path: pages }
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: pages }
+      - id: deploy
+        uses: actions/deploy-pages@v4
