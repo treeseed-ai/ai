@@ -75,10 +75,19 @@ function store(name: string, body: Buffer, metadata: Record<string, unknown>) {
 	writeFileSync(meta, `${JSON.stringify({ ...metadata, sha256: checksum, size: body.length, retrievedAt: new Date().toISOString() }, null, 2)}\n`, { mode: 0o640 });
 	return { path, sha256: checksum, size: body.length };
 }
+export function verifiedGenerationCache(path:string,prior:Record<string,unknown>,generation:number){
+	if(Number(prior.catalogGeneration)!==generation)return null;
+	if(!existsSync(path))throw new Error(`Cached object ${basename(path)} is missing for catalog generation ${generation}.`);
+	const body=readFileSync(path),sha256=digest(body),size=body.length;
+	if(sha256!==prior.sha256||size!==Number(prior.size))throw new Error(`Cached object ${basename(path)} failed integrity verification.`);
+	return{body,stored:{path,sha256,size}};
+}
 async function cachedGet(url: string, name: string, headers: Record<string, string>, metadata: Record<string, unknown>) {
 	const path = join(cacheRoot(), basename(name)), metaPath = `${path}.json`;
 	let prior: Record<string, unknown> = {};
 	if (existsSync(metaPath)) prior = JSON.parse(readFileSync(metaPath, "utf8")) as Record<string, unknown>;
+	const generation=Number(metadata.catalogGeneration),cached=Number.isSafeInteger(generation)?verifiedGenerationCache(path,prior,generation):null;
+	if(cached)return cached;
 	const validators = { ...(typeof prior.etag === "string" ? { "if-none-match": prior.etag } : {}), ...(typeof prior.lastModified === "string" ? { "if-modified-since": prior.lastModified } : {}) };
 	const response = await get(url, { ...headers, ...validators });
 	if (response.status === 304) {
