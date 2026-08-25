@@ -7,6 +7,9 @@ BASE_REVISION="851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a"
 TARGETS=r"model\.language_model\.layers\.[\d]+\.(mlp|self_attn)\.(up|down|gate|q|k|v|o)_proj"
 SECRET=re.compile(r"(?im)(-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|ak_[a-z0-9-]+_[a-z0-9_-]{16,}|(?:api[_-]?key|password|secret|access[_-]?token)\s*[:=]\s*[^\s]{12,})")
 PRIVATE_PATH=re.compile(r"(?:(?:/home|/root)/[^\s'\"]+|/run/secrets/[^\s'\"]+)")
+QUALIFICATION_SEQUENCES=(4096,3072,2048,1024)
+QUALIFICATION_STEPS=8
+ALLOCATOR_POLICY="expandable_segments:True"
 
 def safe_diagnostic(value,limit=2000):
     text=SECRET.sub("[REDACTED]",str(value or ""));text=PRIVATE_PATH.sub("[REDACTED_PATH]",text)
@@ -14,7 +17,8 @@ def safe_diagnostic(value,limit=2000):
 
 def run_axolotl(config_path,timeout):
     command=["accelerate","launch","-m","axolotl.cli.train",str(config_path)]
-    return subprocess.run(command,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=timeout)
+    environment=os.environ.copy();environment.setdefault("PYTORCH_CUDA_ALLOC_CONF",ALLOCATOR_POLICY)
+    return subprocess.run(command,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=timeout,env=environment)
 def fixed_steps(config,steps,save_steps):
     config.pop("num_epochs",None);config.update({"max_steps":steps,"save_steps":save_steps});return config
 
@@ -39,15 +43,15 @@ def train(job):
     if value["mode"]=="smoke":fixed_steps(config,16,8)
     config_path=root/"axolotl.json";config_path.write_text(json.dumps(config,sort_keys=True,separators=(",",":")))
     execution=run_axolotl(config_path,int(os.getenv("TRAIN_TIMEOUT","86400")))
-    if execution.returncode:raise RuntimeError(f"Axolotl training exited {execution.returncode}: {safe_diagnostic(execution.stdout,12000) or 'no diagnostic output'}")
+    if execution.returncode:raise RuntimeError(f"Axolotl training exited {execution.returncode}: {safe_diagnostic(execution.stdout) or 'no diagnostic output'}")
     payload={"schemaVersion":"ai.library-training-result/v1","baseModel":BASE_MODEL,"baseModelRevision":BASE_REVISION,"adapterPath":str(target),"config":str(config_path),"configDigest":hashlib.sha256(config_path.read_bytes()).hexdigest(),"mode":value["mode"],"libraryId":value["libraryId"],"librarySlug":value["librarySlug"],"snapshotId":value["snapshotId"],"datasetManifest":value["datasetManifest"],"targetModules":[TARGETS],"rank":16,"alpha":32}
     result.write_text(json.dumps(payload,sort_keys=True,separators=(",",":")));return{"resultManifest":f"file://{result}","configurationDigest":payload["configDigest"]}
 def qualify(job):
-    value=job["input"];identity=subprocess.check_output(["nvidia-smi","--query-gpu=uuid,driver_version","--format=csv,noheader"],text=True).strip();fingerprint=hashlib.sha256(f"{identity}|{os.getenv('TREEAI_IMAGE_ID','unknown')}|{BASE_REVISION}|r16|mb1|ga8".encode()).hexdigest();root=Path(os.getenv("OUTPUT_DIR","/artifacts/training"))/f"qualification-{fingerprint}";root.mkdir(parents=True,exist_ok=True);dataset=root/"train.jsonl"
+    value=job["input"];identity=subprocess.check_output(["nvidia-smi","--query-gpu=uuid,driver_version","--format=csv,noheader"],text=True).strip();fingerprint=hashlib.sha256(f"{identity}|{os.getenv('TREEAI_IMAGE_ID','unknown')}|{BASE_REVISION}|r16|mb1|ga8|q{QUALIFICATION_STEPS}|{ALLOCATOR_POLICY}".encode()).hexdigest();root=Path(os.getenv("OUTPUT_DIR","/artifacts/training"))/f"qualification-{fingerprint}";root.mkdir(parents=True,exist_ok=True);dataset=root/"train.jsonl"
     if not dataset.exists():dataset.write_bytes(client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(value["trainUri"]))["Body"].read())
     failures=[]
-    for sequence in [4096,3072,2048,1024]:
-        target=root/f"seq-{sequence}";config=fixed_steps(fixed_config({"sequenceLength":sequence},dataset,target),1,1);config_path=root/f"seq-{sequence}.json";config_path.write_text(json.dumps(config,sort_keys=True,separators=(",",":")))
+    for sequence in QUALIFICATION_SEQUENCES:
+        target=root/f"seq-{sequence}";shutil.rmtree(target,ignore_errors=True);config=fixed_steps(fixed_config({"sequenceLength":sequence},dataset,target),QUALIFICATION_STEPS,QUALIFICATION_STEPS);config_path=root/f"seq-{sequence}.json";config_path.write_text(json.dumps(config,sort_keys=True,separators=(",",":")))
         try:
             execution=run_axolotl(config_path,int(os.getenv("QUALIFY_TIMEOUT","3600")))
             if execution.returncode==0:shutil.rmtree(target,ignore_errors=True);return{"resultManifest":f"profile://{sequence}","sequenceLength":sequence,"fingerprint":fingerprint,"diagnostics":{"failed":failures}}

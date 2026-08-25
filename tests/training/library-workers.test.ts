@@ -30,6 +30,27 @@ describe('library document workers',()=>{
 		expect(result.standard).toMatchObject({base_model:'Qwen/Qwen3.5-4B',revision:'851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a',adapter:'qlora',load_in_4bit:true,sample_packing:false,lora_r:16,lora_alpha:32,lora_dropout:0.05,micro_batch_size:1,gradient_accumulation_steps:8,learning_rate:0.0001,weight_decay:0.01,warmup_ratio:0.03,num_epochs:1,seed:42});
 		expect(result.standard.datasets[0].type).toBe('completion');expect(result.standard.lora_target_modules).toContain('model\\.language_model');expect(result.qualification).toMatchObject({max_steps:1,save_steps:1});expect(result.qualification).not.toHaveProperty('num_epochs');
 	});
+	it('falls through an unsafe sustained sequence probe and fingerprints the allocator policy',()=>{
+		const modulePath=JSON.stringify(join(process.cwd(),'workers/axolotl/library_train.py'));
+		const result=python(`import importlib.util,json,os,pathlib,sys,tempfile,types
+class Body:
+ def read(self):return b'{"text":"qualification sample"}\\n'
+class S3:
+ def get_object(self,**kwargs):return {'Body':Body()}
+sys.modules['boto3']=types.SimpleNamespace(client=lambda *a,**k:S3())
+s=importlib.util.spec_from_file_location('library_train',${modulePath});m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
+with tempfile.TemporaryDirectory() as root:
+ os.environ.update({'OUTPUT_DIR':root,'S3_BUCKET':'training','AWS_ENDPOINT_URL':'http://s3','AWS_ACCESS_KEY_ID':'id','AWS_SECRET_ACCESS_KEY':'secret','TREEAI_IMAGE_ID':'image'})
+ m.subprocess.check_output=lambda *a,**k:'GPU-test, 595.84'
+ trials=[]
+ def run(path,timeout):
+  config=json.loads(pathlib.Path(path).read_text());trials.append({'sequence':config['sequence_len'],'steps':config['max_steps']});return types.SimpleNamespace(returncode=1 if config['sequence_len']==4096 else 0,stdout='CUDA out of memory')
+ m.run_axolotl=run
+ value=m.qualify({'input':{'trainUri':'s3://training/datasets/train.jsonl'}})
+ print(json.dumps({'value':value,'trials':trials,'steps':m.QUALIFICATION_STEPS,'policy':m.ALLOCATOR_POLICY}))`);
+		expect(result.value).toMatchObject({resultManifest:'profile://3072',sequenceLength:3072,diagnostics:{failed:[{sequenceLength:4096,exitCode:1}]}});
+		expect(result.trials).toEqual([{sequence:4096,steps:8},{sequence:3072,steps:8}]);expect(result.steps).toBe(8);expect(result.policy).toBe('expandable_segments:True');
+	});
 	it('bounds and redacts Axolotl diagnostics',()=>{
 		const modulePath=JSON.stringify(join(process.cwd(),'workers/axolotl/library_train.py'));
 		const result=python(`import importlib.util,json,sys,types\nsys.modules['boto3']=types.SimpleNamespace(client=lambda *a,**k:None)\ns=importlib.util.spec_from_file_location('library_train',${modulePath});m=importlib.util.module_from_spec(s);s.loader.exec_module(m)\nvalue='prefix '+('x'*2500)+' api_key=abcdefghijklmnop /home/adrian/private/config.json /run/secrets/signing-key'\nprint(json.dumps({'value':m.safe_diagnostic(value)}))`);
