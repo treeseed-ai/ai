@@ -21,8 +21,8 @@ jobs:
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
           test '${{ github.ref }}' = 'refs/heads/staging'
-          test '${{ inputs.rc }}' = '12'
-          test '${{ inputs.generation }}' = '10000012'
+          test '${{ inputs.rc }}' = '13'
+          test '${{ inputs.generation }}' = '10000013'
           test "$(node -p "require('./release/manifest.json').version")" = '0.10.0'
           test "$(git rev-parse HEAD)" = '${{ github.sha }}'
           tag="0.10.0-rc${{ inputs.rc }}"
@@ -77,7 +77,7 @@ jobs:
           TREEAI_SOURCE_REVISION='${{ github.sha }}' \
           TREEAI_SOURCE_ARCHIVE_URL="$TREEAI_SOURCE_ARCHIVE_URL" \
           TREEAI_SOURCE_ARCHIVE_SHA256="$TREEAI_SOURCE_ARCHIVE_SHA256" \
-          TREEAI_FORCE_PACKAGE_ONLY=1 \
+          TREEAI_FORCE_PACKAGE_ONLY=0 \
           TREEAI_CATALOG_PACKAGE_SET=all \
           TREEAI_BASE_CATALOG="$PWD/assets/prior-catalog.json" \
           dpkg-buildpackage -b -us -uc

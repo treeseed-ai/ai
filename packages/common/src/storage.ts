@@ -1,10 +1,11 @@
-import { GetObjectCommand,HeadObjectCommand,PutObjectCommand,S3Client,type S3ClientConfig } from '@aws-sdk/client-s3';
+import { GetObjectCommand,HeadBucketCommand,HeadObjectCommand,PutObjectCommand,S3Client,type S3ClientConfig } from '@aws-sdk/client-s3';
 import { createHash } from 'node:crypto';
 import { createReadStream,statSync } from 'node:fs';
 
 export class ArtifactStore {
 	readonly client: S3Client;
 	constructor(readonly bucket: string, options: S3ClientConfig) { this.client = new S3Client(options); }
+	async ready() { await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }));return true; }
 	async put(key: string, body: Uint8Array, contentType = 'application/octet-stream') {
 		const digest = createHash('sha256').update(body).digest('hex');
 		await this.client.send(new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: body, ContentType: contentType, Metadata: { sha256: digest } }));
