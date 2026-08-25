@@ -70,13 +70,17 @@ def authorize(job):
     return{"resultManifest":uri,"authorized":True}
 def s3_client():
     return boto3.client("s3", endpoint_url=os.environ["AWS_ENDPOINT_URL"], region_name=os.getenv("AWS_REGION", "us-east-1"), aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"], aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"])
+def object_bytes(uri):
+    try:return s3_client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(uri))["Body"].read()
+    except Exception as error:raise RuntimeError(f"inference object store read failed: {type(error).__name__}") from error
 def key(uri):
     prefix=f"s3://{os.environ['S3_BUCKET']}/"
     if not uri.startswith(prefix): raise ValueError("Copied adapter object is outside the inference bucket")
     return uri[len(prefix):]
 def post(path, body):
     request=urllib.request.Request(f"{os.getenv('VLLM_URL','http://vllm:8000')}{path}", data=json.dumps(body).encode(), headers={"content-type":"application/json"})
-    return urllib.request.urlopen(request, timeout=240).read()
+    try:return urllib.request.urlopen(request, timeout=240).read()
+    except urllib.error.URLError as error:raise RuntimeError(f"private vLLM request failed: {type(error.reason).__name__}") from error
 def deployment(job, action):
     candidate=str(job["input"]["candidateId"]); value=job["input"]["manifest"]
     source=value["sourceManifest"]; copied=value["copiedObjects"]
@@ -103,7 +107,7 @@ def canary(job):
 def visual_grounding(job):
     value=job["input"];model=str(value["candidateId"]);stored=value.get("evaluationObject",{});evaluation=stored.get("evaluation",{});images={item["relativePath"]:item for item in stored.get("images",[])}
     if not evaluation.get("uri") or not images:raise ValueError("A copied held-out visual corpus and images are required")
-    lines=s3_client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(evaluation["uri"]))["Body"].read().decode();scores=[]
+    lines=object_bytes(evaluation["uri"]).decode();scores=[]
     for line in lines.splitlines():
         if not line.strip():continue
         example=json.loads(line);messages=example.get("messages",[]);expected=" ".join(part.get("text","") for part in messages[-1].get("content",[]) if part.get("type")=="text");prompt=json.loads(json.dumps(messages[:-1]))
@@ -112,14 +116,14 @@ def visual_grounding(job):
                 if part.get("type")!="image":continue
                 item=images.get(part.get("path"));
                 if not item:raise ValueError("Visual example references an unavailable image")
-                data=s3_client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(item["uri"]))["Body"].read();mime=mimetypes.guess_type(part["path"])[0] or "image/png";part.clear();part.update({"type":"image_url","image_url":{"url":f"data:{mime};base64,{base64.b64encode(data).decode()}"}})
+                data=object_bytes(item["uri"]);mime=mimetypes.guess_type(part["path"])[0] or "image/png";part.clear();part.update({"type":"image_url","image_url":{"url":f"data:{mime};base64,{base64.b64encode(data).decode()}"}})
         response=json.loads(post("/v1/chat/completions",{"model":model,"messages":prompt,"temperature":0,"max_tokens":256}));actual=response["choices"][0]["message"].get("content","");expected_words=set(re.findall(r"[a-z0-9]{4,}",expected.lower()));actual_words=set(re.findall(r"[a-z0-9]{4,}",actual.lower()));scores.append(len(expected_words&actual_words)/max(1,len(expected_words)))
     if not scores:raise ValueError("Held-out visual corpus has no evaluable examples")
     return write(job,"visual-grounding",{"candidateId":model,"metric":"authored-context-token-recall","value":sum(scores)/len(scores),"examples":len(scores),"evaluationObject":{"sha256":evaluation.get("sha256"),"size":evaluation.get("size")}})
 def library_likelihood(job):
     value=job["input"];model=str(value["candidateId"]);stored=value.get("evaluationObject",{});uri=stored.get("uri","")
     if not uri:raise ValueError("A copied held-out evaluation object is required")
-    body=s3_client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(uri))["Body"].read().decode("utf-8");losses=[];tokens=0
+    body=object_bytes(uri).decode("utf-8");losses=[];tokens=0
     for line in body.splitlines():
         if not line.strip():continue
         prompt=json.loads(line).get("text","")
