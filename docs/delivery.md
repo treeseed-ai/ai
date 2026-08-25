@@ -42,6 +42,13 @@ never build downloaded repository source. Unchanged roles retain their prior
 signed image digest and do not restart merely because a component release was
 published.
 
+The existing single-host TreeAI development installation predates Deployment.
+For `0.10.0-rc6` only, the manually dispatched legacy-manager bridge attaches
+the six management packages to the already verified component release and
+updates the old signed development suite. It publishes no application image,
+cannot target stable, and refuses every other RC or catalog generation. Remove
+this workflow after the managed full-factory handoff is known-good.
+
 After GitHub Pages publication, clients can install the archive with a
 dedicated keyring and deb822 source:
 
