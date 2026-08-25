@@ -43,7 +43,7 @@ describe('manager-owned platform reconciliation',()=>{
     expect(platform).toContain('readFileSync(path,"utf8")===value');
     expect(platform).toContain('if(existsSync(path))writeFileSync(path,value,{mode})');
     expect(overlay.match(/TREEAI_SECRET_MOUNT_GENERATION/g)).toHaveLength(2);
-    expect(overlay.match(/TREEAI_SECRET_MOUNT_GENERATION: "2"/g)).toHaveLength(2);
+    expect(overlay.match(/TREEAI_SECRET_MOUNT_GENERATION: "3"/g)).toHaveLength(2);
   });
 
   it('provisions a distinct read-only training artifact exchange identity',()=>{
