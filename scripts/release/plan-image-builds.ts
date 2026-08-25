@@ -35,6 +35,13 @@ export function computeBuildIdentity(role:string,build:ImageBuild,platform:strin
   return`sha256:${hash.digest('hex')}`;
 }
 
+export function reuseEligible(input:{currentVersion:string;priorVersion?:string;declaredChanged?:boolean;previousValid:boolean;buildIdentityMatches:boolean;inputsUnchanged:boolean}){
+	const current=/^(\d+\.\d+\.\d+)-rc[1-9]\d*$/u.exec(input.currentVersion),prior=/^(\d+\.\d+\.\d+)-rc[1-9]\d*$/u.exec(input.priorVersion??''),sameCandidateLine=Boolean(current&&prior&&current[1]===prior[1]);
+	if(!input.previousValid)return false;
+	if(sameCandidateLine)return input.buildIdentityMatches;
+	return input.declaredChanged===undefined?input.buildIdentityMatches||input.inputsUnchanged:!input.declaredChanged;
+}
+
 function main(){
   const release=JSON.parse(readFileSync('release/manifest.json','utf8'))as{version:string;dockerNamespace:string;images:string[];changedImages?:string[]};release.version=process.env.TREEAI_RELEASE_VERSION??release.version;
   const builds=JSON.parse(readFileSync('release/image-builds.json','utf8'))as{schemaVersion:string;platform:string;images:Record<string,ImageBuild>};
@@ -52,7 +59,7 @@ function main(){
     const inputsUnchanged=developmentBase?spawnSync('git',['diff','--quiet',developmentBase,'HEAD','--',...build.inputs]).status===0:false;
 		const previousValid=previous?.repository===`${release.dockerNamespace}/${role}`&&/^sha256:[a-f0-9]{64}$/u.test(previous.digest)&&/^sha256:[a-f0-9]{64}$/u.test(previous.buildIdentity??'');
 		if(declaredChanges&&!declaredChanges.has(role)&&!previousValid)throw new Error(`Unchanged image ${role} has no valid prior digest.`);
-    const reuse=(declaredChanges?!declaredChanges.has(role):(previous?.buildIdentity===buildIdentity||inputsUnchanged))&&previousValid;
+    const reuse=reuseEligible({currentVersion:release.version,priorVersion:prior?.version,declaredChanged:declaredChanges?.has(role),previousValid:Boolean(previousValid),buildIdentityMatches:previous?.buildIdentity===buildIdentity,inputsUnchanged});
     const tag=process.env.TREEAI_IMAGE_TAG??release.version;images[role]={role,action:reuse?'reused':'built',buildIdentity:reuse?previous?.buildIdentity:buildIdentity,dockerfile:build.dockerfile,buildArgs:Object.entries(build.buildArgs??{}).map(([key,value])=>`${key}=${value}`).join('\n'),platform:builds.platform,repository:`${release.dockerNamespace}/${role}`,...reuse?{digest:previous.digest,tag:previous.tag,firstBuiltVersion:previous.firstBuiltVersion??previous.tag}:{tag,firstBuiltVersion:release.version}};
   }
   writeFileSync(output,`${JSON.stringify({schemaVersion:'treeai.image-build-plan/v1',version:release.version,previousVersion:prior?.version??null,images},null,2)}\n`);
