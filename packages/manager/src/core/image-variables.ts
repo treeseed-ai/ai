@@ -10,4 +10,9 @@ export const imageVariables: Record<string, string> = {
 	"marker-worker": "MARKER_WORKER_IMAGE",
 	"artifact-worker": "ARTIFACT_WORKER_IMAGE",
 	"training-migrations": "TRAINING_MIGRATIONS_IMAGE",
+	"lab-controller": "LAB_CONTROLLER_IMAGE",
+	"lab-experience-proxy": "LAB_PROXY_IMAGE",
+	"lab-library-bridge": "LAB_LIBRARY_BRIDGE_IMAGE",
+	"lab-web-tool-proxy": "LAB_WEB_TOOL_IMAGE",
+	"hermes-agent": "HERMES_IMAGE",
 };
