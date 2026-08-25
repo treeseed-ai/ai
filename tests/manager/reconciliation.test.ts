@@ -50,6 +50,11 @@ describe('manager-owned platform reconciliation',()=>{
     for(const product of['inference','training'])expect(readFileSync(`deploy/${product}/factory.override.yml`,'utf8')).not.toContain('minio-init: { condition:');
     expect(platform.indexOf('reconcileObjectStore(product);',platform.indexOf('export async function transitionMode'))).toBeLessThan(platform.indexOf('writeMode(target);',platform.indexOf('export async function transitionMode')));
   });
+	it('preserves configured images for image-inert package generations',()=>{
+		const platform=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8');
+		expect(platform).toContain('catalog.imagePolicy.mode === "package-only"');
+		expect(platform).toContain('Package-only catalog cannot initialize missing');
+	});
 	it('keeps the profile verification key readable without exposing the signing key',()=>{
 		const source=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8');
 		const postinst=readFileSync('debian/manager/postinst','utf8');
