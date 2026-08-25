@@ -30,6 +30,13 @@ describe('library document workers',()=>{
 		expect(result.standard).toMatchObject({base_model:'Qwen/Qwen3.5-4B',revision:'851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a',adapter:'qlora',load_in_4bit:true,sample_packing:false,lora_r:16,lora_alpha:32,lora_dropout:0.05,micro_batch_size:1,gradient_accumulation_steps:8,learning_rate:0.0001,weight_decay:0.01,warmup_ratio:0.03,num_epochs:1,seed:42});
 		expect(result.standard.datasets[0].type).toBe('completion');expect(result.standard.lora_target_modules).toContain('model\\.language_model');expect(result.qualification).toMatchObject({max_steps:1,save_steps:1});expect(result.qualification).not.toHaveProperty('num_epochs');
 	});
+	it('builds fixed base and adapter held-out evaluation profiles',()=>{
+		const modulePath=JSON.stringify(join(process.cwd(),'workers/axolotl/library_train.py'));
+		const result=python(`import importlib.util,json,pathlib,sys,tempfile,types\nsys.modules['boto3']=types.SimpleNamespace(client=lambda *a,**k:None)\ns=importlib.util.spec_from_file_location('library_train',${modulePath});m=importlib.util.module_from_spec(s);s.loader.exec_module(m)\nwith tempfile.TemporaryDirectory() as d:\n root=pathlib.Path(d);training=m.fixed_config({'sequenceLength':3072},root/'train.jsonl',root/'adapter');base=m.evaluation_config(training,root/'heldout.jsonl',root/'probe.jsonl',root/'base');candidate=m.evaluation_config(training,root/'heldout.jsonl',root/'probe.jsonl',root/'candidate',root/'adapter');print(json.dumps({'base':base,'candidate':candidate}))`);
+		expect(result.base).toMatchObject({base_model:'Qwen/Qwen3.5-4B',sequence_len:3072,load_in_4bit:true,eval_batch_size:1,shuffle_merged_datasets:false});
+		expect(result.base).not.toHaveProperty('adapter');expect(result.base.test_datasets[0]).toMatchObject({type:'completion'});
+		expect(result.candidate).toMatchObject({adapter:'qlora',lora_model_dir:expect.stringContaining('/adapter')});
+	});
 	it('falls through an unsafe sustained sequence probe and fingerprints the allocator policy',()=>{
 		const modulePath=JSON.stringify(join(process.cwd(),'workers/axolotl/library_train.py'));
 		const result=python(`import importlib.util,json,os,pathlib,sys,tempfile,types
