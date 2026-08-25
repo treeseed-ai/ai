@@ -62,7 +62,7 @@ export function activeProfile() { const id = setting<string | null>("qualificati
 export function readProfile(id: string) { const path = profilePath(id); if (!existsSync(path)) return null; const value = JSON.parse(readFileSync(path, "utf8")) as ReturnType<typeof envelope>; if (!verifyProfile(value)) throw new Error("Machine profile signature is invalid."); return value.profile; }
 export function profiles() { const root = join(paths.qualification, "profiles"); if (!existsSync(root)) return []; return (awaitFiles(root)).map((path) => readProfile(path)!).filter(Boolean); }
 function awaitFiles(root: string) { return readdirSync(root).filter((name) => name.endsWith(".json")).map((name) => name.slice(0, -5)); }
-function candidate(name: ProfileName, fp: MachineFingerprint, settings: MachineProfile["settings"], metrics: Record<string, number>, gates: Record<string, boolean>): MachineProfile { const id = crypto.randomUUID(), safe = Object.values(gates).every(Boolean), score = safe ? Number((metrics.quality * .45 + metrics.reliability * .3 + metrics.context * .15 + metrics.latency * .1).toFixed(6)) : 0; return { schemaVersion: "treeai.machine-profile/v1", id, name, fingerprintDigest: digest(fp), fingerprint: fp, state: safe ? "candidate" : "rejected", settings, context: contextPolicy(settings.maxModelLength), score, gates, metrics, createdAt: new Date().toISOString() }; }
+function candidate(name: ProfileName, fp: MachineFingerprint, settings: MachineProfile["settings"], metrics: Record<string, number>, gates: Record<string, boolean>): MachineProfile { const id = crypto.randomUUID(), safe = Object.values(gates).every(Boolean), scored:Record<string,number>={...metrics,trainingCapacity:settings.trainingSequenceLength/8192}, score = safe ? Number((scored.quality! * .4 + scored.reliability! * .25 + scored.context! * .15 + scored.trainingCapacity! * .15 + scored.latency! * .05).toFixed(6)) : 0; return { schemaVersion: "treeai.machine-profile/v1", id, name, fingerprintDigest: digest(fp), fingerprint: fp, state: safe ? "candidate" : "rejected", settings, context: contextPolicy(settings.maxModelLength), score, gates, metrics:scored, createdAt: new Date().toISOString() }; }
 const concurrentCanary = "import concurrent.futures,json,urllib.request,time; body=json.dumps({'model':'Qwen/Qwen3.5-4B','messages':[{'role':'user','content':'Reply ready.'}],'max_tokens':8}).encode(); f=lambda _: urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/v1/chat/completions',data=body,headers={'content-type':'application/json'}),timeout=120).read(); start=time.time(); list(concurrent.futures.ThreadPoolExecutor(max_workers=2).map(f,range(2))); print(json.dumps({'latencyMs':(time.time()-start)*1000,'successes':2}))";
 const multimodalCanary = imageCanary("Confirm image input.");
 function imageProbe(fp: MachineFingerprint, role: string, source: string, run: Runner) {
@@ -107,19 +107,20 @@ export function runCampaign(preset: "baseline" | "balanced", run: Runner = defau
 	const value: QualificationCampaign = { id: crypto.randomUUID(), preset, state: "running", fingerprintDigest: digest(fp), maxTrials, deadline, trials: [], createdAt, updatedAt: createdAt };
 	atomic(campaignPath(value.id), value); event("qualification.campaign-started", { id: value.id, preset });
 	const contexts = preset === "baseline" ? [16384] : [16384, 24576, 32768, 49152, 65536];
-	const training = preset === "baseline" ? [4096] : [1024, 2048, 3072, 4096, 6144, 8192];
+	const training = preset === "baseline" ? [sustained?.sequenceLength??4096] : [1024, 2048, 3072, 4096, 6144, 8192].filter((length)=>length<=(sustained?.sequenceLength??8192));
+	if(sustained&&!training.includes(sustained.sequenceLength))training.push(sustained.sequenceLength);
 	const names: ProfileName[] = ["interactive", "agent-long-context", "training-text", "training-multimodal"];
 	let best = 0, stale = 0;
 	for (let index = 0; index < maxTrials && Date.now() < Date.parse(deadline); index++) {
 		if (campaign(value.id)?.state === "cancelled") return campaign(value.id)!;
-		const name = names[index % names.length]!, maxModelLength = contexts[index % contexts.length]!, requestedTrainingLength = training[Math.floor(index / contexts.length) % training.length]!, trainingSequenceLength = Math.min(requestedTrainingLength,sustained?.sequenceLength??requestedTrainingLength);
+		const name = names[index % names.length]!, requestedTrainingLength=training[index%training.length]!, maxModelLength=contexts[Math.floor(index/training.length)%contexts.length]!, trainingSequenceLength = Math.min(requestedTrainingLength,sustained?.sequenceLength??requestedTrainingLength);
 		const settings = { maxModelLength, maxSequences: 2, gpuMemoryUtilization: index % 3 === 2 ? .9 : .85, trainingSequenceLength, multimodalSequenceLength: Math.min(trainingSequenceLength, 4096), maxImagePixels: index % 2 ? 786432 : 262144, loraRank: index % 3 === 2 ? 32 : 16, multimodalLoraEnabled: false };
 		const observation = probeCandidate(fp, settings, run); settings.multimodalLoraEnabled = observation.multimodal;
 		const gates = { ...observation.gates, ...(name === "training-multimodal" ? { multimodal: observation.multimodal } : {}) };
 		const profile = writeProfile(candidate(name, fp, settings, observation.metrics, gates));
 		const failed = Object.entries(profile.gates).filter(([, passed]) => !passed).map(([gate]) => gate), qualificationFailure = multimodalQualification && !multimodalQualification.supported ? `${multimodalQualification.reason}${multimodalQualification.diagnostic ? `:${multimodalQualification.diagnostic}` : ""}` : undefined, multimodalDetail = failed.includes("multimodal") ? qualificationFailure ?? observation.multimodalDiagnostic ?? "trial_canary_failed" : undefined;
 		value.trials.push({ profileId: profile.id, state: profile.state, score: profile.score, diagnostics: profile.state === "rejected" ? [...failed.filter((gate) => gate !== "multimodal"), ...(multimodalDetail ? [`multimodal:${multimodalDetail}`] : failed.includes("multimodal") ? ["multimodal"] : [])].join(",") : undefined });
-		if (profile.score > best) { best = profile.score; stale = 0; } else stale++;
+		if (profile.state!=="rejected"&&profile.score > best) { best = profile.score; stale = 0; } else if(profile.state!=="rejected")stale++;
 		value.updatedAt = new Date().toISOString(); atomic(campaignPath(value.id), value);
 		if (preset === "balanced" && stale >= 6) break;
 	}
