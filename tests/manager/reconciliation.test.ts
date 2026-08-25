@@ -66,9 +66,10 @@ describe('manager-owned platform reconciliation',()=>{
 	});
 	it('gates the bundled evaluator on a healthy resolvable private object store',()=>{
 		const compose=readFileSync('deploy/inference/compose.yml','utf8'),overlay=readFileSync('deploy/inference/factory.override.yml','utf8');
-		expect(overlay).toMatch(/evaluator:\n\s+depends_on:\n\s+minio: \{ condition: service_healthy \}\n\s+vllm: \{ condition: service_healthy \}/u);
+		expect(overlay).toMatch(/evaluator:[\s\S]*depends_on:\n\s+minio: \{ condition: service_healthy \}\n\s+vllm: \{ condition: service_healthy \}/u);
 		expect(overlay).toMatch(/evaluator:[\s\S]*AWS_ENDPOINT_URL: http:\/\/minio:9000/u);
-		expect(overlay).toMatch(/evaluator:[\s\S]*VLLM_URL: http:\/\/vllm:8000/u);
+		expect(overlay).toMatch(/evaluator:[\s\S]*network_mode: "service:vllm"[\s\S]*VLLM_URL: http:\/\/127\.0\.0\.1:8000/u);
+		expect(overlay).toMatch(/manager:[\s\S]*EVALUATOR_URL: "http:\/\/vllm:8080"/u);
 		expect(overlay).toContain('NO_PROXY: 127.0.0.1,localhost,minio,inference-minio,vllm,inference-vllm');
 		expect(overlay).toContain('no_proxy: 127.0.0.1,localhost,minio,inference-minio,vllm,inference-vllm');
 		expect(overlay).not.toContain('default: { aliases: [inference-vllm] }');

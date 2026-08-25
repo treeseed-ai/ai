@@ -34,7 +34,9 @@ describe('library adapter ranking',()=>{
 	});
 	it('uses canonical Compose discovery and probes the no-proxy HTTP path',()=>{
 		const override=readFileSync('deploy/inference/factory.override.yml','utf8'),compose=readFileSync('deploy/inference/compose.yml','utf8');
-		expect(override).toContain('VLLM_URL: http://vllm:8000');
+		expect(override).toContain('network_mode: "service:vllm"');
+		expect(override).toContain('VLLM_URL: http://127.0.0.1:8000');
+		expect(override).toContain('EVALUATOR_URL: "http://vllm:8080"');
 		expect(override).not.toContain('aliases: [inference-vllm]');
 		expect(compose).toContain("opener.open(os.environ['VLLM_URL']+'/health'");
 	});
