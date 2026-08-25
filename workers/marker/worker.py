@@ -2,6 +2,7 @@ import hashlib,json,mimetypes,os,re,shutil,tempfile,threading
 from pathlib import Path
 import boto3
 from sys import path
+from urllib.parse import unquote
 path.insert(0,"/app")
 from common.server import serve
 
@@ -75,7 +76,25 @@ def authored_image_evidence(structured_root,target):
         authored="\n".join(dict.fromkeys(nearby)).strip()
         eligible=bool(supported_image(image) and authored and (block.get("section") or len(authored)>=24))
         evidence.append({"imagePath":str(image.relative_to(target)),"imageSha256":hashlib.sha256(image.read_bytes()).hexdigest(),"mimeType":mimetypes.guess_type(image.name)[0] or "application/octet-stream","page":block.get("page"),"section":block.get("section"),"authoredContext":authored,"eligible":eligible})
-    return blocks,evidence
+    markdown_root=target/"markdown"
+    image_files={item.name:item for item in (target/"images").rglob("*") if item.is_file()}
+    image_pattern=re.compile(r'!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)|<img\b[^>]*\bsrc=["\']([^"\']+)["\'][^>]*>',re.I)
+    for document in sorted(markdown_root.rglob("*.md")) if markdown_root.exists() else []:
+        lines=document.read_text(errors="replace").splitlines();heading=None
+        for index,line in enumerate(lines):
+            heading_match=re.match(r"^#{1,6}\s+(.+)$",line.strip())
+            if heading_match:heading=heading_match.group(1).strip()
+            for match in image_pattern.finditer(line):
+                reference=Path(unquote(match.group(2) or match.group(3) or "")).name;image=image_files.get(reference)
+                if not image:continue
+                nearby=[candidate.strip() for candidate in lines[max(0,index-3):index+4] if candidate.strip() and candidate!=line]
+                alt=(match.group(1) or "").strip();authored="\n".join(dict.fromkeys(([alt] if alt else [])+nearby)).strip()
+                evidence.append({"imagePath":str(image.relative_to(target)),"imageSha256":hashlib.sha256(image.read_bytes()).hexdigest(),"mimeType":mimetypes.guess_type(image.name)[0] or "application/octet-stream","page":None,"section":heading,"authoredContext":authored,"eligible":bool(supported_image(image) and len(authored)>=24)})
+    deduplicated={}
+    for item in evidence:
+        current=deduplicated.get(item["imageSha256"])
+        if current is None or (item["eligible"],len(item["authoredContext"]))>(current["eligible"],len(current["authoredContext"])):deduplicated[item["imageSha256"]]=item
+    return blocks,list(deduplicated.values())
 def client():return boto3.client("s3",endpoint_url=os.environ["AWS_ENDPOINT_URL"],region_name=os.getenv("AWS_REGION","us-east-1"),aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"])
 def object_key(uri):
     prefix=f"s3://{os.environ['S3_BUCKET']}/"
