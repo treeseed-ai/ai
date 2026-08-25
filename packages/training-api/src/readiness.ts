@@ -13,8 +13,13 @@ export class DependencyReadinessError extends Error {
 
 export function objectStoreReadinessError(error: unknown) {
 	const name = error instanceof Error ? error.name : "";
+	const status = typeof error === "object" && error !== null && "$metadata" in error
+		? (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode
+		: undefined;
 	return new DependencyReadinessError(
 		objectStoreCodes[name as keyof typeof objectStoreCodes] ??
+			(status === 404 ? "object_store_bucket_missing" : undefined) ??
+			(status === 403 ? "object_store_access_denied" : undefined) ??
 			"object_store_unavailable",
 	);
 }
