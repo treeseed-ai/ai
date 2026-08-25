@@ -1,7 +1,13 @@
 FROM nvidia/cuda:12.8.1-runtime-ubuntu24.04@sha256:ebef3c171eeef0298e4eb2e4be843105edf3b8b0ac45e0b43acee358e8046867
 LABEL org.opencontainers.image.base.name="nvidia/cuda:12.8.1-runtime-ubuntu24.04" org.opencontainers.image.base.digest="sha256:ebef3c171eeef0298e4eb2e4be843105edf3b8b0ac45e0b43acee358e8046867"
 COPY workers/marker/requirements.lock /tmp/requirements.lock
-RUN DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3 python3-pip && rm -rf /var/lib/apt/lists/* && pip3 install --break-system-packages --no-cache-dir --require-hashes -r /tmp/requirements.lock
+RUN DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    python3 python3-pip \
+    libglib2.0-0t64 libcairo2 libpango-1.0-0 libpangoft2-1.0-0 \
+    libgdk-pixbuf-2.0-0 shared-mime-info \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip3 install --break-system-packages --no-cache-dir --require-hashes -r /tmp/requirements.lock \
+    && python3 -c "from pathlib import Path; from weasyprint import HTML; target=Path('/tmp/treeai-weasyprint-smoke.pdf'); HTML(string='<h1>TreeAI Marker HTML qualification</h1><p>Native runtime ready.</p>').write_pdf(target); assert target.stat().st_size > 0; target.unlink()"
 WORKDIR /app
 COPY workers/common ./common
 COPY workers/marker ./marker
