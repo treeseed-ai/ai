@@ -5,23 +5,18 @@ import{describe,expect,it}from'vitest';
 import{computeBuildIdentity,type ImageBuild}from'../../scripts/release/plan-image-builds.js';
 
 describe('selective image build identities',()=>{
-  it('rewrites the current changelog version for development publications',()=>{
+  it('publishes exact RC images and a manager-owned component bundle',()=>{
     const workflow=readFileSync('.github/workflows/publish-development.yml','utf8');
-    expect(workflow).toContain('1s/([^)]*)/($TREEAI_RC_DEBIAN_VERSION)/');
-    expect(workflow).not.toContain('1s/(0.6.0-1)/');
     expect(workflow).toContain('TREEAI_RC_TAG=${version}-rc${{ inputs.rc }}');
-    expect(workflow).toContain('TREEAI_RC_DEBIAN_VERSION=${version}~rc${{ inputs.rc }}-1');
     expect(workflow).not.toContain('tag="dev-');
-    expect(workflow).not.toContain('docker/login-action');
-    expect(workflow).not.toContain('docker buildx build');
-    expect(workflow).not.toContain('cosign sign');
-    expect(workflow).toContain('publishedDevelopmentImages:0');
-    expect(workflow).toContain('TREEAI_IMAGE_PLAN');
+    expect(workflow).toContain('docker/login-action');
+    expect(workflow).toContain('docker buildx build');
+    expect(workflow).toContain('cosign sign');
+    expect(workflow).toContain('docker buildx imagetools inspect');
+    expect(workflow).toContain('pnpm build:component-release');
     expect(workflow).toContain('TREEAI_DEVELOPMENT_BASE');
-    expect(workflow).not.toContain('validate-image-metadata.ts prior');
-    expect(workflow).toContain('(cd prior && sha256sum -c SHA256SUMS)');
-    expect(workflow).toContain('development-debs pages/apt');
-    expect(workflow).toContain('mirror-apt-suite.sh');
+    expect(workflow).not.toContain('dpkg-buildpackage');
+    expect(workflow).not.toContain('mirror-apt-suite.sh');
   });
 
   it('covers every coordinated role with explicit inputs',()=>{

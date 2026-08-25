@@ -1,0 +1,65 @@
+id: ai
+name: TreeAI
+kind: node-python-gpu
+type: image-service
+repository: treeseed-ai/ai
+versionSource: release/manifest.json
+workflowTemplateVersion: custom
+deploymentSource:
+  staging: image
+  prod: image
+releaseGate:
+  workflow: .github/workflows/release.yml
+dockerImages:
+  releaseWorkflow: release.yml
+  architectures:
+    - amd64
+packageRuntime:
+  schemaVersion: treeseed.package-runtime/v1
+  componentId: ai
+  services:
+    - id: inference-api
+      composeService: inference-api
+      endpoints:
+        - id: http
+          protocol: http
+          port: 4770
+          visibility: host
+          defaultAlias: inference.ai.treeseed.localhost
+          aliasOverride: true
+          tls: edge
+          authentication: application
+          healthGate: { protocol: http, path: /readyz, timeoutSeconds: 600 }
+    - id: inference-data
+      composeService: inference-api
+      endpoints:
+        - id: http
+          protocol: http
+          port: 4771
+          visibility: private
+          aliasOverride: false
+          tls: none
+          authentication: application
+          healthGate: { protocol: http, path: /healthz, timeoutSeconds: 600 }
+    - id: training-api
+      composeService: training-api
+      endpoints:
+        - id: http
+          protocol: http
+          port: 4780
+          visibility: host
+          defaultAlias: training.ai.treeseed.localhost
+          aliasOverride: true
+          tls: edge
+          authentication: application
+          healthGate: { protocol: http, path: /readyz, timeoutSeconds: 600 }
+githubEnvironments:
+  - staging
+  - production
+requiredSecrets:
+  - DOCKERHUB_TOKEN
+  - DOCKERHUB_USERNAME
+verify:
+  fast: pnpm verify
+  local: pnpm verify
+  release: pnpm verify
