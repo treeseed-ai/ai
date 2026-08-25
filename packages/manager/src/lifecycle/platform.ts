@@ -90,23 +90,23 @@ export function ensureManagedRuntime() {
 const ensureRuntime = ensureManagedRuntime;
 function ensureNetwork() {
 	const inspect = spawnSync("docker", ["network", "inspect", "ai-shared", "--format", "{{.Driver}} {{.Scope}}"], { encoding: "utf8" });
-	if (inspect.status === 0) {
-		if (inspect.stdout.trim() !== "bridge local") throw new Error("Existing ai-shared network is incompatible.");
-		return;
-	}
+	if (inspect.status === 0) {if (inspect.stdout.trim() !== "bridge local") throw new Error("Existing ai-shared network is incompatible.");return;}
 	command("docker", ["network", "create", "--driver", "bridge", "--label", "org.treeseed-ai.manager=true", "ai-shared"]);
 }
 function imageValues(product: "inference" | "training") {
-	const config = JSON.parse(readFileSync(paths.configuration, "utf8")) as {
-			imageSource: string;
-		},
+	const config = JSON.parse(readFileSync(paths.configuration, "utf8")) as {imageSource: string},
 		catalog = readCatalog(),
 		local = localImageReadiness(catalog),
-		values: Record<string, string> = {};
+		values: Record<string, string> = {},
+		existing = envMap(products[product].environment);
 	for (const image of catalog.images) {
 		const variable = imageVariables[image.role],
 			owned = image.role.startsWith(`${product}-`) || (product === "training" && ["axolotl-worker", "marker-worker", "artifact-worker"].includes(image.role));
 		if (!variable || !owned) continue;
+		if (catalog.imagePolicy.mode === "package-only") {
+			if (!existing[variable]) throw new Error(`Package-only catalog cannot initialize missing ${variable}.`);
+			values[variable] = existing[variable]!;continue;
+		}
 		const localId = local.images.get(image.role);
 		if (catalog.imagePolicy.requiredLocalImages.some((item) => item.role === image.role) && !localId) throw new Error(`Required local image ${image.role} is not ready.`);
 		if (!localId && image.localBuildOnly) throw new Error(`Catalog image ${image.role} has no production fallback.`);
@@ -115,23 +115,21 @@ function imageValues(product: "inference" | "training") {
 	return values;
 }
 function image(role: string) {
-	const config = JSON.parse(readFileSync(paths.configuration, "utf8")) as {
-			imageSource: string;
-		},
+	const config = JSON.parse(readFileSync(paths.configuration, "utf8")) as {imageSource: string},
 		catalog = readCatalog(),
 		item = catalog.images.find((value) => value.role === role),
 		local = localImageReadiness(catalog),
 		localId = local.images.get(role);
 	if (!item) throw new Error(`Catalog image ${role} is missing.`);
+	if (catalog.imagePolicy.mode === "package-only") {
+		const variable = imageVariables[role], current = variable ? envMap("/etc/treeseed-ai/lab/environment")[variable] : undefined;
+		if (!current) throw new Error(`Package-only catalog cannot initialize missing ${variable ?? role}.`);return current;
+	}
 	if (catalog.imagePolicy.requiredLocalImages.some((value) => value.role === role) && !localId) throw new Error(`Required local image ${role} is not ready.`);
 	if (!localId && item.localBuildOnly) throw new Error(`Catalog image ${role} has no production fallback.`);
 	return localId ?? (config.imageSource === "local-build" && catalog.channel === "stable" ? `local/${role}:${catalog.release}` : `${item.repository}@${item.digest}`);
 }
-function runtimeImage(id: string) {
-	const item = readCatalog().runtimeImages.find((value) => value.id === id);
-	if (!item) throw new Error(`Catalog runtime image ${id} is missing.`);
-	return item.reference;
-}
+function runtimeImage(id: string) {const item = readCatalog().runtimeImages.find((value) => value.id === id);if (!item) throw new Error(`Catalog runtime image ${id} is missing.`);return item.reference;}
 function productGroup(product: "inference" | "training" | "lab") {
 	const group = `treeseed-ai-${product}`,
 		record = command("getent", ["group", group]),

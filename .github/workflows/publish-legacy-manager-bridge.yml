@@ -21,8 +21,8 @@ jobs:
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
           test '${{ github.ref }}' = 'refs/heads/staging'
-          test '${{ inputs.rc }}' = '10'
-          test '${{ inputs.generation }}' = '10000010'
+          test '${{ inputs.rc }}' = '11'
+          test '${{ inputs.generation }}' = '10000011'
           test "$(node -p "require('./release/manifest.json').version")" = '0.10.0'
           test "$(git rev-parse HEAD)" = '${{ github.sha }}'
           tag="0.10.0-rc${{ inputs.rc }}"
@@ -63,7 +63,7 @@ jobs:
           done < <(gh release list --limit 100 --json tagName,isDraft,isPrerelease --jq '.[] | select(.isDraft == false and .isPrerelease == true) | .tagName')
           test -n "$selected"
           echo "TREEAI_PACKAGE_ONLY_BASE=$selected" >> "$GITHUB_ENV"
-      - name: Build only legacy management packages
+      - name: Build the exact legacy full-factory package set
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential debhelper lintian nodejs
@@ -78,12 +78,11 @@ jobs:
           TREEAI_SOURCE_ARCHIVE_URL="$TREEAI_SOURCE_ARCHIVE_URL" \
           TREEAI_SOURCE_ARCHIVE_SHA256="$TREEAI_SOURCE_ARCHIVE_SHA256" \
           TREEAI_FORCE_PACKAGE_ONLY=1 \
-          TREEAI_CATALOG_PACKAGE_SET=management \
+          TREEAI_CATALOG_PACKAGE_SET=all \
           TREEAI_BASE_CATALOG="$PWD/assets/prior-catalog.json" \
           dpkg-buildpackage -b -us -uc
-          for package in archive-keyring development-archive-keyring host-js-runtime manager release-catalog cli; do
-            cp ../treeseed-ai-$package\_*.deb assets/
-          done
+          find .. -maxdepth 1 -type f -name "treeseed-ai*_${TREEAI_RC_DEBIAN_VERSION}_*.deb" -exec cp {} assets/ \;
+          test "$(find assets -maxdepth 1 -type f -name '*.deb' | wc -l)" -eq 12
           lintian --fail-on error assets/*.deb
       - name: Sign and attach the isolated legacy package set
         env:
