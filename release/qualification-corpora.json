@@ -1,6 +1,6 @@
 {
   "schemaVersion": "treeai.qualification-corpora/v1",
-  "generation": 10000000,
+  "generation": 10000001,
   "financial": {
     "minimumUsableTokens": 500000,
     "minimumIssuers": 6,
@@ -18,6 +18,7 @@
   "multimodal": {
     "reports": [
       {"id":"20240009657","filename":"20240009657.pdf","url":"https://ntrs.nasa.gov/api/citations/20240009657/downloads/20240009657.pdf","sha256":"fe0c7511f223c5af6f431272859ee64c8cafa683916bedc266179db370d780a4","size":11082271,"provenance":"NASA NTRS; public technical report"},
+      {"id":"20240000182","filename":"20240000182.pdf","url":"https://ntrs.nasa.gov/api/citations/20240000182/downloads/2023%20RT%20Report%20with%20numbers.pdf","sha256":"11bbe5fc664bd1d1d722ee4fb07cf6fa23fe77d1efc84e658a98d841fde434e9","size":34497958,"provenance":"NASA NTRS; public technical memorandum; use by or on behalf of the US Government permitted"},
       {"id":"20070008232","filename":"20070008232.pdf","url":"https://ntrs.nasa.gov/api/citations/20070008232/downloads/20070008232.pdf","sha256":"20bcaed73188d4a43d35b5a3854b33e8652cf41decaa3539dde8a64f2d19b264","size":1892652,"provenance":"NASA NTRS; work of the US Government"},
       {"id":"20110005503","filename":"20110005503.pdf","url":"https://ntrs.nasa.gov/api/citations/20110005503/downloads/20110005503.pdf","sha256":"3577ea2085cf12cff9c946f1a1d09338b901bcbbd624889fba3ed64351ebf4b8","size":1196523,"provenance":"NASA NTRS; public use permitted"}
     ]
