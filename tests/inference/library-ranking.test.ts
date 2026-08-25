@@ -22,4 +22,10 @@ describe('library adapter ranking',()=>{
 		expect(suite.schemaVersion).toBe('ai.evaluation-suite/v1');
 		expect(suite.cases.length).toBeGreaterThan(0);
 	});
+	it('distinguishes private object-store failures from private inference failures',()=>{
+		const source=readFileSync('workers/evaluator/worker.py','utf8');
+		expect(source).toContain('inference object store read failed:');
+		expect(source).toContain('private vLLM request failed:');
+		expect(source).not.toContain('AWS_SECRET_ACCESS_KEY}');
+	});
 });
