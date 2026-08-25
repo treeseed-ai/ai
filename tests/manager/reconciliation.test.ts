@@ -65,9 +65,13 @@ describe('manager-owned platform reconciliation',()=>{
 		expect(main).toContain('ListObjectsV2Command');expect(main).toContain('MaxKeys:1');expect(main).toContain("requestChecksumCalculation:'WHEN_REQUIRED'");expect(main).toContain("responseChecksumValidation:'WHEN_REQUIRED'");expect(main).toContain('readiness.send');expect(compose).toContain("fetch('http://127.0.0.1:4780/readyz')");
 	});
 	it('gates the bundled evaluator on a healthy resolvable private object store',()=>{
-		const overlay=readFileSync('deploy/inference/factory.override.yml','utf8');
-		expect(overlay).toMatch(/evaluator:\n\s+depends_on:\n\s+minio: \{ condition: service_healthy \}/u);
-		expect(overlay).toMatch(/evaluator:[\s\S]*S3_ENDPOINT: http:\/\/minio:9000/u);
+		const compose=readFileSync('deploy/inference/compose.yml','utf8'),overlay=readFileSync('deploy/inference/factory.override.yml','utf8');
+		expect(overlay).toMatch(/evaluator:\n\s+depends_on:\n\s+minio: \{ condition: service_healthy \}\n\s+vllm: \{ condition: service_healthy \}/u);
+		expect(overlay).toMatch(/evaluator:[\s\S]*AWS_ENDPOINT_URL: http:\/\/minio:9000/u);
+		expect(overlay).toMatch(/evaluator:[\s\S]*VLLM_URL: http:\/\/inference-vllm:8000/u);
+		expect(overlay).toContain('default: { aliases: [inference-vllm] }');
+		expect(compose).toContain("urllib.parse.urlparse(os.environ['AWS_ENDPOINT_URL'])");
+		expect(compose).toContain("urllib.parse.urlparse(os.environ['VLLM_URL'])");
 		expect(overlay).not.toMatch(/evaluator:[\s\S]*ports:/u);
 	});
 	it('preserves configured images for image-inert package generations',()=>{
