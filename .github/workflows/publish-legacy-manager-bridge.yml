@@ -18,17 +18,22 @@ jobs:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
       - name: Require the exact transitional release
-        env: { GH_TOKEN: "${{ github.token }}" }
+        env:
+          GH_TOKEN: "${{ github.token }}"
+          TREEAI_INPUT_RC: "${{ inputs.rc }}"
+          TREEAI_INPUT_GENERATION: "${{ inputs.generation }}"
         run: |
           test '${{ github.ref }}' = 'refs/heads/staging'
-          test '${{ inputs.rc }}' = '28'
-          test '${{ inputs.generation }}' = '10000028'
+          printf '%s' "$TREEAI_INPUT_RC" | grep -Eq '^[1-9][0-9]*$'
+          expected_generation=$((10000000 + 10#$TREEAI_INPUT_RC))
+          test "$TREEAI_INPUT_GENERATION" = "$expected_generation"
           test "$(node -p "require('./release/manifest.json').version")" = '0.10.0'
           test "$(git rev-parse HEAD)" = '${{ github.sha }}'
-          tag="0.10.0-rc${{ inputs.rc }}"
+          tag="0.10.0-rc$TREEAI_INPUT_RC"
           test "$(gh release view "$tag" --json targetCommitish --jq .targetCommitish)" = '${{ github.sha }}'
           echo "TREEAI_RC_TAG=$tag" >> "$GITHUB_ENV"
-          echo "TREEAI_RC_DEBIAN_VERSION=0.10.0~rc${{ inputs.rc }}-1" >> "$GITHUB_ENV"
+          echo "TREEAI_RC_DEBIAN_VERSION=0.10.0~rc${TREEAI_INPUT_RC}-1" >> "$GITHUB_ENV"
+          echo "TREEAI_CATALOG_GENERATION=$expected_generation" >> "$GITHUB_ENV"
       - uses: pnpm/action-setup@v4
         with: { version: 10.15.1 }
       - uses: actions/setup-node@v4
@@ -71,7 +76,7 @@ jobs:
           TREEAI_DEBIAN_VERSION="$TREEAI_RC_DEBIAN_VERSION" \
           TREEAI_RELEASE_VERSION="$TREEAI_RC_TAG" \
           TREEAI_RELEASE_CHANNEL=development \
-          TREEAI_RELEASE_GENERATION='${{ inputs.generation }}' \
+          TREEAI_RELEASE_GENERATION="$TREEAI_CATALOG_GENERATION" \
           TREEAI_IMAGE_MANIFEST="$PWD/assets/image-manifest.json" \
           TREEAI_IMAGE_PLAN="$PWD/assets/development-image-plan.json" \
           TREEAI_SOURCE_REVISION='${{ github.sha }}' \
