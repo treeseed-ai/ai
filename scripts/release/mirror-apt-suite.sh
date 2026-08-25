@@ -7,14 +7,17 @@ source_root="$base/dists/$suite"
 target_root="$site/dists/$suite"
 temporary=$(mktemp -d)
 trap 'rm -rf "$temporary"' EXIT
-if ! curl -fsS "$source_root/Release" -o "$temporary/Release"; then
+fetch() {
+	curl -fsS --retry 5 --retry-delay 2 --retry-max-time 45 --retry-all-errors "$1" -o "$2"
+}
+if ! fetch "$source_root/Release" "$temporary/Release"; then
 	exit 3
 fi
 mkdir -p "$target_root/main/binary-amd64" "$site/pool/$suite"
 for path in Release InRelease Release.gpg main/binary-amd64/Packages main/binary-amd64/Packages.xz; do
 	mkdir -p "$(dirname "$target_root/$path")"
 	if test "$path" = Release; then cp "$temporary/Release" "$target_root/Release"
-	else curl -fsS "$source_root/$path" -o "$target_root/$path"
+	else fetch "$source_root/$path" "$target_root/$path"
 	fi
 done
 key=treeseed-ai-archive-keyring.asc
@@ -30,7 +33,7 @@ cmp "$temporary/signed-release" "$target_root/Release"
 while IFS=' ' read -r label filename; do
 	test "$label" = Filename: || continue
 	mkdir -p "$site/$(dirname "$filename")"
-	curl -fsS "$base/$filename" -o "$site/$filename"
+	fetch "$base/$filename" "$site/$filename"
 done < "$target_root/main/binary-amd64/Packages"
 mkdir -p "$target_root/main/binary-amd64/by-hash/SHA256"
 for file in Packages Packages.xz; do
