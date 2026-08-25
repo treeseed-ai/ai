@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { event, setSetting, setting } from "../../core/store.js";
 import { paths } from "../../core/paths.js";
 import { qualifyMultimodalSupport } from "./multimodal.js";
+import { imageCanary } from "./canaries.js";
 
 export type ProfileName = "interactive" | "agent-long-context" | "training-text" | "training-multimodal";
 export interface MachineFingerprint {
@@ -61,7 +62,7 @@ export function profiles() { const root = join(paths.qualification, "profiles");
 function awaitFiles(root: string) { return readdirSync(root).filter((name) => name.endsWith(".json")).map((name) => name.slice(0, -5)); }
 function candidate(name: ProfileName, fp: MachineFingerprint, settings: MachineProfile["settings"], metrics: Record<string, number>, gates: Record<string, boolean>): MachineProfile { const id = crypto.randomUUID(), safe = Object.values(gates).every(Boolean), score = safe ? Number((metrics.quality * .45 + metrics.reliability * .3 + metrics.context * .15 + metrics.latency * .1).toFixed(6)) : 0; return { schemaVersion: "treeai.machine-profile/v1", id, name, fingerprintDigest: digest(fp), fingerprint: fp, state: safe ? "candidate" : "rejected", settings, context: contextPolicy(settings.maxModelLength), score, gates, metrics, createdAt: new Date().toISOString() }; }
 const concurrentCanary = "import concurrent.futures,json,urllib.request,time; body=json.dumps({'model':'Qwen/Qwen3.5-4B','messages':[{'role':'user','content':'Reply ready.'}],'max_tokens':8}).encode(); f=lambda _: urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/v1/chat/completions',data=body,headers={'content-type':'application/json'}),timeout=120).read(); start=time.time(); list(concurrent.futures.ThreadPoolExecutor(max_workers=2).map(f,range(2))); print(json.dumps({'latencyMs':(time.time()-start)*1000,'successes':2}))";
-const multimodalCanary = "import base64,json,urllib.request; pixel='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='; body=json.dumps({'model':'Qwen/Qwen3.5-4B','messages':[{'role':'user','content':[{'type':'image_url','image_url':{'url':'data:image/png;base64,'+pixel}},{'type':'text','text':'Confirm image input.'}]}],'max_tokens':8}).encode(); urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/v1/chat/completions',data=body,headers={'content-type':'application/json'}),timeout=120).read(); print('ready')";
+const multimodalCanary = imageCanary("Confirm image input.");
 function imageProbe(fp: MachineFingerprint, role: string, source: string, run: Runner) {
 	const image = fp.images[role];
 	if (!image || image === "unknown") return false;
@@ -96,7 +97,7 @@ export function campaigns() { const root = join(paths.qualification, "campaigns"
 export function campaign(id: string) { const path = campaignPath(id); return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) as QualificationCampaign : null; }
 export function cancelCampaign(id: string) { const value = campaign(id); if (!value || !["queued", "running"].includes(value.state)) throw new Error("Campaign is not cancellable."); value.state = "cancelled"; value.updatedAt = new Date().toISOString(); atomic(campaignPath(id), value); event("qualification.campaign-cancelled", { id }); return value; }
 export function runCampaign(preset: "baseline" | "balanced", run: Runner = defaultRunner) {
-	if (run === defaultRunner) qualifyMultimodalSupport();
+	const multimodalQualification = (run === defaultRunner ? qualifyMultimodalSupport() : undefined) as { supported: boolean; reason?: string; diagnostic?: string } | undefined;
 	const fp = fingerprint(run), createdAt = new Date().toISOString(), maxTrials = preset === "baseline" ? 4 : 24;
 	atomic(join(paths.qualification, "fingerprint.json"), { schemaVersion: "treeai.machine-fingerprint-observation/v1", fingerprint: fp, fingerprintDigest: digest(fp), observedAt: createdAt });
 	const deadline = new Date(Date.now() + (preset === "baseline" ? 30 * 60_000 : 4 * 60 * 60_000)).toISOString();
@@ -113,7 +114,8 @@ export function runCampaign(preset: "baseline" | "balanced", run: Runner = defau
 		const observation = probeCandidate(fp, settings, run); settings.multimodalLoraEnabled = observation.multimodal;
 		const gates = { ...observation.gates, ...(name === "training-multimodal" ? { multimodal: observation.multimodal } : {}) };
 		const profile = writeProfile(candidate(name, fp, settings, observation.metrics, gates));
-		value.trials.push({ profileId: profile.id, state: profile.state, score: profile.score, diagnostics: profile.state === "rejected" ? Object.entries(profile.gates).filter(([, passed]) => !passed).map(([gate]) => gate).join(",") : undefined });
+		const failed = Object.entries(profile.gates).filter(([, passed]) => !passed).map(([gate]) => gate), multimodalDetail = failed.includes("multimodal") && multimodalQualification ? `${multimodalQualification.reason}${multimodalQualification.diagnostic ? `:${multimodalQualification.diagnostic}` : ""}` : undefined;
+		value.trials.push({ profileId: profile.id, state: profile.state, score: profile.score, diagnostics: profile.state === "rejected" ? [...failed.filter((gate) => gate !== "multimodal"), ...(multimodalDetail ? [`multimodal:${multimodalDetail}`] : failed.includes("multimodal") ? ["multimodal"] : [])].join(",") : undefined });
 		if (profile.score > best) { best = profile.score; stale = 0; } else stale++;
 		value.updatedAt = new Date().toISOString(); atomic(campaignPath(value.id), value);
 		if (preset === "balanced" && stale >= 6) break;
