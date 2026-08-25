@@ -42,8 +42,10 @@ describe('manager-owned platform reconciliation',()=>{
     expect(platform).toContain('chown",["root:treeseed-ai-inference",path]');
     expect(platform).toContain('readFileSync(path,"utf8")===value');
     expect(platform).toContain('if(existsSync(path))writeFileSync(path,value,{mode})');
-		expect(overlay.match(/ARTIFACT_SOURCE_SECRET_GENERATION/g)).toHaveLength(3);
-		expect(overlay.match(/ARTIFACT_IMPORT_TOKEN_GENERATION/g)).toHaveLength(6);
+		expect(overlay.match(/ARTIFACT_SOURCE_SECRET_GENERATION/g)).toHaveLength(2);
+		expect(overlay.match(/ARTIFACT_IMPORT_TOKEN_GENERATION/g)).toHaveLength(4);
+		expect(overlay.match(/:-compatibility-v1/g)).toHaveLength(3);
+		expect(overlay).not.toMatch(/(?:SOURCE_SECRET|IMPORT_TOKEN)_GENERATION[^\n]+:\?/u);
 		expect(platform).toContain('ARTIFACT_SOURCE_SECRET_GENERATION:secretGeneration(sourceValue)');
 		expect(platform).toContain('ARTIFACT_IMPORT_TOKEN_GENERATION:secretGeneration(artifactImportToken)');
 		expect(readFileSync('packages/manager/src/lifecycle/storage/identities.ts','utf8')).toContain('createHash("sha256")');
