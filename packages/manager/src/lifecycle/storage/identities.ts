@@ -8,6 +8,10 @@ const prefixes = {
 
 export type ObjectStoreIdentityPurpose = keyof typeof prefixes;
 
+export function secretGeneration(value: string) {
+	return createHash("sha256").update(value).digest("hex").slice(0, 16);
+}
+
 export function objectStoreAccessId(
 	purpose: ObjectStoreIdentityPurpose,
 	secret: string,

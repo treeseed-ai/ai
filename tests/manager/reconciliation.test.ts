@@ -36,15 +36,18 @@ describe('manager-owned platform reconciliation',()=>{
     expect(platform).toContain('chown",["root:treeseed-ai-training",privateKey]');
   });
 
-  it('grants only inference services mounted with import secrets the inference group',()=>{
-    const overlay=readFileSync('deploy/inference/factory.override.yml','utf8'),platform=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8');
+	it('grants only inference services mounted with import secrets the inference group',()=>{
+		const overlay=readFileSync('deploy/inference/factory.override.yml','utf8'),platform=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8');
 		expect(overlay).toMatch(/manager:[\s\S]*group_add: \["\$\{RUNTIME_GID/u);
     expect(platform).toContain('chown",["root:treeseed-ai-inference",path]');
     expect(platform).toContain('readFileSync(path,"utf8")===value');
     expect(platform).toContain('if(existsSync(path))writeFileSync(path,value,{mode})');
-    expect(overlay.match(/TREEAI_SECRET_MOUNT_GENERATION/g)).toHaveLength(2);
-    expect(overlay.match(/TREEAI_SECRET_MOUNT_GENERATION: "3"/g)).toHaveLength(2);
-  });
+		expect(overlay.match(/ARTIFACT_SOURCE_SECRET_GENERATION/g)).toHaveLength(3);
+		expect(overlay.match(/ARTIFACT_IMPORT_TOKEN_GENERATION/g)).toHaveLength(6);
+		expect(platform).toContain('ARTIFACT_SOURCE_SECRET_GENERATION:secretGeneration(sourceValue)');
+		expect(platform).toContain('ARTIFACT_IMPORT_TOKEN_GENERATION:secretGeneration(artifactImportToken)');
+		expect(readFileSync('packages/manager/src/lifecycle/storage/identities.ts','utf8')).toContain('createHash("sha256")');
+	});
 
   it('provisions a distinct read-only training artifact exchange identity',()=>{
     const compose=readFileSync('deploy/training/compose.yml','utf8'),platform=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8');
