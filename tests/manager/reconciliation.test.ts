@@ -68,12 +68,12 @@ describe('manager-owned platform reconciliation',()=>{
 		const compose=readFileSync('deploy/inference/compose.yml','utf8'),overlay=readFileSync('deploy/inference/factory.override.yml','utf8');
 		expect(overlay).toMatch(/evaluator:\n\s+depends_on:\n\s+minio: \{ condition: service_healthy \}\n\s+vllm: \{ condition: service_healthy \}/u);
 		expect(overlay).toMatch(/evaluator:[\s\S]*AWS_ENDPOINT_URL: http:\/\/minio:9000/u);
-		expect(overlay).toMatch(/evaluator:[\s\S]*VLLM_URL: http:\/\/inference-vllm:8000/u);
+		expect(overlay).toMatch(/evaluator:[\s\S]*VLLM_URL: http:\/\/vllm:8000/u);
 		expect(overlay).toContain('NO_PROXY: 127.0.0.1,localhost,minio,inference-minio,vllm,inference-vllm');
 		expect(overlay).toContain('no_proxy: 127.0.0.1,localhost,minio,inference-minio,vllm,inference-vllm');
-		expect(overlay).toContain('default: { aliases: [inference-vllm] }');
+		expect(overlay).not.toContain('default: { aliases: [inference-vllm] }');
 		expect(compose).toContain("urllib.parse.urlparse(os.environ['AWS_ENDPOINT_URL'])");
-		expect(compose).toContain("urllib.parse.urlparse(os.environ['VLLM_URL'])");
+		expect(compose).toContain("opener.open(os.environ['VLLM_URL']+'/health'");
 		expect(overlay).not.toMatch(/evaluator:[\s\S]*ports:/u);
 	});
 	it('preserves configured images for image-inert package generations',()=>{

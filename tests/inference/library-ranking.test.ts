@@ -32,4 +32,10 @@ describe('library adapter ranking',()=>{
 		expect(source).not.toContain('urllib.request.urlopen(request');
 		expect(source).not.toContain('AWS_SECRET_ACCESS_KEY}');
 	});
+	it('uses canonical Compose discovery and probes the no-proxy HTTP path',()=>{
+		const override=readFileSync('deploy/inference/factory.override.yml','utf8'),compose=readFileSync('deploy/inference/compose.yml','utf8');
+		expect(override).toContain('VLLM_URL: http://vllm:8000');
+		expect(override).not.toContain('aliases: [inference-vllm]');
+		expect(compose).toContain("opener.open(os.environ['VLLM_URL']+'/health'");
+	});
 });

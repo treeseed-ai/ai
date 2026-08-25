@@ -39,7 +39,7 @@ services:
     restart: unless-stopped
     environment: { <<: *s3-environment, VLLM_URL: "http://vllm:8000" }
     volumes: ["inference-state:/state"]
-    healthcheck: { test: ["CMD","python","-c","import os,socket,urllib.parse,urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/healthz');socket.create_connection((urllib.parse.urlparse(os.environ['AWS_ENDPOINT_URL']).hostname,urllib.parse.urlparse(os.environ['AWS_ENDPOINT_URL']).port or 80),3).close();socket.create_connection((urllib.parse.urlparse(os.environ['VLLM_URL']).hostname,urllib.parse.urlparse(os.environ['VLLM_URL']).port or 80),3).close()"], interval: 10s, timeout: 5s, retries: 10 }
+    healthcheck: { test: ["CMD","python","-c","import os,socket,urllib.parse,urllib.request;opener=urllib.request.build_opener(urllib.request.ProxyHandler({}));opener.open('http://127.0.0.1:8080/healthz',timeout=3);socket.create_connection((urllib.parse.urlparse(os.environ['AWS_ENDPOINT_URL']).hostname,urllib.parse.urlparse(os.environ['AWS_ENDPOINT_URL']).port or 80),3).close();opener.open(os.environ['VLLM_URL']+'/health',timeout=3)"], interval: 10s, timeout: 5s, retries: 10 }
   vllm:
     image: ${INFERENCE_VLLM_IMAGE:?INFERENCE_VLLM_IMAGE is required}
     build: { context: ../.., dockerfile: containers/inference/vllm.Dockerfile }
