@@ -1,4 +1,4 @@
-import hashlib,json,mimetypes,os,re,shutil,subprocess,tempfile
+import hashlib,json,mimetypes,os,re,shutil,tempfile,threading
 from pathlib import Path
 import boto3
 from sys import path
@@ -7,15 +7,37 @@ from common.server import serve
 
 OUTPUT=Path(os.getenv("OUTPUT_DIR","/artifacts/documents"));OUTPUT.mkdir(parents=True,exist_ok=True)
 SECRET=re.compile(r"(?im)(-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|ak_[a-z0-9-]+_[a-z0-9_-]{16,}|(?:api[_-]?key|password|secret|access[_-]?token)\s*[:=]\s*[^\s]{12,})")
+STATUS={};STATUS_LOCK=threading.Lock();_CONVERTER=None;_CONVERTER_LOCK=threading.Lock()
 def supported_image(path):
     head=path.read_bytes()[:16]
     return head.startswith(b"\x89PNG\r\n\x1a\n") or head.startswith(b"\xff\xd8\xff") or (head.startswith(b"RIFF") and head[8:12]==b"WEBP")
-def run_marker(source,target,output_format):
-    command=["marker_single",str(source),"--output_dir",str(target),"--output_format",output_format]
-    result=subprocess.run(command,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=int(os.getenv("MARKER_TIMEOUT","3600")))
-    if result.returncode:
-        detail=SECRET.sub("[REDACTED]",result.stdout or "")[-12000:].strip()
-        raise RuntimeError(f"marker_single {output_format} exited {result.returncode}: {detail or 'no diagnostic output'}")
+def set_status(job_id,phase,progress):
+    with STATUS_LOCK:
+        STATUS.pop(job_id,None);STATUS[job_id]={"phase":phase,"progress":progress}
+        if len(STATUS)>256:STATUS.pop(next(iter(STATUS)))
+def status(job):
+    with STATUS_LOCK:return STATUS.get(str(job.get("jobId","")),{"phase":"queued","progress":0.05})
+def marker_converter():
+    global _CONVERTER
+    with _CONVERTER_LOCK:
+        if _CONVERTER is None:
+            from marker.config.parser import ConfigParser
+            from marker.models import create_model_dict
+            parser=ConfigParser({"output_format":"markdown","mode":"balanced"})
+            converter_cls=parser.get_converter_cls()
+            _CONVERTER=converter_cls(config=parser.generate_config_dict(),artifact_dict=create_model_dict(),processor_list=parser.get_processors(),renderer=parser.get_renderer(),llm_service=parser.get_llm_service())
+    return _CONVERTER
+def convert_document(source,markdown_target,structured_target,job_id):
+    from marker.output import save_output
+    from marker.renderers.json import JSONRenderer
+    from marker.renderers.markdown import MarkdownRenderer
+    set_status(job_id,"loading",.10);converter=marker_converter()
+    set_status(job_id,"processing",.20);document=converter.build_document(str(source))
+    base=source.stem;markdown_target.mkdir(parents=True,exist_ok=True);structured_target.mkdir(parents=True,exist_ok=True)
+    set_status(job_id,"rendering_markdown",.78);save_output(converter.resolve_dependencies(MarkdownRenderer)(document),str(markdown_target),base)
+    set_status(job_id,"rendering_structured",.86);save_output(converter.resolve_dependencies(JSONRenderer)(document),str(structured_target),base)
+    set_status(job_id,"rendered",.90)
+def safe_error(error):return SECRET.sub("[REDACTED]",str(error))[-12000:].strip() or "no diagnostic output"
 
 def walk_blocks(value,page=None,section=None):
     """Flatten Marker's JSON without depending on one upstream block layout."""
@@ -65,7 +87,7 @@ def upload_bundle(target,job_id):
         if item.is_file():s3.upload_file(str(item),bucket,f"documents/{job_id}/{item.relative_to(target)}")
     return f"s3://{bucket}/documents/{job_id}/manifest.json"
 def process(job):
-    value=job["input"];uri=value.get("objectUri");filename=Path(str(value.get("filename","document"))).name
+    value=job["input"];job_id=str(job["jobId"]);uri=value.get("objectUri");filename=Path(str(value.get("filename","document"))).name
     if not uri or filename!=value.get("filename"):raise ValueError("A safe document identity and object URI are required")
     data=client().get_object(Bucket=os.environ["S3_BUCKET"],Key=object_key(uri))["Body"].read()
     if hashlib.sha256(data).hexdigest()!=value.get("sha256"):raise ValueError("Source object checksum does not match")
@@ -76,8 +98,10 @@ def process(job):
     with tempfile.TemporaryDirectory(prefix="treeai-marker-") as temporary:
         source=Path(temporary)/filename;source.write_bytes(data)
         markdown_target=target/"markdown";structured_target=target/"structured"
-        run_marker(source,markdown_target,"markdown")
-        run_marker(source,structured_target,"json")
+        try:convert_document(source,markdown_target,structured_target,job_id)
+        except Exception as error:
+            set_status(job_id,"failed",.05)
+            raise RuntimeError(f"Marker conversion failed: {safe_error(error)}") from error
         for image in markdown_target.rglob("*"):
             if image.is_file() and (mimetypes.guess_type(image.name)[0] or "").startswith("image/"):
                 destination=target/"images"/image.name;destination.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(image,destination)
@@ -90,5 +114,6 @@ def process(job):
     blocks,image_evidence=authored_image_evidence(target/"structured",target)
     manifest={"schemaVersion":"ai.document-bundle/v3","source":{"filename":filename,"sha256":value["sha256"],"declaredMimeType":value.get("declaredMimeType"),"detectedMimeType":value.get("detectedMimeType")},"objects":objects,"structured":{"blockCount":len(blocks),"pages":sorted({item["page"] for item in blocks if item.get("page") is not None},key=str)},"images":image_evidence,"relationships":value.get("relationship",{}),"provenance":{"processor":"marker","mode":"balanced","outputs":["markdown","json"]}}
     (target/"manifest.json").write_text(json.dumps(manifest,sort_keys=True,separators=(",",":")))
-    return{"state":"ready","resultManifest":upload_bundle(target,job["jobId"]),"tokenCount":max(1,len(text)//4)}
-serve({"/process":process})
+    set_status(job_id,"complete",.98)
+    return{"state":"ready","resultManifest":upload_bundle(target,job_id),"tokenCount":max(1,len(text)//4)}
+serve({"/process":process,"/status":status})
