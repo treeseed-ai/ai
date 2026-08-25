@@ -1,4 +1,4 @@
-import { GetObjectCommand,HeadObjectCommand,ListObjectsV2Command,PutObjectCommand,S3Client,type S3ClientConfig } from '@aws-sdk/client-s3';
+import { GetObjectCommand,HeadObjectCommand,PutObjectCommand,S3Client,type S3ClientConfig } from '@aws-sdk/client-s3';
 import { createHash } from 'node:crypto';
 import { createReadStream,statSync } from 'node:fs';
 
@@ -16,7 +16,6 @@ export class ArtifactStore {
 		return{uri:`s3://${this.bucket}/${key}`,size,sha256:digest};
 	}
 	async head(key: string) { return this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key })); }
-	async list(maxKeys = 1) { return this.client.send(new ListObjectsV2Command({ Bucket: this.bucket, MaxKeys: maxKeys })); }
 	async bytes(key: string) {
 		const result = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
 		return result.Body?.transformToByteArray() ?? new Uint8Array();

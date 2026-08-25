@@ -1,4 +1,5 @@
 import { ArtifactStore,sha256,verifyManifest,type ArtifactManifest,type Job } from '@ai-platform/common';
+import { ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { createPublicKey } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { Pool } from 'pg';
@@ -7,7 +8,7 @@ interface SourceRegistry {sourceId:string;endpoint:string;bucket:string;accessKe
 function objectKey(uri:string,bucket:string){const match=uri.match(/^s3:\/\/([^/]+)\/(.+)$/u);if(!match||match[1]!==bucket)throw new Error(`Object URI is outside the registered ${bucket} bucket.`);return match[2]!;}
 function store(bucket:string,endpoint:string,accessKeyId:string,secretAccessKey:string){return new ArtifactStore(bucket,{endpoint,region:process.env.S3_REGION??'us-east-1',forcePathStyle:true,credentials:{accessKeyId,secretAccessKey}});}
 function sourceRegistry(){return JSON.parse(readFileSync(process.env.ARTIFACT_SOURCE_REGISTRY!,'utf8'))as SourceRegistry;}
-export async function verifyArtifactSource(createStore:typeof store=store){const source=sourceRegistry(),input=createStore(source.bucket,source.endpoint,source.accessKeyId,source.secretAccessKey);await input.list(1);}
+export async function verifyArtifactSource(createStore:typeof store=store){const source=sourceRegistry(),input=createStore(source.bucket,source.endpoint,source.accessKeyId,source.secretAccessKey);await input.client.send(new ListObjectsV2Command({Bucket:source.bucket,MaxKeys:1}));}
 async function putOnce(store:ArtifactStore,key:string,bytes:Uint8Array,contentType?:string){const digest=sha256(bytes);try{const existing=await store.head(key);if(existing.ContentLength===bytes.byteLength&&existing.Metadata?.sha256===digest)return{uri:`s3://${store.bucket}/${key}`,size:bytes.byteLength,sha256:digest};}catch{/* missing or incomplete objects are copied */}return store.put(key,bytes,contentType);}
 
 export function createArtifactImporter(pool:Pool){

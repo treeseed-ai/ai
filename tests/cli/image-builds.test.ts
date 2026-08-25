@@ -5,20 +5,10 @@ import{describe,expect,it}from'vitest';
 import{computeBuildIdentity,reuseEligible,type ImageBuild}from'../../scripts/release/plan-image-builds.js';
 
 describe('selective image build identities',()=>{
-  it('uses build identity rather than milestone declarations between RCs',()=>{
-    expect(reuseEligible({currentVersion:'0.10.0-rc6',priorVersion:'0.10.0-rc5',declaredChanged:true,previousValid:true,buildIdentityMatches:true,inputsUnchanged:false})).toBe(false);
-    expect(reuseEligible({currentVersion:'0.10.0-rc6',priorVersion:'0.10.0-rc5',declaredChanged:false,previousValid:true,buildIdentityMatches:false,inputsUnchanged:true})).toBe(true);
-		expect(reuseEligible({currentVersion:'0.10.0-rc6',priorVersion:'0.10.0-rc5',declaredChanged:false,previousValid:true,buildIdentityMatches:false,inputsUnchanged:false,buildDefinitionMatches:false})).toBe(true);
-  });
-	it('allows an RC input-map refinement only when effective inputs and build definition are unchanged',()=>{
-		expect(reuseEligible({currentVersion:'0.10.0-rc11',priorVersion:'0.10.0-rc10',previousValid:true,buildIdentityMatches:false,inputsUnchanged:true,buildDefinitionMatches:true})).toBe(true);
-		expect(reuseEligible({currentVersion:'0.10.0-rc11',priorVersion:'0.10.0-rc10',previousValid:true,buildIdentityMatches:false,inputsUnchanged:true,buildDefinitionMatches:false})).toBe(false);
-		expect(reuseEligible({currentVersion:'0.10.0-rc11',priorVersion:'0.10.0-rc10',previousValid:true,buildIdentityMatches:false,inputsUnchanged:false,buildDefinitionMatches:true})).toBe(false);
-	});
-
-  it('retains milestone declarations against stable baselines',()=>{
-    expect(reuseEligible({currentVersion:'0.10.0-rc1',priorVersion:'0.9.0',declaredChanged:true,previousValid:true,buildIdentityMatches:true,inputsUnchanged:true})).toBe(false);
-    expect(reuseEligible({currentVersion:'0.10.0-rc1',priorVersion:'0.9.0',declaredChanged:false,previousValid:true,buildIdentityMatches:false,inputsUnchanged:false})).toBe(true);
+  it('reuses only an exact valid deterministic build identity',()=>{
+    expect(reuseEligible({previousValid:true,buildIdentityMatches:true})).toBe(true);
+    expect(reuseEligible({previousValid:true,buildIdentityMatches:false})).toBe(false);
+    expect(reuseEligible({previousValid:false,buildIdentityMatches:true})).toBe(false);
   });
 
   it('publishes exact RC images and a manager-owned component bundle',()=>{
