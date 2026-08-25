@@ -39,9 +39,14 @@ jobs:
         run: |
           mkdir -p assets prior plan
           git archive --format=tar --prefix=treeai-source/ HEAD | gzip -n > assets/treeai-source.tar.gz
-          previous=$(gh release list --limit 100 --json tagName,isDraft,isPrerelease --jq '.[]|select(.isDraft==false and .isPrerelease==false)|.tagName' | head -1)
+          gh release list --limit 100 --json tagName,isDraft,isPrerelease > prior/releases.json
+          previous=$(node --import tsx scripts/release/select-development-base.ts "$TREEAI_RC_TAG" prior/releases.json)
           test -n "$previous"
-          gh release download "$previous" --pattern image-manifest.json --dir prior
+          gh release download "$previous" --pattern image-manifest.json --pattern SHA256SUMS --dir prior
+          expected=$(awk '$2 == "image-manifest.json" || $2 == "./image-manifest.json" { print $1 }' prior/SHA256SUMS)
+          test -n "$expected"
+          actual=$(sha256sum prior/image-manifest.json | awk '{ print $1 }')
+          test "$actual" = "$expected"
           TREEAI_RELEASE_VERSION="$TREEAI_RC_TAG" TREEAI_DEVELOPMENT_BASE="$previous" node --import tsx scripts/release/plan-image-builds.ts plan/image-plan.json prior/image-manifest.json
           cp prior/image-manifest.json assets/image-manifest.json
           cp plan/image-plan.json assets/development-image-plan.json
