@@ -22,7 +22,10 @@ describe('selective image build identities',()=>{
     expect(workflow).toContain('docker/login-action');
     expect(workflow).toContain('docker buildx build');
     expect(workflow).toContain('cosign sign');
+    expect(workflow).toContain('cosign verify');
     expect(workflow).toContain('docker buildx imagetools inspect');
+    expect(workflow).not.toContain('docker buildx imagetools create --tag');
+    expect(workflow).toContain('.images[$role].disposition="reused"');
     expect(workflow).toContain('pnpm build:component-release');
     expect(workflow).toContain('TREEAI_DEVELOPMENT_BASE');
     expect(workflow).not.toContain('dpkg-buildpackage');

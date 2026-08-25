@@ -62,16 +62,18 @@ jobs:
               arguments=()
               if test -n "$build_args"; then arguments+=(--build-arg "$build_args"); fi
               docker buildx build . --file "$dockerfile" --platform linux/amd64 --push --provenance mode=max --sbom=true --tag "$repository:$TREEAI_RC_TAG" "${arguments[@]}"
+              digest=$(docker buildx imagetools inspect "$repository:$TREEAI_RC_TAG" | awk '/^Digest:/{print $2;exit}')
+              printf '%s' "$digest" | grep -Eq '^sha256:[a-f0-9]{64}$'
+              cosign sign --yes "$repository@$digest"
+              readback=$(docker buildx imagetools inspect "$repository:$TREEAI_RC_TAG" | awk '/^Digest:/{print $2;exit}')
+              test "$readback" = "$digest"
+              jq --arg role "$role" --arg digest "$digest" --arg tag "$TREEAI_RC_TAG" --arg identity "$build_identity" '.version=$tag | .images[$role].digest=$digest | .images[$role].tag=$tag | .images[$role].buildIdentity=$identity | .images[$role].disposition="built" | .images[$role].firstBuiltVersion=$tag' assets/image-manifest.json > assets/image-manifest.json.new
             else
               digest=$(jq -r --arg role "$role" '.images[$role].digest' plan/image-plan.json)
-              docker buildx imagetools create --tag "$repository:$TREEAI_RC_TAG" "$repository@$digest"
+              docker buildx imagetools inspect "$repository@$digest" >/dev/null
+              cosign verify "$repository@$digest" --certificate-identity-regexp '^https://github.com/treeseed-ai/ai/' --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' >/dev/null
+              jq --arg role "$role" --arg tag "$TREEAI_RC_TAG" --arg identity "$build_identity" '.version=$tag | .images[$role].buildIdentity=$identity | .images[$role].disposition="reused"' assets/image-manifest.json > assets/image-manifest.json.new
             fi
-            digest=$(docker buildx imagetools inspect "$repository:$TREEAI_RC_TAG" | awk '/^Digest:/{print $2;exit}')
-            printf '%s' "$digest" | grep -Eq '^sha256:[a-f0-9]{64}$'
-            cosign sign --yes "$repository@$digest"
-            readback=$(docker buildx imagetools inspect "$repository:$TREEAI_RC_TAG" | awk '/^Digest:/{print $2;exit}')
-            test "$readback" = "$digest"
-            jq --arg role "$role" --arg digest "$digest" --arg tag "$TREEAI_RC_TAG" --arg identity "$build_identity" '.version=$tag | .images[$role].digest=$digest | .images[$role].tag=$tag | .images[$role].buildIdentity=$identity | .images[$role].disposition="built"' assets/image-manifest.json > assets/image-manifest.json.new
             mv assets/image-manifest.json.new assets/image-manifest.json
           done < <(jq -r '.images | keys[]' plan/image-plan.json)
       - name: Create exact managed component bundle
