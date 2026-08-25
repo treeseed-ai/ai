@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFile
 import { dirname, join } from "node:path";
 import { event, setSetting, setting } from "../../core/store.js";
 import { paths } from "../../core/paths.js";
+import { qualifyMultimodalSupport } from "./multimodal.js";
 
 export type ProfileName = "interactive" | "agent-long-context" | "training-text" | "training-multimodal";
 export interface MachineFingerprint {
@@ -95,6 +96,7 @@ export function campaigns() { const root = join(paths.qualification, "campaigns"
 export function campaign(id: string) { const path = campaignPath(id); return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) as QualificationCampaign : null; }
 export function cancelCampaign(id: string) { const value = campaign(id); if (!value || !["queued", "running"].includes(value.state)) throw new Error("Campaign is not cancellable."); value.state = "cancelled"; value.updatedAt = new Date().toISOString(); atomic(campaignPath(id), value); event("qualification.campaign-cancelled", { id }); return value; }
 export function runCampaign(preset: "baseline" | "balanced", run: Runner = defaultRunner) {
+	if (run === defaultRunner) qualifyMultimodalSupport();
 	const fp = fingerprint(run), createdAt = new Date().toISOString(), maxTrials = preset === "baseline" ? 4 : 24;
 	atomic(join(paths.qualification, "fingerprint.json"), { schemaVersion: "treeai.machine-fingerprint-observation/v1", fingerprint: fp, fingerprintDigest: digest(fp), observedAt: createdAt });
 	const deadline = new Date(Date.now() + (preset === "baseline" ? 30 * 60_000 : 4 * 60 * 60_000)).toISOString();
