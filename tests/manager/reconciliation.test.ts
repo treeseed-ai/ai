@@ -52,8 +52,10 @@ describe('manager-owned platform reconciliation',()=>{
   });
 	it('preserves configured images for image-inert package generations',()=>{
 		const platform=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8');
+		const variables=readFileSync('packages/manager/src/core/image-variables.ts','utf8');
 		expect(platform).toContain('catalog.imagePolicy.mode === "package-only"');
 		expect(platform).toContain('Package-only catalog cannot initialize missing');
+		for(const value of['LAB_CONTROLLER_IMAGE','LAB_PROXY_IMAGE','LAB_LIBRARY_BRIDGE_IMAGE','LAB_WEB_TOOL_IMAGE','HERMES_IMAGE'])expect(variables).toContain(value);
 	});
 	it('keeps the profile verification key readable without exposing the signing key',()=>{
 		const source=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8');
