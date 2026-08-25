@@ -33,7 +33,7 @@ services:
     environment: { AI_FACTORY_MODE_FILE: /factory/mode.json, ARTIFACT_IMPORT_URL: "http://api:4770/internal/artifacts/import", ARTIFACT_IMPORT_TOKEN_FILE: /run/secrets/artifact-import-token, TREEAI_SECRET_MOUNT_GENERATION: "3" }
   vllm:
     restart: "no"
-    environment: { TREEAI_MULTIMODAL_LORA_ENABLED: "${TREEAI_MULTIMODAL_LORA_ENABLED:-false}" }
+    environment: { TREEAI_MULTIMODAL_LORA_ENABLED: "${TREEAI_MULTIMODAL_LORA_ENABLED:-false}", VLLM_ALLOW_RUNTIME_LORA_UPDATING: "True" }
     command: ["--model","${SOURCE_MODEL:-Qwen/Qwen3.5-4B}","--revision","${SOURCE_MODEL_REVISION:-851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a}","--served-model-name","${SOURCE_MODEL:-Qwen/Qwen3.5-4B}","--max-model-len","${MAX_MODEL_LENGTH:-65536}","--max-num-seqs","2","--gpu-memory-utilization","${GPU_MEMORY_UTILIZATION:-0.85}","--enable-lora","--enable-auto-tool-choice","--tool-call-parser","qwen3_coder","--reasoning-parser","qwen3"]
   minio:
     networks:

@@ -33,4 +33,9 @@ merged=module.merge_safetensors([tensor('model.language.weight',b'abc'),tensor('
 		expect(entrypoint).toContain('--language-model-only');
 		expect(compose).toContain('TREEAI_MULTIMODAL_LORA_ENABLED:-false');
 	});
+
+	it('authorizes runtime LoRA updates only on the private vLLM service',()=>{
+		for(const path of ['deploy/inference/compose.yml','deploy/inference/factory.override.yml','deploy/component/compose.template.yml'])expect(readFileSync(path,'utf8')).toContain('VLLM_ALLOW_RUNTIME_LORA_UPDATING');
+		for(const path of ['deploy/inference/compose.yml','deploy/inference/factory.override.yml'])expect(readFileSync(path,'utf8')).not.toMatch(/8000:8000/u);
+	});
 });
