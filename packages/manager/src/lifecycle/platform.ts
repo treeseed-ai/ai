@@ -10,6 +10,7 @@ import { paths } from "../core/paths.js";import { hashHermesPassword } from "./h
 import { ensurePlatformTls } from "./certificates/tls.js";import { activateManagerCertificate } from "./certificates/activation.js";import { imageVariables } from "../core/image-variables.js";
 import { summarizeComposeStatus, type ProductStatus } from "./status.js";
 import { activeProfile, qualificationStatus, runCampaign } from "./qualification/index.js";import { reconcileLabEdge } from "./lab/edge.js";import { migrationDiagnostics } from "./migrations/diagnostics.js";
+import { objectStoreAccessId } from "./storage/identities.js";
 const products = {
 	inference: {
 		compose: "/usr/lib/treeseed-ai/inference/compose.yml",
@@ -204,6 +205,7 @@ function ensureProductConfiguration() {
 		};
 	}
 	stored.trainingImportS3??=secret();atomic(secretsPath, JSON.stringify(stored), 0o600);
+	const accessIds={inference:objectStoreAccessId("inference",stored.inferenceS3!),training:objectStoreAccessId("training",stored.trainingS3!),trainingImport:objectStoreAccessId("trainingImport",stored.trainingImportS3)};
 	const operator = JSON.parse(readFileSync("/etc/treeseed-ai/treeai/operator-record.json", "utf8")) as unknown,
 		profile = activeProfile(),
 		common = (product: "inference" | "training") => ({
@@ -213,10 +215,10 @@ function ensureProductConfiguration() {
 			POSTGRES_PASSWORD: stored[`${product}Db`]!,
 			S3_ENDPOINT: "http://minio:9000",
 			S3_BUCKET: `ai-${product}`,
-			S3_ACCESS_KEY: product,S3_SECRET_KEY: stored[`${product}S3`]!,
+			S3_ACCESS_KEY: accessIds[product],S3_SECRET_KEY: stored[`${product}S3`]!,
 			MINIO_ROOT_USER: `${product}-root`,
 			MINIO_ROOT_PASSWORD: stored[`${product}Minio`]!,
-			...(product==="training"?{IMPORT_S3_ACCESS_KEY:"inference-import",IMPORT_S3_SECRET_KEY:stored.trainingImportS3}:{}),
+			...(product==="training"?{IMPORT_S3_ACCESS_KEY:accessIds.trainingImport,IMPORT_S3_SECRET_KEY:stored.trainingImportS3}:{}),
 		});
 	atomic(paths.apiKeys, `${JSON.stringify([operator, service.factory!.record], null, 2)}\n`, 0o640);
 	try {
@@ -254,7 +256,7 @@ function ensureProductConfiguration() {
 			sourceId: "training-local",
 			endpoint: "http://training-minio:9000",
 			bucket: "ai-training",
-			accessKeyId: "inference-import",
+			accessKeyId: accessIds.trainingImport,
 			secretAccessKey: stored.trainingImportS3,
 			trustedPublicKey: readFileSync(signing.publicKey, "utf8"),
 		};
