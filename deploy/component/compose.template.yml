@@ -18,10 +18,10 @@ services:
     ipc: host
     volumes:
       - type: bind
-        source: /var/lib/treeseed/components/ai/models
+        source: ${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai/data/models
         target: /models
       - type: bind
-        source: /var/lib/treeseed/components/ai/inference
+        source: ${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai/data/inference
         target: /state
         read_only: true
     environment:
@@ -46,7 +46,7 @@ services:
       VLLM_URL: http://inference-vllm:8000
     volumes:
       - type: bind
-        source: /var/lib/treeseed/components/ai/inference
+        source: ${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai/data/inference
         target: /state
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/healthz')"]
@@ -98,10 +98,10 @@ services:
     restart: unless-stopped
     volumes:
       - type: bind
-        source: /var/lib/treeseed/components/ai/training
+        source: ${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai/data/training
         target: /artifacts
       - type: bind
-        source: /var/lib/treeseed/components/ai/models
+        source: ${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai/data/models
         target: /models
     deploy:
       resources:
@@ -119,10 +119,10 @@ services:
     restart: unless-stopped
     volumes:
       - type: bind
-        source: /var/lib/treeseed/components/ai/training
+        source: ${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai/data/training
         target: /artifacts
       - type: bind
-        source: /var/lib/treeseed/components/ai/models
+        source: ${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai/data/models
         target: /models
     deploy:
       resources:
@@ -136,10 +136,10 @@ services:
     restart: unless-stopped
     volumes:
       - type: bind
-        source: /var/lib/treeseed/components/ai/training
+        source: ${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai/data/training
         target: /artifacts
       - type: bind
-        source: /var/lib/treeseed/components/ai/archive
+        source: ${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai/data/archive
         target: /archive
     secrets: [artifact-signing-key]
     environment:

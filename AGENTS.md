@@ -21,3 +21,7 @@
 - Keep handwritten source and tests below 500 lines and direct executable directories below ten files.
 - Do not add a push-triggered hosted deployment workflow.
 - Use plan for non-mutating Compose previews and apply for live reconciliation; never add dry-run behavior.
+
+## Project library
+
+Use `trsd library show ai` and `status` before querying `treeseed-ai/ai-library`. Read root-level paths at an exact commit. Author only through governed library workspaces and reviews. Never recreate `src/content` or edit `.treeseed/data` directly.
