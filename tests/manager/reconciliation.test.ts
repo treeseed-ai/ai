@@ -53,9 +53,11 @@ describe('manager-owned platform reconciliation',()=>{
     expect(compose).toContain('mc ls import-check/$$S3_BUCKET');expect(compose).toContain('$$attempt\\\" -lt 30');
     expect(platform).toContain('accessKeyId: accessIds.trainingImport');expect(platform).toContain('trainingImportS3??=secret()');
 		expect(platform).toContain('S3_ACCESS_KEY: accessIds[product]');expect(platform).toContain('IMPORT_S3_ACCESS_KEY:accessIds.trainingImport');
+		expect(platform).toContain('S3_ENDPOINT: `http://${product}-minio:9000`');
     expect(platform).toContain('["run","--rm","--no-deps","minio-init"]');
     expect(platform).not.toMatch(/inference: \[[^\n]*"minio-init"/u);expect(platform).not.toMatch(/training: \[[^\n]*"minio-init"/u);
-    for(const product of['inference','training'])expect(readFileSync(`deploy/${product}/factory.override.yml`,'utf8')).not.toContain('minio-init: { condition:');
+		for(const product of['inference','training'])expect(readFileSync(`deploy/${product}/factory.override.yml`,'utf8')).not.toContain('minio-init: { condition:');
+		for(const product of['inference','training'])expect(readFileSync(`deploy/${product}/factory.override.yml`,'utf8')).toContain(`default: { aliases: [${product}-minio] }`);
     expect(platform.indexOf('reconcileObjectStore(product);',platform.indexOf('export async function transitionMode'))).toBeLessThan(platform.indexOf('writeMode(target);',platform.indexOf('export async function transitionMode')));
   });
 	it('gates training API readiness on its effective object-store identity',()=>{

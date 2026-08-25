@@ -213,7 +213,7 @@ function ensureProductConfiguration() {
 			AI_API_KEYS: `'${JSON.stringify([operator, service[product]!.record,...product==='training'?[service.libraryIngest!.record]:[]])}'`,
 			DATABASE_URL: `postgresql://${product}:${stored[`${product}Db`]}@postgres:5432/${product}`,
 			POSTGRES_PASSWORD: stored[`${product}Db`]!,
-			S3_ENDPOINT: "http://minio:9000",
+			S3_ENDPOINT: `http://${product}-minio:9000`,
 			S3_BUCKET: `ai-${product}`,
 			S3_ACCESS_KEY: accessIds[product],S3_SECRET_KEY: stored[`${product}S3`]!,
 			MINIO_ROOT_USER: `${product}-root`,
