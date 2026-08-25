@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFile
 import { dirname, join } from "node:path";
 import { event, setSetting, setting } from "../../core/store.js";
 import { paths } from "../../core/paths.js";
-import { qualifyMultimodalSupport } from "./multimodal.js";
+import { diagnostic, qualifyMultimodalSupport } from "./multimodal.js";
 import { imageCanary } from "./canaries.js";
 
 export type ProfileName = "interactive" | "agent-long-context" | "training-text" | "training-multimodal";
@@ -85,10 +85,11 @@ export function probeCandidate(fp: MachineFingerprint, settings: MachineProfile[
 	const axolotl = imageProbe(fp, "axolotl-worker", "import torch,transformers; print('ready')", run);
 	const marker = imageProbe(fp, "marker-worker", "import torch,marker; print('ready')", run);
 	const multimodalEnabled = safe(run, "docker", ["exec", "treeseed-ai-inference-vllm-1", "sh", "-lc", "test \"${TREEAI_MULTIMODAL_LORA_ENABLED:-false}\" = true"], "failed") !== "failed";
-	const multimodal = multimodalEnabled && safe(run, "docker", ["exec", "treeseed-ai-inference-vllm-1", "python3", "-c", multimodalCanary], "failed") !== "failed";
+	let multimodal = false, multimodalDiagnostic = multimodalEnabled ? undefined : "runtime_flag_not_active";
+	if (multimodalEnabled) try { run("docker", ["exec", "treeseed-ai-inference-vllm-1", "python3", "-c", multimodalCanary]);multimodal = true; } catch (error) { multimodalDiagnostic = diagnostic(error); }
 	const gates = { gpu, docker, inferenceConcurrency: canary.successes === 2, inferenceContext: configured >= settings.maxModelLength, axolotl, marker, memory: fp.gpuMemoryMiB >= 12_000, bounded: settings.maxModelLength <= 65_536 && settings.trainingSequenceLength <= 8192 };
 	const passed = Object.values(gates).filter(Boolean).length;
-	return { gates, multimodal, metrics: { quality: passed / Object.keys(gates).length, reliability: canary.successes === 2 && axolotl && marker ? 1 : 0, context: settings.maxModelLength / 65_536, latency: Math.max(0, 1 - Number(canary.latencyMs ?? Date.now() - started) / 120_000), latencyMs: Number(canary.latencyMs ?? Date.now() - started) } };
+	return { gates, multimodal, multimodalDiagnostic, metrics: { quality: passed / Object.keys(gates).length, reliability: canary.successes === 2 && axolotl && marker ? 1 : 0, context: settings.maxModelLength / 65_536, latency: Math.max(0, 1 - Number(canary.latencyMs ?? Date.now() - started) / 120_000), latencyMs: Number(canary.latencyMs ?? Date.now() - started) } };
 }
 function writeProfile(profile: MachineProfile) { const path = profilePath(profile.id); mkdirSync(join(paths.qualification, "profiles"), { recursive: true, mode: 0o750 }); atomic(path, envelope(profile)); return profile; }
 export function activateProfile(id: string) { const next = readProfile(id); if (!next || next.state === "rejected") throw new Error("Only a verified passing profile may be activated."); const priorId = setting<string | null>("qualification.activeProfile", null), prior = priorId ? readProfile(priorId) : null; if (prior && next.score <= prior.score && next.fingerprintDigest === prior.fingerprintDigest) return { changed: false, reason: "not_strictly_better", activeProfile: prior }; if (prior) { prior.state = "known-good"; writeProfile(prior); setSetting("qualification.knownGoodProfile", prior.id); } next.state = "active"; writeProfile(next); setSetting("qualification.activeProfile", next.id); setSetting("qualification.fingerprint", next.fingerprintDigest); event("qualification.profile-activated", { profileId: next.id, priorProfileId: prior?.id }); return { changed: true, activeProfile: next }; }
@@ -114,7 +115,7 @@ export function runCampaign(preset: "baseline" | "balanced", run: Runner = defau
 		const observation = probeCandidate(fp, settings, run); settings.multimodalLoraEnabled = observation.multimodal;
 		const gates = { ...observation.gates, ...(name === "training-multimodal" ? { multimodal: observation.multimodal } : {}) };
 		const profile = writeProfile(candidate(name, fp, settings, observation.metrics, gates));
-		const failed = Object.entries(profile.gates).filter(([, passed]) => !passed).map(([gate]) => gate), multimodalDetail = failed.includes("multimodal") && multimodalQualification ? `${multimodalQualification.reason}${multimodalQualification.diagnostic ? `:${multimodalQualification.diagnostic}` : ""}` : undefined;
+		const failed = Object.entries(profile.gates).filter(([, passed]) => !passed).map(([gate]) => gate), qualificationFailure = multimodalQualification && !multimodalQualification.supported ? `${multimodalQualification.reason}${multimodalQualification.diagnostic ? `:${multimodalQualification.diagnostic}` : ""}` : undefined, multimodalDetail = failed.includes("multimodal") ? qualificationFailure ?? observation.multimodalDiagnostic ?? "trial_canary_failed" : undefined;
 		value.trials.push({ profileId: profile.id, state: profile.state, score: profile.score, diagnostics: profile.state === "rejected" ? [...failed.filter((gate) => gate !== "multimodal"), ...(multimodalDetail ? [`multimodal:${multimodalDetail}`] : failed.includes("multimodal") ? ["multimodal"] : [])].join(",") : undefined });
 		if (profile.score > best) { best = profile.score; stale = 0; } else stale++;
 		value.updatedAt = new Date().toISOString(); atomic(campaignPath(value.id), value);

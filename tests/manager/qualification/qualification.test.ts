@@ -27,6 +27,7 @@ describe("machine qualification", () => {
 		const result = probeCandidate(fp, settings, run);
 		expect(result.gates.inferenceContext).toBe(false);
 		expect(result.multimodal).toBe(false);
+		expect(result.multimodalDiagnostic).toBe("runtime_flag_not_active");
 	});
 	it("reads the effective context from the production vLLM command", () => {
 		expect(configuredContext('["--model","Qwen/Qwen3.5-4B","--max-model-len","16384","--enable-lora"]')).toBe(16384);
