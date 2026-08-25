@@ -35,12 +35,14 @@ export function computeBuildIdentity(role:string,build:ImageBuild,platform:strin
   return`sha256:${hash.digest('hex')}`;
 }
 
-export function reuseEligible(input:{currentVersion:string;priorVersion?:string;declaredChanged?:boolean;previousValid:boolean;buildIdentityMatches:boolean;inputsUnchanged:boolean}){
+export function reuseEligible(input:{currentVersion:string;priorVersion?:string;declaredChanged?:boolean;previousValid:boolean;buildIdentityMatches:boolean;inputsUnchanged:boolean;buildDefinitionMatches?:boolean}){
 	const current=/^(\d+\.\d+\.\d+)-rc[1-9]\d*$/u.exec(input.currentVersion),prior=/^(\d+\.\d+\.\d+)-rc[1-9]\d*$/u.exec(input.priorVersion??''),sameCandidateLine=Boolean(current&&prior&&current[1]===prior[1]);
 	if(!input.previousValid)return false;
-	if(sameCandidateLine)return input.buildIdentityMatches;
+	if(sameCandidateLine)return input.buildIdentityMatches||(input.inputsUnchanged&&input.buildDefinitionMatches===true);
 	return input.declaredChanged===undefined?input.buildIdentityMatches||input.inputsUnchanged:!input.declaredChanged;
 }
+
+function priorBuilds(reference:string){const result=spawnSync('git',['show',`${reference}:release/image-builds.json`],{encoding:'utf8'});if(result.status!==0)throw new Error(`Cannot read prior image-build definitions from ${reference}.`);return(JSON.parse(result.stdout)as{images:Record<string,ImageBuild>}).images;}
 
 function main(){
   const release=JSON.parse(readFileSync('release/manifest.json','utf8'))as{version:string;dockerNamespace:string;images:string[];changedImages?:string[]};release.version=process.env.TREEAI_RELEASE_VERSION??release.version;
@@ -52,6 +54,7 @@ function main(){
   const images:Record<string,Record<string,unknown>>={};
   const cache=new Map<string,string>();
   const developmentBase=process.env.TREEAI_DEVELOPMENT_BASE;
+	const previousBuilds=developmentBase?priorBuilds(developmentBase):undefined;
   const declaredChanges=release.changedImages?new Set(release.changedImages):undefined;
 	if(declaredChanges&&[...declaredChanges].some(role=>!release.images.includes(role)))throw new Error('changedImages contains an unknown role.');
   for(const role of release.images){
@@ -59,7 +62,8 @@ function main(){
     const inputsUnchanged=developmentBase?spawnSync('git',['diff','--quiet',developmentBase,'HEAD','--',...build.inputs]).status===0:false;
 		const previousValid=previous?.repository===`${release.dockerNamespace}/${role}`&&/^sha256:[a-f0-9]{64}$/u.test(previous.digest)&&/^sha256:[a-f0-9]{64}$/u.test(previous.buildIdentity??'');
 		if(declaredChanges&&!declaredChanges.has(role)&&!previousValid)throw new Error(`Unchanged image ${role} has no valid prior digest.`);
-    const reuse=reuseEligible({currentVersion:release.version,priorVersion:prior?.version,declaredChanged:declaredChanges?.has(role),previousValid:Boolean(previousValid),buildIdentityMatches:previous?.buildIdentity===buildIdentity,inputsUnchanged});
+    const previousBuild=previousBuilds?.[role],buildDefinitionMatches=Boolean(previousBuild&&previousBuild.dockerfile===build.dockerfile&&JSON.stringify(previousBuild.buildArgs??{})===JSON.stringify(build.buildArgs??{}));
+    const reuse=reuseEligible({currentVersion:release.version,priorVersion:prior?.version,declaredChanged:declaredChanges?.has(role),previousValid:Boolean(previousValid),buildIdentityMatches:previous?.buildIdentity===buildIdentity,inputsUnchanged,buildDefinitionMatches});
     const tag=process.env.TREEAI_IMAGE_TAG??release.version;images[role]={role,action:reuse?'reused':'built',buildIdentity:reuse?previous?.buildIdentity:buildIdentity,dockerfile:build.dockerfile,buildArgs:Object.entries(build.buildArgs??{}).map(([key,value])=>`${key}=${value}`).join('\n'),platform:builds.platform,repository:`${release.dockerNamespace}/${role}`,...reuse?{digest:previous.digest,tag:previous.tag,firstBuiltVersion:previous.firstBuiltVersion??previous.tag}:{tag,firstBuiltVersion:release.version}};
   }
   writeFileSync(output,`${JSON.stringify({schemaVersion:'treeai.image-build-plan/v1',version:release.version,previousVersion:prior?.version??null,images},null,2)}\n`);
