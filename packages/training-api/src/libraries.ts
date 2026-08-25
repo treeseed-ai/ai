@@ -1,6 +1,6 @@
-import { ArtifactStore } from '@ai-platform/common';
 import { readFile,stat } from 'node:fs/promises';
 import type { Pool,PoolClient } from 'pg';
+import type{ObjectWriter}from'./minio-storage.js';
 
 export const documentStates=['received','classified','pending_processing','processing','ready','quarantined','deleted'] as const;
 export interface LibraryInput {sourceKind:'open-webui'|'api';externalId:string;slug:string;name:string;description?:string}
@@ -26,7 +26,7 @@ function row(value:Record<string,unknown>){return{id:String(value.id),sourceKind
 function documentRow(value:Record<string,unknown>){return{id:String(value.id),libraryId:String(value.library_id),externalId:value.external_id,state:value.state,deletedAt:value.deleted_at?new Date(value.deleted_at as string).toISOString():null,currentRevision:value.current_revision_id?{id:String(value.current_revision_id),sha256:value.object_sha256,objectUri:value.object_uri,filename:value.filename,relativePath:value.relative_path,directoryExternalId:value.directory_external_id,declaredMimeType:value.declared_mime_type,detectedMimeType:value.detected_mime_type,revision:Number(value.revision),provenance:value.provenance,diagnostics:value.diagnostics,normalizedManifestUri:value.normalized_manifest_uri,tokenCount:value.token_count===null?null:Number(value.token_count)}:null,createdAt:new Date(value.created_at as string).toISOString(),updatedAt:new Date(value.updated_at as string).toISOString()};}
 
 export class LibraryRepository {
-	constructor(readonly pool:Pool,readonly objects:ArtifactStore){}
+	constructor(readonly pool:Pool,readonly objects:ObjectWriter){}
 	async list(){const result=await this.pool.query('SELECT * FROM libraries WHERE deleted=false ORDER BY name,id');return result.rows.map(row);}
 	async get(id:string){const result=await this.pool.query('SELECT * FROM libraries WHERE id=$1 AND deleted=false',[id]);return result.rowCount?row(result.rows[0]):null;}
 	async upsert(input:LibraryInput){
