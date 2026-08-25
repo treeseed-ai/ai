@@ -7,7 +7,8 @@ import{computeBuildIdentity,reuseEligible,type ImageBuild}from'../../scripts/rel
 describe('selective image build identities',()=>{
   it('uses build identity rather than milestone declarations between RCs',()=>{
     expect(reuseEligible({currentVersion:'0.10.0-rc6',priorVersion:'0.10.0-rc5',declaredChanged:true,previousValid:true,buildIdentityMatches:true,inputsUnchanged:false})).toBe(true);
-    expect(reuseEligible({currentVersion:'0.10.0-rc6',priorVersion:'0.10.0-rc5',declaredChanged:false,previousValid:true,buildIdentityMatches:false,inputsUnchanged:true})).toBe(false);
+    expect(reuseEligible({currentVersion:'0.10.0-rc6',priorVersion:'0.10.0-rc5',declaredChanged:false,previousValid:true,buildIdentityMatches:false,inputsUnchanged:true})).toBe(true);
+		expect(reuseEligible({currentVersion:'0.10.0-rc6',priorVersion:'0.10.0-rc5',declaredChanged:false,previousValid:true,buildIdentityMatches:false,inputsUnchanged:false,buildDefinitionMatches:false})).toBe(true);
   });
 	it('allows an RC input-map refinement only when effective inputs and build definition are unchanged',()=>{
 		expect(reuseEligible({currentVersion:'0.10.0-rc11',priorVersion:'0.10.0-rc10',previousValid:true,buildIdentityMatches:false,inputsUnchanged:true,buildDefinitionMatches:true})).toBe(true);

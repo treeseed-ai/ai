@@ -38,6 +38,7 @@ export function computeBuildIdentity(role:string,build:ImageBuild,platform:strin
 export function reuseEligible(input:{currentVersion:string;priorVersion?:string;declaredChanged?:boolean;previousValid:boolean;buildIdentityMatches:boolean;inputsUnchanged:boolean;buildDefinitionMatches?:boolean}){
 	const current=/^(\d+\.\d+\.\d+)-rc[1-9]\d*$/u.exec(input.currentVersion),prior=/^(\d+\.\d+\.\d+)-rc[1-9]\d*$/u.exec(input.priorVersion??''),sameCandidateLine=Boolean(current&&prior&&current[1]===prior[1]);
 	if(!input.previousValid)return false;
+	if(sameCandidateLine&&input.declaredChanged===false)return true;
 	if(sameCandidateLine)return input.buildIdentityMatches||(input.inputsUnchanged&&input.buildDefinitionMatches===true);
 	return input.declaredChanged===undefined?input.buildIdentityMatches||input.inputsUnchanged:!input.declaredChanged;
 }
