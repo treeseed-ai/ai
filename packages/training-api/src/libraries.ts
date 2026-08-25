@@ -1,10 +1,18 @@
 import { ArtifactStore } from '@ai-platform/common';
+import { readFile,stat } from 'node:fs/promises';
 import type { Pool,PoolClient } from 'pg';
 
 export const documentStates=['received','classified','pending_processing','processing','ready','quarantined','deleted'] as const;
 export interface LibraryInput {sourceKind:'open-webui'|'api';externalId:string;slug:string;name:string;description?:string}
 export interface DocumentInput {externalId:string;filename:string;relativePath:string;directoryExternalId?:string;declaredMimeType:string;detectedMimeType:string;sha256:string;size:number;provenance?:Record<string,unknown>}
 export interface RelationshipInput {directories?:Array<{externalId:string;parentExternalId?:string;name:string;relativePath:string;deleted?:boolean}>;documents?:Array<{externalId:string;filename?:string;relativePath?:string;directoryExternalId?:string}>}
+
+const maximumDocumentBytes=100*1024*1024;
+export async function boundedDocumentBytes(path:string,expectedSize:number){
+	const details=await stat(path);if(details.size!==expectedSize)throw new Error('Document size changed before object storage');
+	if(details.size<0||details.size>maximumDocumentBytes)throw new Error('Document exceeds the 100 MiB limit');
+	const bytes=await readFile(path);if(bytes.byteLength!==expectedSize)throw new Error('Document size changed while reading');return bytes;
+}
 
 export function sameDocumentRevision(current:Record<string,unknown>,input:DocumentInput){
 	return current.object_sha256===input.sha256&&current.declared_mime_type===input.declaredMimeType;
@@ -29,8 +37,8 @@ export class LibraryRepository {
 	async documents(libraryId:string){const result=await this.pool.query(`SELECT d.*,r.object_sha256,o.object_uri,r.filename,r.relative_path,r.directory_external_id,r.declared_mime_type,r.detected_mime_type,r.revision,r.provenance,r.diagnostics,r.normalized_manifest_uri,r.token_count FROM library_documents d LEFT JOIN document_revisions r ON r.id=d.current_revision_id LEFT JOIN document_objects o ON o.sha256=r.object_sha256 WHERE d.library_id=$1 ORDER BY r.relative_path,d.id`,[libraryId]);return result.rows.map(documentRow);}
 	async ingest(libraryId:string,input:DocumentInput,temporaryPath:string){
 		if(!/^[a-f0-9]{64}$/u.test(input.sha256))throw new Error('A valid SHA-256 digest is required');
-		if(input.size<0||input.size>100*1024*1024)throw new Error('Document exceeds the 100 MiB limit');
-		const stored=await this.objects.putFile(`library-source/${input.sha256}`,temporaryPath,input.sha256,input.detectedMimeType);
+		const bytes=await boundedDocumentBytes(temporaryPath,input.size),stored=await this.objects.put(`library-source/${input.sha256}`,bytes,input.detectedMimeType);
+		if(stored.sha256!==input.sha256)throw new Error('Document SHA-256 changed before object storage');
 		const client=await this.pool.connect();try{return await this.ingestTransaction(client,libraryId,input,stored.uri);}finally{client.release();}
 	}
 	private async ingestTransaction(client:PoolClient,libraryId:string,input:DocumentInput,uri:string){
