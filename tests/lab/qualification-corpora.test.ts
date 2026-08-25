@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { readCorpusCatalog, selectFiling } from "../../packages/lab/src/corpus.js";
+import { qualificationLibraryInput, readCorpusCatalog, selectFiling } from "../../packages/lab/src/corpus.js";
 
 describe("qualification corpus acquisition", () => {
 	it("pins a fair-access cross-sector EDGAR and NASA catalog", () => {
@@ -19,6 +19,9 @@ describe("qualification corpus acquisition", () => {
 		const recent = { form: ["8-K", "10-Q", "10-K"], accessionNumber: ["a", "q", "k"], primaryDocument: ["a.htm", "q.htm", "k.htm"], filingDate: ["1", "2", "3"] };
 		expect(selectFiling(recent)).toMatchObject({ form: "10-K", accession: "k" });
 		expect(selectFiling({ ...recent, form: ["8-K", "10-Q"] })).toMatchObject({ form: "10-Q", accession: "q" });
+	});
+	it("uses the current training API library contract", () => {
+		expect(qualificationLibraryInput("TreeAI EDGAR Qualification", "qualification-edgar")).toEqual({ sourceKind: "api", externalId: "qualification-edgar", slug: "qualification-edgar", name: "TreeAI EDGAR Qualification", description: "Non-production qualification corpus" });
 	});
 	it("keeps acquisition immutable and does not commit raw corpora", () => {
 		const source = readFileSync("packages/lab/src/corpus.ts", "utf8");

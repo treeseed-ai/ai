@@ -88,8 +88,11 @@ async function cachedGet(url: string, name: string, headers: Record<string, stri
 	const stored = store(name, response.body, { ...metadata, etag: response.headers.etag, lastModified: response.headers["last-modified"] });
 	return { body: response.body, stored };
 }
+export function qualificationLibraryInput(name: string, slug: string) {
+	return { sourceKind: "api" as const, externalId: slug, name, slug, description: "Non-production qualification corpus" };
+}
 async function library(client: Client, key: string, name: string, slug: string) {
-	const body = Buffer.from(JSON.stringify({ externalSource: "treeai-qualification", externalId: slug, name, slug, description: "Non-production qualification corpus" }));
+	const body = Buffer.from(JSON.stringify(qualificationLibraryInput(name, slug)));
 	return send(`${client.endpoints.training}/v1/libraries`, body, { authorization: `Bearer ${key}`, "content-type": "application/json", "idempotency-key": `qualification-library:${slug}` }, readFileSync(client.ca)) as Promise<{ id: string }>;
 }
 async function upload(client: Client, key: string, libraryId: string, item: { externalId: string; filename: string; relativePath: string; mime: string; body: Buffer; provenance: Record<string, unknown> }) {
