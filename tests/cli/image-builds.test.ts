@@ -2,9 +2,19 @@ import{chmodSync,mkdtempSync,mkdirSync,readFileSync,symlinkSync,writeFileSync}fr
 import{tmpdir}from'node:os';
 import{join}from'node:path';
 import{describe,expect,it}from'vitest';
-import{computeBuildIdentity,type ImageBuild}from'../../scripts/release/plan-image-builds.js';
+import{computeBuildIdentity,reuseEligible,type ImageBuild}from'../../scripts/release/plan-image-builds.js';
 
 describe('selective image build identities',()=>{
+  it('uses build identity rather than milestone declarations between RCs',()=>{
+    expect(reuseEligible({currentVersion:'0.10.0-rc6',priorVersion:'0.10.0-rc5',declaredChanged:true,previousValid:true,buildIdentityMatches:true,inputsUnchanged:false})).toBe(true);
+    expect(reuseEligible({currentVersion:'0.10.0-rc6',priorVersion:'0.10.0-rc5',declaredChanged:false,previousValid:true,buildIdentityMatches:false,inputsUnchanged:true})).toBe(false);
+  });
+
+  it('retains milestone declarations against stable baselines',()=>{
+    expect(reuseEligible({currentVersion:'0.10.0-rc1',priorVersion:'0.9.0',declaredChanged:true,previousValid:true,buildIdentityMatches:true,inputsUnchanged:true})).toBe(false);
+    expect(reuseEligible({currentVersion:'0.10.0-rc1',priorVersion:'0.9.0',declaredChanged:false,previousValid:true,buildIdentityMatches:false,inputsUnchanged:false})).toBe(true);
+  });
+
   it('publishes exact RC images and a manager-owned component bundle',()=>{
     const workflow=readFileSync('.github/workflows/publish-development.yml','utf8');
     expect(workflow).toContain('TREEAI_RC_TAG=${version}-rc${{ inputs.rc }}');
