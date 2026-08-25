@@ -5,6 +5,8 @@ on:
     inputs:
       rc: { description: "Positive release-candidate number", required: true, type: string }
       component_revision: { description: "Positive Compose/Debian component revision", required: false, default: "1", type: string }
+      recover_run_id: { description: "Optional failed publication run whose completed image outputs may be recovered", required: false, type: string }
+      recover_image_tag: { description: "Exact orphan RC image tag produced by the recovery run", required: false, type: string }
 
 permissions: { contents: read }
 
@@ -48,6 +50,38 @@ jobs:
           actual=$(sha256sum prior/image-manifest.json | awk '{ print $1 }')
           test "$actual" = "$expected"
           TREEAI_RELEASE_VERSION="$TREEAI_RC_TAG" TREEAI_DEVELOPMENT_BASE="$previous" node --import tsx scripts/release/plan-image-builds.ts plan/image-plan.json prior/image-manifest.json
+          recovery_run='${{ inputs.recover_run_id }}'
+          recovery_tag='${{ inputs.recover_image_tag }}'
+          if test -n "$recovery_run" || test -n "$recovery_tag"; then
+            printf '%s' "$recovery_run" | grep -Eq '^[1-9][0-9]*$'
+            expected_recovery="$(node -p "require('./release/manifest.json').version")-rc$((${{ inputs.rc }} - 1))"
+            test "$recovery_tag" = "$expected_recovery"
+            gh run view "$recovery_run" --json conclusion,event,headBranch,headSha,jobs > prior/recovery-run.json
+            jq -e '.conclusion == "failure" and .event == "workflow_dispatch" and .headBranch == "staging" and ([.jobs[].steps[] | select(.name == "Publish every exact RC image and verify Docker Hub read-back" and .conclusion == "success")] | length) == 1 and ([.jobs[].steps[] | select(.name == "Publish immutable prerelease" and .conclusion == "failure")] | length) == 1' prior/recovery-run.json >/dev/null
+            recovery_sha=$(jq -r .headSha prior/recovery-run.json)
+            printf '%s' "$recovery_sha" | grep -Eq '^[a-f0-9]{40}$'
+            git cat-file -e "$recovery_sha^{commit}"
+            jq --arg version "$recovery_tag" '.version=$version' prior/image-manifest.json > prior/recovered-image-manifest.json
+            while IFS= read -r role; do
+              mapfile -t inputs < <(jq -r --arg role "$role" '.images[$role].inputs[]' release/image-builds.json)
+              git diff --quiet "$recovery_sha" HEAD -- "${inputs[@]}"
+              repository=$(jq -r --arg role "$role" '.images[$role].repository' plan/image-plan.json)
+              identity=$(jq -r --arg role "$role" '.images[$role].buildIdentity' plan/image-plan.json)
+              action=$(jq -r --arg role "$role" '.images[$role].action' plan/image-plan.json)
+              digest=$(docker buildx imagetools inspect "$repository:$recovery_tag" | awk '/^Digest:/{print $2;exit}')
+              printf '%s' "$digest" | grep -Eq '^sha256:[a-f0-9]{64}$'
+              cosign verify "$repository@$digest" --certificate-identity-regexp '^https://github.com/treeseed-ai/ai/' --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' >/dev/null
+              if test "$action" = built; then
+                jq --arg role "$role" --arg digest "$digest" --arg tag "$recovery_tag" --arg identity "$identity" '.images[$role].digest=$digest | .images[$role].tag=$tag | .images[$role].buildIdentity=$identity | .images[$role].disposition="built" | .images[$role].firstBuiltVersion=$tag' prior/recovered-image-manifest.json > prior/recovered-image-manifest.json.new
+              else
+                test "$digest" = "$(jq -r --arg role "$role" '.images[$role].digest' prior/recovered-image-manifest.json)"
+                jq --arg role "$role" --arg identity "$identity" '.images[$role].buildIdentity=$identity | .images[$role].disposition="reused"' prior/recovered-image-manifest.json > prior/recovered-image-manifest.json.new
+              fi
+              mv prior/recovered-image-manifest.json.new prior/recovered-image-manifest.json
+            done < <(jq -r '.images | keys[]' plan/image-plan.json)
+            TREEAI_RELEASE_VERSION="$TREEAI_RC_TAG" TREEAI_DEVELOPMENT_BASE="$recovery_tag" node --import tsx scripts/release/plan-image-builds.ts plan/image-plan.json prior/recovered-image-manifest.json
+            cp prior/recovered-image-manifest.json prior/image-manifest.json
+          fi
           cp prior/image-manifest.json assets/image-manifest.json
           cp plan/image-plan.json assets/development-image-plan.json
       - name: Publish every exact RC image and verify Docker Hub read-back
