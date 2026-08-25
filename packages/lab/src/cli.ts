@@ -162,10 +162,12 @@ async function main() {
 		const action=args.find(item=>!item.startsWith('--'));
 		if(action==='plan')return output(corpusPlan());
 		if(action==='acquire'){
-			if(!args.includes('--qualification'))throw new Error('Usage: treeai lab corpus acquire --qualification');
+			if(!args.includes('--qualification'))throw new Error('Usage: treeai lab corpus acquire --qualification [--scope all|financial|multimodal]');
+			const scope=(option('--scope')??'all')as'all'|'financial'|'multimodal';
+			if(!['all','financial','multimodal'].includes(scope))throw new Error('--scope must be all, financial, or multimodal.');
 			const userAgent=process.env.SEC_USER_AGENT;
-			if(!userAgent)throw new Error('SEC_USER_AGENT must identify an organization and contact email.');
-			return output(await acquireQualification(client(),operator(),userAgent));
+			if(scope!=='multimodal'&&!userAgent)throw new Error('SEC_USER_AGENT must identify an organization and contact email.');
+			return output(await acquireQualification(client(),operator(),userAgent??'',scope));
 		}
 		throw new Error('Usage: treeai lab corpus <plan|acquire --qualification>');
 	}

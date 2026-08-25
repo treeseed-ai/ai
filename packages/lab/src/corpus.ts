@@ -119,25 +119,26 @@ export function corpusPlan() {
 	const value = readCorpusCatalog();
 	return { status: "ready", schemaVersion: value.schemaVersion, generation: value.generation, financial: { ...value.financial, issuerCount: value.financial.issuers.length }, multimodal: { reports: value.multimodal.reports.map(({ id, filename, sha256, size }) => ({ id, filename, sha256, size })) }, cache: cacheRoot(false) };
 }
-export async function acquireQualification(client: Client, key: string, userAgent: string) {
-	if (!/^\S.+\s+[^\s@]+@[^\s@]+$/u.test(userAgent)) throw new Error("SEC_USER_AGENT must identify an organization and contact email.");
-	const value = readCorpusCatalog(), financial = await library(client, key, "TreeAI EDGAR Qualification", "qualification-edgar"), visual = await library(client, key, "TreeAI NASA Multimodal Qualification", "qualification-nasa"), acquired = [];
+export async function acquireQualification(client: Client, key: string, userAgent: string, scope:"all"|"financial"|"multimodal"="all") {
+	if (!['all','financial','multimodal'].includes(scope)) throw new Error("Qualification acquisition scope is invalid.");
+	if (scope!=="multimodal"&&!/^\S.+\s+[^\s@]+@[^\s@]+$/u.test(userAgent)) throw new Error("SEC_USER_AGENT must identify an organization and contact email.");
+	const value = readCorpusCatalog(), financial = scope!=="multimodal"?await library(client, key, "TreeAI EDGAR Qualification", "qualification-edgar"):undefined, visual = scope!=="financial"?await library(client, key, "TreeAI NASA Multimodal Qualification", "qualification-nasa"):undefined, acquired = [];
 	const throttle = () => new Promise((resolve) => setTimeout(resolve, Math.ceil(1000 / value.financial.maximumRequestsPerSecond)));
-	for (const issuer of value.financial.issuers) {
+	for (const issuer of scope!=="multimodal"?value.financial.issuers:[]) {
 		await throttle();
 		const submissionUrl = `https://data.sec.gov/submissions/CIK${issuer.cik}.json`;
 		const submission = await cachedGet(submissionUrl, `CIK${issuer.cik}.json`, { "user-agent": userAgent, "accept-encoding": "identity" }, { sourceUrl: submissionUrl, cik: issuer.cik, catalogGeneration: value.generation });
 		const details = selectFiling(JSON.parse(submission.body.toString()).filings.recent), accession = details.accession.replace(/-/gu, ""), url = `https://www.sec.gov/Archives/edgar/data/${Number(issuer.cik)}/${accession}/${details.primaryDocument}`;
 		await throttle();
 		const { body, stored } = await cachedGet(url, `${issuer.cik}-${details.accession}.html`, { "user-agent": userAgent, "accept-encoding": "identity" }, { sourceUrl: url, issuer: issuer.name, cik: issuer.cik, ...details, catalogGeneration: value.generation });
-		await upload(client, key, financial.id, { externalId: `sec:${details.accession}`, filename: basename(stored.path), relativePath: `Issuers/${issuer.name}/${basename(stored.path)}`, mime: "text/html", body, provenance: { source: "SEC EDGAR", sourceUrl: url, cik: issuer.cik, accession: details.accession, filingDate: details.filingDate, sha256: stored.sha256, catalogGeneration: value.generation } });
+		await upload(client, key, financial!.id, { externalId: `sec:${details.accession}`, filename: basename(stored.path), relativePath: `Issuers/${issuer.name}/${basename(stored.path)}`, mime: "text/html", body, provenance: { source: "SEC EDGAR", sourceUrl: url, cik: issuer.cik, accession: details.accession, filingDate: details.filingDate, sha256: stored.sha256, catalogGeneration: value.generation } });
 		acquired.push({ source: "sec", id: details.accession, sha256: stored.sha256, size: stored.size });
 	}
-	for (const report of value.multimodal.reports) {
+	for (const report of scope!=="financial"?value.multimodal.reports:[]) {
 		const { body, stored } = await cachedGet(report.url, report.filename, { "user-agent": "TreeAI Qualification/0.10 (https://github.com/treeseed-ai/ai)" }, { sourceUrl: report.url, reportId: report.id, provenance: report.provenance, catalogGeneration: value.generation });
 		if (body.length !== report.size || digest(body) !== report.sha256) throw new Error(`NASA report ${report.id} differs from the release catalog.`);
-		await upload(client, key, visual.id, { externalId: `nasa:${report.id}`, filename: report.filename, relativePath: `Reports/${report.filename}`, mime: "application/pdf", body, provenance: { source: "NASA NTRS", sourceUrl: report.url, reportId: report.id, sha256: stored.sha256, catalogGeneration: value.generation } });
+		await upload(client, key, visual!.id, { externalId: `nasa:${report.id}`, filename: report.filename, relativePath: `Reports/${report.filename}`, mime: "application/pdf", body, provenance: { source: "NASA NTRS", sourceUrl: report.url, reportId: report.id, sha256: stored.sha256, catalogGeneration: value.generation } });
 		acquired.push({ source: "nasa", id: report.id, sha256: stored.sha256, size: stored.size });
 	}
-	return { status: "ready", generation: value.generation, libraries: { financial: financial.id, multimodal: visual.id }, acquired };
+	return { status: "ready", generation: value.generation, scope, libraries: { financial: financial?.id, multimodal: visual?.id }, acquired };
 }
