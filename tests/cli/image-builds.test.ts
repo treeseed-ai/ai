@@ -9,6 +9,11 @@ describe('selective image build identities',()=>{
     expect(reuseEligible({currentVersion:'0.10.0-rc6',priorVersion:'0.10.0-rc5',declaredChanged:true,previousValid:true,buildIdentityMatches:true,inputsUnchanged:false})).toBe(true);
     expect(reuseEligible({currentVersion:'0.10.0-rc6',priorVersion:'0.10.0-rc5',declaredChanged:false,previousValid:true,buildIdentityMatches:false,inputsUnchanged:true})).toBe(false);
   });
+	it('allows an RC input-map refinement only when effective inputs and build definition are unchanged',()=>{
+		expect(reuseEligible({currentVersion:'0.10.0-rc11',priorVersion:'0.10.0-rc10',previousValid:true,buildIdentityMatches:false,inputsUnchanged:true,buildDefinitionMatches:true})).toBe(true);
+		expect(reuseEligible({currentVersion:'0.10.0-rc11',priorVersion:'0.10.0-rc10',previousValid:true,buildIdentityMatches:false,inputsUnchanged:true,buildDefinitionMatches:false})).toBe(false);
+		expect(reuseEligible({currentVersion:'0.10.0-rc11',priorVersion:'0.10.0-rc10',previousValid:true,buildIdentityMatches:false,inputsUnchanged:false,buildDefinitionMatches:true})).toBe(false);
+	});
 
   it('retains milestone declarations against stable baselines',()=>{
     expect(reuseEligible({currentVersion:'0.10.0-rc1',priorVersion:'0.9.0',declaredChanged:true,previousValid:true,buildIdentityMatches:true,inputsUnchanged:true})).toBe(false);
@@ -47,6 +52,8 @@ describe('selective image build identities',()=>{
     for(const [role,build]of Object.entries(builds.images)){expect(build.inputs.length,role).toBeGreaterThan(0);expect(build.inputs).toContain(build.dockerfile);}
 		for(const role of['inference-api','inference-manager','training-api','training-manager','lab-controller','lab-experience-proxy'])expect(builds.images[role]?.inputs).not.toContain('packages');
 		for(const role of['inference-migrations','training-migrations'])expect(builds.images[role]?.inputs).toContain('containers/migrations/run.sh');
+		for(const role of['lab-controller','lab-experience-proxy','lab-library-bridge']){expect(builds.images[role]?.inputs).not.toContain('packages/lab');expect(builds.images[role]?.inputs).not.toContain('packages/lab/src/cli.ts');expect(builds.images[role]?.inputs).not.toContain('packages/lab/src/corpus.ts');}
+		expect(builds.images['lab-controller']?.inputs).toContain('packages/lab/src/controller.ts');expect(builds.images['lab-experience-proxy']?.inputs).toContain('packages/lab/src/proxy.ts');expect(builds.images['lab-library-bridge']?.inputs).toContain('packages/lab/src/library-bridge.ts');
   });
 
   it('changes for Dockerfiles, context, arguments, and platforms',()=>{
