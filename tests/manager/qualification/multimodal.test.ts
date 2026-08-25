@@ -30,12 +30,18 @@ describe("multimodal qualification bootstrap", () => {
 	});
 	it("enables and validates the fixed private vLLM canary", () => {
 		const paths = fixture(), calls: string[][] = [];
-		expect(qualifyMultimodalSupport((_file, args) => { calls.push(args); return "ready"; }, paths)).toMatchObject({ supported: true, changed: true });
+		expect(qualifyMultimodalSupport((_file, args) => { calls.push(args); return args.some((item) => item.includes("printf true")) ? "false" : "ready"; }, paths)).toMatchObject({ supported: true, changed: true });
 		expect(readFileSync(paths.environment, "utf8")).toContain("TREEAI_MULTIMODAL_LORA_ENABLED=true");expect(calls.some((args) => args.includes("vllm"))).toBe(true);expect(calls.some((args) => args.includes("exec"))).toBe(true);
+	});
+	it("reconciles a declared-enabled but runtime-disabled container", () => {
+		const paths = fixture(), calls: string[][] = [];
+		writeFileSync(paths.environment, "MAX_MODEL_LENGTH=16384\nTREEAI_MULTIMODAL_LORA_ENABLED=true\n", { mode: 0o640 });
+		const result = qualifyMultimodalSupport((_file, args) => { calls.push(args); return args.some((item) => item.includes("printf true")) ? "false" : "ready"; }, paths);
+		expect(result).toMatchObject({ supported: true, changed: true });expect(calls.some((args) => args.includes("up") && args.includes("vllm"))).toBe(true);
 	});
 	it("restores the environment and service after canary failure", () => {
 		const paths = fixture(), before = readFileSync(paths.environment, "utf8");let executions = 0;
-		const result = qualifyMultimodalSupport((_file, args) => { if (args.includes("exec")) { executions++; throw new Error("canary failed"); } return ""; }, paths);
+		const result = qualifyMultimodalSupport((_file, args) => { if (args.some((item) => item.includes("printf true"))) return "false";if (args.some((item) => item.includes("image-ready"))) { executions++; throw new Error("canary failed"); } return ""; }, paths);
 		expect(result).toMatchObject({ supported: false, reason: "probe_failed_and_restored", diagnostic: "canary failed" });expect(readFileSync(paths.environment, "utf8")).toBe(before);expect(executions).toBe(1);
 	});
 });
