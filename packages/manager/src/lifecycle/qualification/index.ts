@@ -84,7 +84,7 @@ export function probeCandidate(fp: MachineFingerprint, settings: MachineProfile[
 	const configured = configuredContext(safe(run, "docker", ["inspect", "treeseed-ai-inference-vllm-1", "--format", "{{json .Config.Cmd}}"], "[]"));
 	const axolotl = imageProbe(fp, "axolotl-worker", "import torch,transformers; print('ready')", run);
 	const marker = imageProbe(fp, "marker-worker", "import torch,marker; print('ready')", run);
-	const multimodalEnabled = safe(run, "docker", ["exec", "treeseed-ai-inference-vllm-1", "sh", "-lc", "test \"${TREEAI_MULTIMODAL_LORA_ENABLED:-false}\" = true"], "failed") !== "failed";
+	const multimodalEnabled = safe(run, "docker", ["exec", "treeseed-ai-inference-vllm-1", "sh", "-lc", "test \"${TREEAI_MULTIMODAL_LORA_ENABLED:-false}\" = true && printf true"], "failed") === "true";
 	let multimodal = false, multimodalDiagnostic = multimodalEnabled ? undefined : "runtime_flag_not_active";
 	if (multimodalEnabled) try { run("docker", ["exec", "treeseed-ai-inference-vllm-1", "python3", "-c", multimodalCanary]);multimodal = true; } catch (error) { multimodalDiagnostic = diagnostic(error); }
 	const gates = { gpu, docker, inferenceConcurrency: canary.successes === 2, inferenceContext: configured >= settings.maxModelLength, axolotl, marker, memory: fp.gpuMemoryMiB >= 12_000, bounded: settings.maxModelLength <= 65_536 && settings.trainingSequenceLength <= 8192 };

@@ -34,6 +34,12 @@ describe("machine qualification", () => {
 		expect(configuredContext('["--max-model-len","invalid"]')).toBe(0);
 		expect(configuredContext("not-json")).toBe(0);
 	});
+	it("does not treat successful empty probe output as a multimodal failure", () => {
+		const fp = fingerprint((file, args) => file === "nvidia-smi" ? "GPU-1, RTX 3080, 16384, 595.84" : args.includes("info") ? '{"path":"nvidia"}' : "sha256:image");
+		const run = (_file: string, args: string[]) => args.includes("inspect") && args.some((item) => item.includes("Config.Cmd")) ? '["--max-model-len","16384"]' : args.some((item) => item.includes("concurrent.futures")) ? '{"latencyMs":100,"successes":2}' : args.some((item) => item.includes("printf true")) ? "true" : "ready";
+		const settings = { maxModelLength: 16384, maxSequences: 2, gpuMemoryUtilization: .85, trainingSequenceLength: 4096, multimodalSequenceLength: 4096, maxImagePixels: 262144, loraRank: 16, multimodalLoraEnabled: false };
+		expect(probeCandidate(fp, settings, run)).toMatchObject({ multimodal: true, multimodalDiagnostic: undefined });
+	});
 	it("creates first-run campaign directories and reuses the root-observed fingerprint", async () => {
 		const root = mkdtempSync(join(tmpdir(), "treeai-qualification-"));
 		process.env.TREEAI_QUALIFICATION_ROOT = join(root, "qualification");
