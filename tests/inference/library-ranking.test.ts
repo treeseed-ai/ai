@@ -39,6 +39,6 @@ describe('library adapter ranking',()=>{
 		expect(override).toContain('EVALUATOR_URL: "http://127.0.0.1:8080"');
 		expect(override.match(/network_mode: "service:vllm"/gu)).toHaveLength(2);
 		expect(override).not.toContain('aliases: [inference-vllm]');
-		expect(compose).toContain("opener.open(os.environ['VLLM_URL']+'/health'");
+		expect(compose).toContain("open('http://127.0.0.1:8080/healthz',timeout=3)");
 	});
 });

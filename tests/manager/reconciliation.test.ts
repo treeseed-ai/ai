@@ -67,7 +67,7 @@ describe('manager-owned platform reconciliation',()=>{
 		const compose=readFileSync('deploy/training/compose.yml','utf8'),main=readFileSync('packages/training-api/src/main.ts','utf8');
 		expect(main).toContain('ListObjectsV2Command');expect(main).toContain('MaxKeys:1');expect(main).toContain("requestChecksumCalculation:'WHEN_REQUIRED'");expect(main).toContain("responseChecksumValidation:'WHEN_REQUIRED'");expect(main).toContain('readiness.send');expect(compose).toContain("fetch('http://127.0.0.1:4780/readyz')");
 	});
-	it('gates the bundled evaluator on a healthy resolvable private object store',()=>{
+	it('keeps evaluator liveness independent while separately gating its private dependencies',()=>{
 		const compose=readFileSync('deploy/inference/compose.yml','utf8'),overlay=readFileSync('deploy/inference/factory.override.yml','utf8');
 		expect(overlay).toMatch(/evaluator:[\s\S]*depends_on:\n\s+minio: \{ condition: service_healthy \}\n\s+vllm: \{ condition: service_healthy \}/u);
 		expect(overlay).toMatch(/evaluator:[\s\S]*AWS_ENDPOINT_URL: http:\/\/minio:9000/u);
@@ -76,8 +76,9 @@ describe('manager-owned platform reconciliation',()=>{
 		expect(overlay).toContain('NO_PROXY: 127.0.0.1,localhost,minio,inference-minio,vllm,inference-vllm');
 		expect(overlay).toContain('no_proxy: 127.0.0.1,localhost,minio,inference-minio,vllm,inference-vllm');
 		expect(overlay).not.toContain('default: { aliases: [inference-vllm] }');
-		expect(compose).toContain("urllib.parse.urlparse(os.environ['AWS_ENDPOINT_URL'])");
-		expect(compose).toContain("opener.open(os.environ['VLLM_URL']+'/health'");
+		expect(compose).toContain("open('http://127.0.0.1:8080/healthz',timeout=3)");
+		expect(compose).not.toContain("urllib.parse.urlparse(os.environ['AWS_ENDPOINT_URL'])");
+		expect(compose).not.toContain("opener.open(os.environ['VLLM_URL']+'/health'");
 		expect(overlay).not.toMatch(/evaluator:[\s\S]*ports:/u);
 	});
 	it('preserves configured images for image-inert package generations',()=>{
