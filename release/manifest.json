@@ -15,7 +15,6 @@
     "training-api", "training-manager", "axolotl-worker", "marker-worker", "artifact-worker", "training-migrations",
     "lab-controller", "lab-experience-proxy", "lab-library-bridge", "hermes-agent", "lab-web-tool-proxy"
   ],
-  "changedImages": ["training-manager", "axolotl-worker"],
   "apt": {
     "baseUrl": "https://treeseed-ai.github.io/ai/apt",
     "suite": "stable",
