@@ -145,14 +145,15 @@ def state_manifest(uri):
     if not target or STATE not in target.parents:raise ValueError("Evaluation manifest is outside evaluator state")
     return json.loads(target.read_text())
 def rank_library(job):
-    value=job["input"];general=state_manifest(value["generalManifest"]);base=state_manifest(value["baseLikelihoodManifest"]);candidate=state_manifest(value["candidateLikelihoodManifest"]);candidate_id=str(value["candidateId"])
+    value=job["input"];general=state_manifest(value["generalManifest"]);evidence=value.get("likelihoodEvidence",{});candidate_id=str(value["candidateId"])
+    if evidence.get("schemaVersion")!="ai.library-likelihood-evaluation/v1" or evidence.get("metric")!="completion-negative-log-likelihood":raise ValueError("Signed Axolotl likelihood evidence is required")
     general_results=general.get("results",[]);active_general=next((item for item in general_results if item["candidate"]!=candidate_id),None);candidate_general=next((item for item in general_results if item["candidate"]==candidate_id),None);reasons=[]
     if not active_general or not candidate_general:reasons.append("base and candidate general evaluations are required")
     else:
         if not candidate_general.get("criticalChecksPassed"):reasons.append("critical general checks failed")
         regressions=[key for key,score in candidate_general.get("categories",{}).items() if score<active_general.get("categories",{}).get(key,0)]
         if regressions:reasons.append("general category regressions: "+", ".join(regressions))
-    base_nll=float(base["value"]);candidate_nll=float(candidate["value"])
+    base_nll=float(evidence["baseValue"]);candidate_nll=float(evidence["candidateValue"])
     if candidate_nll>base_nll*0.98:reasons.append("held-out completion NLL did not improve by at least 2 percent")
     visual=None
     if value.get("baseVisualManifest") or value.get("candidateVisualManifest"):
