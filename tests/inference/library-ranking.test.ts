@@ -26,6 +26,8 @@ describe('library adapter ranking',()=>{
 		const source=readFileSync('workers/evaluator/worker.py','utf8');
 		expect(source).toContain('inference object store read failed:');
 		expect(source).toContain('private vLLM request failed:');
+		expect(source).toContain('urllib.request.ProxyHandler({})');
+		expect(source).not.toContain('urllib.request.urlopen(request');
 		expect(source).not.toContain('AWS_SECRET_ACCESS_KEY}');
 	});
 });

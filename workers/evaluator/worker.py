@@ -8,6 +8,7 @@ path.insert(0, "/app")
 from common.server import serve
 
 STATE = Path(os.getenv("STATE_DIR", "/state")); STATE.mkdir(parents=True, exist_ok=True)
+PRIVATE_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 def digest(value): return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 def write(job, kind, value):
     target = STATE / f"{job['jobId']}-{kind}.json"; target.write_text(json.dumps(value, sort_keys=True)); return {"resultManifest": f"file://{target}"}
@@ -18,7 +19,7 @@ def import_adapter(job):
 def completion(model,case):
     body={"model":model,"messages":case["messages"],"temperature":0,"max_tokens":case.get("maxTokens",256)}
     request=urllib.request.Request(f"{os.getenv('VLLM_URL','http://vllm:8000')}/v1/chat/completions",data=json.dumps(body).encode(),headers={"content-type":"application/json"})
-    response=json.loads(urllib.request.urlopen(request,timeout=240).read());return response["choices"][0]["message"]
+    response=json.loads(PRIVATE_OPENER.open(request,timeout=240).read());return response["choices"][0]["message"]
 def case_score(case,message):
     text=str(message.get("content") or "");check=case.get("check",{})
     if "contains" in check:return float(all(value.lower() in text.lower() for value in check["contains"]))
@@ -79,7 +80,7 @@ def key(uri):
     return uri[len(prefix):]
 def post(path, body):
     request=urllib.request.Request(f"{os.getenv('VLLM_URL','http://vllm:8000')}{path}", data=json.dumps(body).encode(), headers={"content-type":"application/json"})
-    try:return urllib.request.urlopen(request, timeout=240).read()
+    try:return PRIVATE_OPENER.open(request, timeout=240).read()
     except urllib.error.URLError as error:raise RuntimeError(f"private vLLM request failed: {type(error.reason).__name__}") from error
 def deployment(job, action):
     candidate=str(job["input"]["candidateId"]); value=job["input"]["manifest"]
