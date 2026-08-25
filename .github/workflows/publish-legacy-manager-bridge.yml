@@ -21,8 +21,8 @@ jobs:
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
           test '${{ github.ref }}' = 'refs/heads/staging'
-          test '${{ inputs.rc }}' = '23'
-          test '${{ inputs.generation }}' = '10000023'
+          test '${{ inputs.rc }}' = '24'
+          test '${{ inputs.generation }}' = '10000024'
           test "$(node -p "require('./release/manifest.json').version")" = '0.10.0'
           test "$(git rev-parse HEAD)" = '${{ github.sha }}'
           tag="0.10.0-rc${{ inputs.rc }}"
