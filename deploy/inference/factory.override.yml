@@ -25,22 +25,20 @@ services:
       ARTIFACT_SOURCE_SECRET_GENERATION: "${ARTIFACT_SOURCE_SECRET_GENERATION:-compatibility-v1}"
       ARTIFACT_IMPORT_TOKEN_GENERATION: "${ARTIFACT_IMPORT_TOKEN_GENERATION:-compatibility-v1}"
   manager:
-    network_mode: "service:vllm"
     group_add: ["${RUNTIME_GID:?RUNTIME_GID is required}"]
     depends_on: !override
       migrations: { condition: service_completed_successfully }
       evaluator: { condition: service_healthy }
     volumes: ["/var/lib/treeseed-ai/platform:/factory:ro"]
     secrets: [artifact-import-token]
-    environment: { AI_FACTORY_MODE_FILE: /factory/mode.json, ARTIFACT_IMPORT_URL: "http://api:4770/internal/artifacts/import", ARTIFACT_IMPORT_TOKEN_FILE: /run/secrets/artifact-import-token, EVALUATOR_URL: "http://127.0.0.1:8080", ARTIFACT_IMPORT_TOKEN_GENERATION: "${ARTIFACT_IMPORT_TOKEN_GENERATION:-compatibility-v1}" }
+    environment: { AI_FACTORY_MODE_FILE: /factory/mode.json, ARTIFACT_IMPORT_URL: "http://api:4770/internal/artifacts/import", ARTIFACT_IMPORT_TOKEN_FILE: /run/secrets/artifact-import-token, EVALUATOR_URL: "http://evaluator:8080", ARTIFACT_IMPORT_TOKEN_GENERATION: "${ARTIFACT_IMPORT_TOKEN_GENERATION:-compatibility-v1}" }
   evaluator:
-    network_mode: "service:vllm"
     depends_on:
       minio: { condition: service_healthy }
       vllm: { condition: service_healthy }
     environment:
       AWS_ENDPOINT_URL: http://minio:9000
-      VLLM_URL: http://127.0.0.1:8000
+      VLLM_URL: http://vllm:8000
       NO_PROXY: 127.0.0.1,localhost,minio,inference-minio,vllm,inference-vllm
       no_proxy: 127.0.0.1,localhost,minio,inference-minio,vllm,inference-vllm
   vllm:
