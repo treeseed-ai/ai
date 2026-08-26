@@ -2,7 +2,7 @@ import { mkdtempSync,writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { configuredContext, contextPolicy, fingerprint, observedTrainingProfile, probeCandidate,scoresComparable } from "../../../packages/manager/src/lifecycle/qualification/index.js";
+import { configuredContext, contextPolicy, fingerprint, observedTrainingProfile, probeCandidate,scoresComparable, supportedLoraRank } from "../../../packages/manager/src/lifecycle/qualification/index.js";
 
 describe("machine qualification", () => {
 	afterEach(() => { delete process.env.TREEAI_QUALIFICATION_ROOT; delete process.env.TREEAI_MANAGER_DB; delete process.env.TREEAI_TRAINING_PROFILE_RECEIPT; vi.resetModules(); });
@@ -28,6 +28,13 @@ describe("machine qualification", () => {
 		expect(result.gates.inferenceContext).toBe(false);
 		expect(result.multimodal).toBe(false);
 		expect(result.multimodalDiagnostic).toBe("runtime_flag_not_active");
+	});
+	it("fails closed when a profile advertises a LoRA rank the fixed trainers do not apply", () => {
+		const fp = fingerprint((file, args) => file === "nvidia-smi" ? "GPU-1, RTX 3080, 16384, 595.84" : args.includes("info") ? '{"path":"nvidia"}' : "sha256:image");
+		const run = (_file: string, args: string[]) => args.includes("inspect") && args.some((item) => item.includes("Config.Cmd")) ? '["--max-model-len","16384"]' : args.some((item) => item.includes("concurrent.futures")) ? '{"latencyMs":100,"successes":2}' : args.includes("sh") ? "failed" : "ready";
+		const settings = { maxModelLength: 16384, maxSequences: 2, gpuMemoryUtilization: .85, trainingSequenceLength: 3072, multimodalSequenceLength: 2048, maxImagePixels: 262144, loraRank: 32, multimodalLoraEnabled: false };
+		expect(supportedLoraRank).toBe(16);
+		expect(probeCandidate(fp, settings, run).gates.loraRank).toBe(false);
 	});
 	it("reads the effective context from the production vLLM command", () => {
 		expect(configuredContext('["--model","Qwen/Qwen3.5-4B","--max-model-len","16384","--enable-lora"]')).toBe(16384);
@@ -61,5 +68,5 @@ describe("machine qualification", () => {
 		const status = module.qualificationStatus();
 		expect(status.fingerprint.images["inference-vllm"]).toBe("sha256:image");
 	});
-	it("explores and selects the sustained training ceiling before long-context rejections",async()=>{const root=mkdtempSync(join(tmpdir(),"treeai-balanced-")),receipt=join(root,"training-profile.json");process.env.TREEAI_QUALIFICATION_ROOT=join(root,"qualification");process.env.TREEAI_MANAGER_DB=join(root,"manager.db");process.env.TREEAI_TRAINING_PROFILE_RECEIPT=receipt;writeFileSync(receipt,JSON.stringify({schemaVersion:"treeai.sustained-training-profile/v1",fingerprint:"host",sequenceLength:3072,diagnostics:{},qualifiedAt:new Date().toISOString()}));const module=await import("../../../packages/manager/src/lifecycle/qualification/index.js?balanced-selection"),run=(file:string,args:string[])=>file==="nvidia-smi"?"GPU-1, RTX 3080, 16384, 595.84":args.includes("info")?'{"path":"nvidia"}':args.includes("inspect")&&args.some((item)=>item.includes("Config.Cmd"))?'["--max-model-len","16384"]':args.some((item)=>item.includes("concurrent.futures"))?'{"latencyMs":100,"successes":2}':args.includes("sh")?"failed":"sha256:image",campaign=module.runCampaign("balanced",run),selected=module.readProfile(campaign.selectedProfileId!);expect(campaign.state).toBe("succeeded");expect(campaign.trials.length).toBeGreaterThan(7);expect(selected?.settings.trainingSequenceLength).toBe(3072);expect(selected?.metrics.trainingCapacity).toBeCloseTo(3072/8192);});
+	it("explores and selects the sustained training ceiling before long-context rejections",async()=>{const root=mkdtempSync(join(tmpdir(),"treeai-balanced-")),receipt=join(root,"training-profile.json");process.env.TREEAI_QUALIFICATION_ROOT=join(root,"qualification");process.env.TREEAI_MANAGER_DB=join(root,"manager.db");process.env.TREEAI_TRAINING_PROFILE_RECEIPT=receipt;writeFileSync(receipt,JSON.stringify({schemaVersion:"treeai.sustained-training-profile/v1",fingerprint:"host",sequenceLength:3072,diagnostics:{},qualifiedAt:new Date().toISOString()}));const module=await import("../../../packages/manager/src/lifecycle/qualification/index.js?balanced-selection"),run=(file:string,args:string[])=>file==="nvidia-smi"?"GPU-1, RTX 3080, 16384, 595.84":args.includes("info")?'{"path":"nvidia"}':args.includes("inspect")&&args.some((item)=>item.includes("Config.Cmd"))?'["--max-model-len","16384"]':args.some((item)=>item.includes("concurrent.futures"))?'{"latencyMs":100,"successes":2}':args.includes("sh")?"failed":"sha256:image",campaign=module.runCampaign("balanced",run),selected=module.readProfile(campaign.selectedProfileId!);expect(campaign.state).toBe("succeeded");expect(campaign.trials.length).toBeGreaterThan(7);expect(selected?.settings.trainingSequenceLength).toBe(3072);expect(selected?.settings.loraRank).toBe(16);expect(module.profiles().every((profile)=>profile.settings.loraRank===16)).toBe(true);expect(selected?.metrics.trainingCapacity).toBeCloseTo(3072/8192);});
 });
