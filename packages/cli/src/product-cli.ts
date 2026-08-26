@@ -41,7 +41,10 @@ async function main() {
 		if (command === 'status' || command === 'verify') result = request('training', command === 'verify' ? '/readyz' : '/v1/version');
 		else if (command === 'documents') result = request('training', '/v1/documents');
 		else if (command === 'datasets') result = request('training', '/v1/datasets');
-		else if (command === 'runs') result = request('training', '/v1/training-runs');
+		else if (command === 'runs') {
+			const runId = args.find((item) => !item.startsWith('-'));
+			result = request('training', runId ? `/v1/library-runs/${encodeURIComponent(runId)}` : '/v1/library-runs');
+		}
 		else if (command === 'jobs') result = request('training', '/v1/jobs');
 		else if (command === 'cancel') result = request('training', `/v1/jobs/${id()}/cancel`, { method: 'POST' });
 		else if (command === 'library') result = trainingLibrary(args[0], args[1]);
