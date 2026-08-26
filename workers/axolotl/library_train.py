@@ -37,9 +37,7 @@ def fixed_config(value,dataset,target):
 def evaluation_config(training,evaluation,probe,target,adapter=None):
     config={key:value for key,value in training.items() if key not in {"datasets","output_dir","save_steps","evals_per_epoch","num_epochs","max_steps","warmup_ratio","learning_rate","weight_decay","gradient_checkpointing"}}
     config.update({"datasets":[{"path":str(probe),"type":"completion"}],"test_datasets":[{"path":str(evaluation),"type":"completion"}],"output_dir":str(target),"eval_batch_size":1,"dataset_num_proc":1,"shuffle_merged_datasets":False})
-    if adapter is None:
-        for key in ("adapter","lora_r","lora_alpha","lora_dropout","lora_target_modules"):config.pop(key,None)
-    else:config["lora_model_dir"]=str(adapter)
+    if adapter is not None:config["lora_model_dir"]=str(adapter)
     return config
 def evaluation_loss(path):
     summary=path/"eval_summary.csv"
@@ -57,7 +55,7 @@ def evaluate_pair(config,evaluation,target):
         if execution.returncode:raise RuntimeError(f"Axolotl {name} evaluation exited {execution.returncode}: {safe_diagnostic(execution.stdout) or 'no diagnostic output'}")
         values[name]=evaluation_loss(output)
         shutil.rmtree(output,ignore_errors=True)
-    return{"schemaVersion":"ai.library-likelihood-evaluation/v1","metric":"completion-negative-log-likelihood","baseValue":values["base"],"candidateValue":values["candidate"],"evaluationObject":{"sha256":hashlib.sha256(evaluation.read_bytes()).hexdigest(),"size":evaluation.stat().st_size},"evaluator":{"engine":"axolotl","version":"0.18.0","baseModel":BASE_MODEL,"baseRevision":BASE_REVISION}}
+    return{"schemaVersion":"ai.library-likelihood-evaluation/v1","metric":"completion-negative-log-likelihood","baseValue":values["base"],"candidateValue":values["candidate"],"evaluationObject":{"sha256":hashlib.sha256(evaluation.read_bytes()).hexdigest(),"size":evaluation.stat().st_size},"evaluator":{"engine":"axolotl","version":"0.18.0","baseModel":BASE_MODEL,"baseRevision":BASE_REVISION,"baseline":"fresh-zero-effect-qlora"}}
 def train(job):
     value=job["input"]
     if value.get("baseModel")!=BASE_MODEL or value.get("baseModelRevision")!=BASE_REVISION:raise ValueError("Library training requires the immutable qualified base revision")
