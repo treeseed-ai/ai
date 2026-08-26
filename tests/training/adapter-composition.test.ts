@@ -10,6 +10,7 @@ describe('exact adapter composition',()=>{
 		const modulePath=JSON.stringify(join(process.cwd(),'workers/artifact/composition.py'));
 		const result=python(`import importlib.util,json,struct,sys,types
 sys.modules['cryptography']=types.ModuleType('cryptography');sys.modules['cryptography.hazmat']=types.ModuleType('hazmat');sys.modules['cryptography.hazmat.primitives']=types.SimpleNamespace(serialization=None);sys.modules['cryptography.hazmat.primitives.asymmetric']=types.ModuleType('asymmetric');sys.modules['cryptography.hazmat.primitives.asymmetric.ed25519']=types.SimpleNamespace(Ed25519PrivateKey=object)
+sys.path.insert(0,__import__('pathlib').Path(${modulePath}).parent.as_posix())
 spec=importlib.util.spec_from_file_location('composition',${modulePath});module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 def tensor(name,data):
  header=json.dumps({name:{'dtype':'U8','shape':[len(data)],'data_offsets':[0,len(data)]}},sort_keys=True,separators=(',',':')).encode();header+=b' '*((8-len(header)%8)%8);return struct.pack('<Q',len(header))+header+data
@@ -30,6 +31,7 @@ merged=module.merge_safetensors([tensor('model.language.weight',b'abc'),tensor('
 		const modulePath=JSON.stringify(join(process.cwd(),'workers/artifact/composition.py'));
 		const result=python(`import hashlib,importlib.util,json,sys,types
 sys.modules['cryptography']=types.ModuleType('cryptography');sys.modules['cryptography.hazmat']=types.ModuleType('hazmat');sys.modules['cryptography.hazmat.primitives']=types.SimpleNamespace(serialization=None);sys.modules['cryptography.hazmat.primitives.asymmetric']=types.ModuleType('asymmetric');sys.modules['cryptography.hazmat.primitives.asymmetric.ed25519']=types.SimpleNamespace(Ed25519PrivateKey=object)
+sys.path.insert(0,__import__('pathlib').Path(${modulePath}).parent.as_posix())
 spec=importlib.util.spec_from_file_location('composition',${modulePath});module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 objects={'adapters/parent/adapter_model.safetensors':b'canonical','adapters/parent/adapter_config.json':b'{"r":16}','adapters/parent/checkpoint-25/adapter_model.safetensors':b'checkpoint'}
 class Body:
@@ -46,6 +48,7 @@ model,config=module.canonical_peft_objects(manifest,Client(),'bucket');print(jso
 		const modulePath=JSON.stringify(join(process.cwd(),'workers/artifact/composition.py'));
 		const result=python(`import importlib.util,json,sys,types
 sys.modules['cryptography']=types.ModuleType('cryptography');sys.modules['cryptography.hazmat']=types.ModuleType('hazmat');sys.modules['cryptography.hazmat.primitives']=types.SimpleNamespace(serialization=None);sys.modules['cryptography.hazmat.primitives.asymmetric']=types.ModuleType('asymmetric');sys.modules['cryptography.hazmat.primitives.asymmetric.ed25519']=types.SimpleNamespace(Ed25519PrivateKey=object)
+sys.path.insert(0,__import__('pathlib').Path(${modulePath}).parent.as_posix())
 spec=importlib.util.spec_from_file_location('composition',${modulePath});module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 evidence={'schemaVersion':'ai.library-likelihood-evaluation/v1','metric':'completion-negative-log-likelihood','baseValue':2.0,'candidateValue':1.8}
 manifests=[{'adapter':{'modality':'vision'},'evaluations':[]},{'adapter':{'modality':'language'},'evaluations':[evidence]}]

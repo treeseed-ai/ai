@@ -2,8 +2,8 @@ import base64,hashlib,json,os,struct,tempfile
 from pathlib import Path
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from canonical_json import canonical
 
-def canonical(value):return json.dumps(value,sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()
 def s3_key(uri,bucket):
     prefix=f"s3://{bucket}/"
     if not str(uri).startswith(prefix):raise ValueError("Composition input is outside the training bucket")

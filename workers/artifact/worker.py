@@ -4,6 +4,7 @@ from pathlib import Path
 from sys import path
 path.insert(0,"/app")
 from common.server import serve
+from canonical_json import canonical
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from library import classify as classify_library
@@ -11,7 +12,6 @@ from composition import compose as compose_adapters
 
 ROOT=Path(os.getenv("ARTIFACT_ROOT","/artifacts")).resolve();ARCHIVE=Path(os.getenv("ARCHIVE_ROOT","/archive")).resolve();ROOT.mkdir(parents=True,exist_ok=True);ARCHIVE.mkdir(parents=True,exist_ok=True)
 KEY_PATH=Path(os.getenv("SIGNING_KEY","/run/secrets/artifact-signing-key"))
-def canonical(value): return json.dumps(value,sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()
 def safe(value,base=ROOT):
     target=Path(value).resolve()
     if base not in target.parents and target!=base: raise ValueError("Path is outside the artifact root")
