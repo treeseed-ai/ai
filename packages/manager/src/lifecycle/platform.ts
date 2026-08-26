@@ -456,18 +456,16 @@ export async function reconcilePlatform() {
 	event("components.reconciled", { mode });
 	return { mode, services };
 }
-export async function transitionMode(target: unknown, drain: { inferenceSeconds: number; trainingSeconds: number }) {
-	if (target !== "awake" && target !== "sleep") throw new Error("Mode must be awake or sleep.");
+let transitionInFlight: { target: "awake" | "sleep"; promise: Promise<unknown> } | undefined;
+async function runModeTransition(target: "awake" | "sleep", drain: { inferenceSeconds: number; trainingSeconds: number }) {
 	const configuration=validatePlatformConfiguration(JSON.parse(readFileSync(paths.configuration,"utf8"))),current=setting<string>("mode","awake"),enabled=enabledProducts();
-	if (current === target) return { mode: target, changed: false };
-	writeMode(target === "awake" ? "transitioning_awake" : "transitioning_sleep");
-	let lifecycleChanged = false;
-	try {
+	if (current === target) return { mode: target, changed: false };const previous=current==="awake"||current==="sleep"?current:target==="sleep"?"awake":"sleep";writeMode(target === "awake" ? "transitioning_awake" : "transitioning_sleep");
+	let lifecycleChanged = false;try {
 		if (target === "sleep") {
 			if (enabled.has("inference") && !(await waitIdle("/run/treeseed-ai/inference/status.json", drain.inferenceSeconds))) {
-				writeMode(current);
+				writeMode(previous);
 				return {
-					mode: current,
+					mode: previous,
 					state: "postponed",
 					reason: "active_inference",
 				};
@@ -477,8 +475,8 @@ export async function transitionMode(target: unknown, drain: { inferenceSeconds:
 			if (enabled.has("training")) compose("training", ["up", "-d", "--wait", "--wait-timeout", "900", "marker", "axolotl"]);
 		} else {
 			if (enabled.has("training") && !(await waitIdle("/run/treeseed-ai/training/status.json", drain.trainingSeconds))) {
-				writeMode(current);
-				return { mode: current, state: "postponed", reason: "active_training" };
+				writeMode(previous);
+				return { mode: previous, state: "postponed", reason: "active_training" };
 			}
 			if (enabled.has("training")) compose("training", ["stop", "marker", "axolotl"]);
 			lifecycleChanged = enabled.has("training");
@@ -489,11 +487,13 @@ export async function transitionMode(target: unknown, drain: { inferenceSeconds:
 		}
 		if(configuration.state.objectStorage==="bundled")for(const product of["inference","training"]as const)if(enabled.has(product))reconcileObjectStore(product);
 		writeMode(target);
-		event("mode.changed", { from: current, to: target });
+		event("mode.changed", { from: previous, to: target });
 		return { mode: target, changed: true };
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		writeMode(lifecycleChanged ? "degraded" : current, message);
-		throw error;
+		const message = error instanceof Error ? error.message : String(error);writeMode(lifecycleChanged ? "degraded" : previous, message);throw error;
 	}
+}
+export function transitionMode(target: unknown, drain: { inferenceSeconds: number; trainingSeconds: number }): Promise<unknown> {
+	if (target !== "awake" && target !== "sleep") return Promise.reject(new Error("Mode must be awake or sleep."));if (transitionInFlight) {if (transitionInFlight.target !== target) return Promise.reject(new Error(`A transition to ${transitionInFlight.target} is already running.`));return transitionInFlight.promise;}
+	const promise=runModeTransition(target,drain).finally(()=>{if(transitionInFlight?.promise===promise)transitionInFlight=undefined;});transitionInFlight={target,promise};return promise;
 }

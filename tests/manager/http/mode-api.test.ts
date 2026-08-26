@@ -12,6 +12,12 @@ afterEach(() => {
 });
 
 describe("manager mode API", () => {
+	it("reattaches interrupted transitions after an API restart", async () => {
+		const root=mkdtempSync(join(tmpdir(),"treeai-transition-recovery-"));roots.push(root);vi.stubEnv("TREEAI_MANAGER_DB",join(root,"lifecycle.db"));vi.resetModules();
+		const store=await import("../../../packages/manager/src/core/store.js"),api=await import("../../../packages/manager/src/http/api.js"),work=store.createWork("transition","restart-sleep",{mode:"sleep"});store.finishWork(work.id,"running");
+		const supervisor=vi.fn(async()=>({mode:"sleep",changed:true}));await api.recoverInterruptedTransitions(supervisor);
+		expect(supervisor).toHaveBeenCalledWith({operation:"mode.set",parameters:{mode:"sleep"},idempotencyKey:"restart-sleep"});expect(store.getWork(work.id)).toMatchObject({state:"succeeded",result:{mode:"sleep",changed:true}});store.closeStore();
+	});
 	it("completes a request for the current mode without contacting the supervisor", async () => {
 		const root = mkdtempSync(join(tmpdir(), "treeai-mode-api-")), keys = join(root, "keys.json");
 		roots.push(root);
