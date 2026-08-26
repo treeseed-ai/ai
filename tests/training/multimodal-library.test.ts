@@ -59,6 +59,13 @@ with tempfile.TemporaryDirectory() as root:
 		expect(target.test('model.language_model.layers.0.self_attn.q_proj')).toBe(false);
 	});
 
+	it('requires a sustained multimodal qualification trial',()=>{
+		const source=readFileSync('workers/axolotl/multimodal_train.py','utf8');
+		expect(source).toContain('MULTIMODAL_QUALIFICATION_STEPS=8');
+		expect(source).toContain('ga8|q{MULTIMODAL_QUALIFICATION_STEPS}');
+		expect(source).toContain('),MULTIMODAL_QUALIFICATION_STEPS,MULTIMODAL_QUALIFICATION_STEPS)');
+	});
+
 	it('resolves only verified worker-local image paths without mutating source JSONL',()=>{
 		const modulePath=JSON.stringify(join(process.cwd(),'workers/axolotl/multimodal_train.py'));
 		const result=python(`import contextlib,importlib.util,json,pathlib,sys,tempfile,types
