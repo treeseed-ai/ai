@@ -27,10 +27,17 @@ describe('library adapter ranking',()=>{
 		expect(source).toContain('inference object store read failed:');
 		expect(source).toContain('private vLLM request failed:');
 		expect(source.indexOf('except urllib.error.HTTPError')).toBeLessThan(source.indexOf('except urllib.error.URLError'));
-		expect(source).toContain('private vLLM HTTP {error.code}');
+		expect(source).toContain('private vLLM HTTP {status}');
 		expect(source).toContain('urllib.request.ProxyHandler({})');
 		expect(source).not.toContain('urllib.request.urlopen(request');
 		expect(source).not.toContain('AWS_SECRET_ACCESS_KEY}');
+	});
+	it('ignores only expected missing-adapter responses during idempotent unload',()=>{
+		const source=readFileSync('workers/evaluator/worker.py','utf8');
+		expect(source).toContain('class PrivateHttpError(RuntimeError)');
+		expect(source).toContain('except PrivateHttpError as error:');
+		expect(source).toContain('if error.status not in {400,404}: raise');
+		expect(source).toContain('post("/v1/load_lora_adapter"');
 	});
 	it('uses canonical Compose discovery and probes the no-proxy HTTP path',()=>{
 		const override=readFileSync('deploy/inference/factory.override.yml','utf8'),compose=readFileSync('deploy/inference/compose.yml','utf8');
