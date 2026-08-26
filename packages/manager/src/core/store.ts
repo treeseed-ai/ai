@@ -85,6 +85,9 @@ export function getWork(id: string) {
 		| undefined;
 	return row ? parse(row) : undefined;
 }
+export function unfinishedWork(kind: WorkKind) {
+	return (db().prepare("SELECT * FROM work WHERE kind=? AND state IN ('queued','running') ORDER BY created_at").all(kind) as Array<Record<string, unknown>>).map(parse);
+}
 export function finishWork(
 	id: string,
 	state: WorkRecord["state"],
