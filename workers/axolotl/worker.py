@@ -4,7 +4,7 @@ from sys import path
 path.insert(0,"/app")
 from common.server import serve
 from library import prepare as prepare_library
-from library_train import cancel_axolotl,job_guard,qualify as qualify_library,run_axolotl,train as train_library
+from library_train import cancel_axolotl,execution_status,job_guard,qualify as qualify_library,run_axolotl,train as train_library
 from multimodal_train import qualify as qualify_multimodal,train as train_multimodal
 
 OUTPUT=Path(os.getenv("OUTPUT_DIR","/artifacts/training"));OUTPUT.mkdir(parents=True,exist_ok=True)
@@ -23,4 +23,4 @@ def train(job):
         execution=run_axolotl(config_path,int(os.getenv("TRAIN_TIMEOUT","86400")),job["jobId"])
         if execution.returncode:raise RuntimeError(f"Axolotl training exited {execution.returncode}")
         manifest.write_text(json.dumps({"schemaVersion":"ai.training-result/v1","baseModel":resolved.get("base_model"),"adapterPath":str(target),"config":str(config_path)},sort_keys=True));return{"resultManifest":f"file://{manifest}"}
-serve({"/prepare-library-dataset":prepare_library,"/qualify-library":qualify_library,"/train-library":train_library,"/qualify-library-multimodal":qualify_multimodal,"/train-library-multimodal":train_multimodal,"/cancel":lambda request:{"cancelled":cancel_axolotl(str(request.get("jobId","")))},"/train":train})
+serve({"/prepare-library-dataset":prepare_library,"/qualify-library":qualify_library,"/train-library":train_library,"/qualify-library-multimodal":qualify_multimodal,"/train-library-multimodal":train_multimodal,"/status":lambda request:execution_status(str(request.get("jobId",""))),"/cancel":lambda request:{"cancelled":cancel_axolotl(str(request.get("jobId","")))},"/train":train})
