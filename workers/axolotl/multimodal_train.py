@@ -12,6 +12,21 @@ def key(uri):
     prefix=f"s3://{os.environ['S3_BUCKET']}/"
     if not str(uri).startswith(prefix):raise ValueError("Multimodal dataset is outside the training bucket")
     return str(uri)[len(prefix):]
+def resolve_local_images(data,images):
+    output=[]
+    for line in data.decode("utf-8").splitlines():
+        if not line.strip():continue
+        record=json.loads(line);references=0
+        for message in record.get("messages",[]):
+            for content in message.get("content",[]):
+                if content.get("type")!="image":continue
+                path=str(content.get("path","")).replace("\\","/")
+                if path not in images:raise ValueError(f"Multimodal example references an unverified image: {path}")
+                content["path"]=str(images[path]);references+=1
+        if references!=1:raise ValueError("Each multimodal example must reference exactly one verified image")
+        output.append(json.dumps(record,sort_keys=True,separators=(",",":")))
+    if not output:raise ValueError("Multimodal dataset contains no examples")
+    return ("\n".join(output)+"\n").encode()
 def download_dataset(value,root):
     manifest=json.loads(client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(value["datasetManifest"]))["Body"].read())
     if manifest.get("schemaVersion")!="ai.library-dataset/v2":raise ValueError("Multimodal training requires ai.library-dataset/v2")
@@ -19,14 +34,17 @@ def download_dataset(value,root):
     if not source:raise ValueError("Dataset contains no qualified source-authored image examples")
     dataset_data=client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(source["uri"]))["Body"].read()
     if hashlib.sha256(dataset_data).hexdigest()!=source["sha256"] or len(dataset_data)!=source["size"]:raise ValueError("Multimodal dataset checksum or size mismatch")
-    dataset=root/"multimodal-train.jsonl";dataset.write_bytes(dataset_data)
+    images={}
     for item in multi.get("imageObjects",[]):
         relative=Path(str(item.get("relativePath","")))
         if relative.is_absolute() or ".." in relative.parts:raise ValueError("Unsafe dataset image path")
         destination=root/relative;destination.parent.mkdir(parents=True,exist_ok=True)
         data=client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(item["uri"]))["Body"].read()
         if hashlib.sha256(data).hexdigest()!=item["sha256"] or len(data)!=item["size"]:raise ValueError("Multimodal dataset image checksum or size mismatch")
-        destination.write_bytes(data)
+        destination.write_bytes(data);name=relative.as_posix()
+        if name in images:raise ValueError("Duplicate multimodal image path")
+        images[name]=destination.resolve()
+    dataset=root/"multimodal-train.jsonl";dataset.write_bytes(resolve_local_images(dataset_data,images))
     return dataset,manifest
 def fixed_config(value,dataset,target):
     sequence=int(value["sequenceLength"]);pixels=int(value["maxPixels"])
