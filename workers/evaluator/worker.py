@@ -111,6 +111,9 @@ def canary(job):
     with ThreadPoolExecutor(max_workers=2) as pool: responses=list(pool.map(lambda body:post("/v1/chat/completions",body),requests))
     if any(not json.loads(value)["choices"][0]["message"].get("content") for value in responses):raise ValueError("Canary response was empty")
     return write(job,"canary",{"candidateId":candidate,"passed":True,"concurrency":2,"multimodal":composed})
+def token_recall(expected,actual):
+    expected_words=set(re.findall(r"[a-z0-9]{4,}",expected.lower() if isinstance(expected,str) else ""));actual_words=set(re.findall(r"[a-z0-9]{4,}",actual.lower() if isinstance(actual,str) else ""))
+    return len(expected_words&actual_words)/max(1,len(expected_words))
 
 def visual_grounding(job):
     value=job["input"];model=str(value["candidateId"]);stored=value.get("evaluationObject",{});evaluation=stored.get("evaluation",{});images={item["relativePath"]:item for item in stored.get("images",[])}
@@ -118,14 +121,14 @@ def visual_grounding(job):
     lines=object_bytes(evaluation["uri"]).decode();scores=[]
     for line in lines.splitlines():
         if not line.strip():continue
-        example=json.loads(line);messages=example.get("messages",[]);expected=" ".join(part.get("text","") for part in messages[-1].get("content",[]) if part.get("type")=="text");prompt=json.loads(json.dumps(messages[:-1]))
+        example=json.loads(line);messages=example.get("messages",[]);expected=" ".join(part.get("text") or "" for part in messages[-1].get("content",[]) if part.get("type")=="text");prompt=json.loads(json.dumps(messages[:-1]))
         for message in prompt:
             for part in message.get("content",[]):
                 if part.get("type")!="image":continue
                 item=images.get(part.get("path"));
                 if not item:raise ValueError("Visual example references an unavailable image")
                 data=object_bytes(item["uri"]);mime=mimetypes.guess_type(part["path"])[0] or "image/png";part.clear();part.update({"type":"image_url","image_url":{"url":f"data:{mime};base64,{base64.b64encode(data).decode()}"}})
-        response=json.loads(post("/v1/chat/completions",{"model":model,"messages":prompt,"temperature":0,"max_tokens":256}));actual=response["choices"][0]["message"].get("content","");expected_words=set(re.findall(r"[a-z0-9]{4,}",expected.lower()));actual_words=set(re.findall(r"[a-z0-9]{4,}",actual.lower()));scores.append(len(expected_words&actual_words)/max(1,len(expected_words)))
+        response=json.loads(post("/v1/chat/completions",{"model":model,"messages":prompt,"temperature":0,"max_tokens":256}));actual=response["choices"][0]["message"].get("content");scores.append(token_recall(expected,actual))
     if not scores:raise ValueError("Held-out visual corpus has no evaluable examples")
     return write(job,"visual-grounding",{"candidateId":model,"metric":"authored-context-token-recall","value":sum(scores)/len(scores),"examples":len(scores),"evaluationObject":{"sha256":evaluation.get("sha256"),"size":evaluation.get("size")}})
 def library_likelihood(job):
