@@ -3,7 +3,7 @@ from pathlib import Path
 import boto3
 from library_train import BASE_MODEL,BASE_REVISION,fixed_steps,run_axolotl,safe_diagnostic
 
-VISION_TARGET=r"model\.visual\.(blocks|merger)\..*"
+VISION_TARGET=r"model\.visual\.(blocks\.\d+\.(attn\.(qkv|proj)|mlp\.(linear_fc1|linear_fc2))|merger\.(linear_fc1|linear_fc2))"
 SEQUENCES=(4096,3072,2048,1024)
 PIXEL_TIERS=(786432,524288,262144)
 
@@ -46,7 +46,7 @@ def train(job):
     payload={"schemaVersion":"ai.library-training-result/v2","modality":"vision","baseModel":BASE_MODEL,"baseModelRevision":BASE_REVISION,"adapterPath":str(target),"config":str(config_path),"configDigest":hashlib.sha256(config_path.read_bytes()).hexdigest(),"mode":value["mode"],"libraryId":value["libraryId"],"librarySlug":value["librarySlug"],"snapshotId":value["snapshotId"],"datasetManifest":value["datasetManifest"],"datasetDigest":hashlib.sha256(json.dumps(manifest,sort_keys=True).encode()).hexdigest(),"targetModules":[VISION_TARGET],"rank":16,"alpha":32}
     result.write_text(json.dumps(payload,sort_keys=True,separators=(",",":")));return{"resultManifest":f"file://{result}","configurationDigest":payload["configDigest"]}
 def qualify(job):
-    value=job["input"];identity=subprocess.check_output(["nvidia-smi","--query-gpu=uuid,driver_version","--format=csv,noheader"],text=True).strip();fingerprint=hashlib.sha256(f"{identity}|{os.getenv('TREEAI_IMAGE_ID','unknown')}|{BASE_REVISION}|vision-r16|mb1|ga8".encode()).hexdigest();root=Path(os.getenv("OUTPUT_DIR","/artifacts/training"))/f"multimodal-qualification-{fingerprint}";root.mkdir(parents=True,exist_ok=True);dataset,_=download_dataset(value,root);failures=[]
+    value=job["input"];identity=subprocess.check_output(["nvidia-smi","--query-gpu=uuid,driver_version","--format=csv,noheader"],text=True).strip();fingerprint=hashlib.sha256(f"{identity}|{os.getenv('TREEAI_IMAGE_ID','unknown')}|{BASE_REVISION}|vision-r16-leaf-v1|mb1|ga8".encode()).hexdigest();root=Path(os.getenv("OUTPUT_DIR","/artifacts/training"))/f"multimodal-qualification-{fingerprint}";root.mkdir(parents=True,exist_ok=True);dataset,_=download_dataset(value,root);failures=[]
     for sequence in SEQUENCES:
         for pixels in PIXEL_TIERS:
             target=root/f"seq-{sequence}-px-{pixels}";config=fixed_steps(fixed_config({"sequenceLength":sequence,"maxPixels":pixels},dataset,target),1,1);config_path=root/f"seq-{sequence}-px-{pixels}.json";config_path.write_text(json.dumps(config,sort_keys=True,separators=(",",":")))
