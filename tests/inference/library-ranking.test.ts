@@ -44,6 +44,12 @@ describe('library adapter ranking',()=>{
 		const result=JSON.parse(execFileSync('python3',['-c',`import importlib.util,json,os,sys,tempfile,types\nsys.modules['boto3']=types.SimpleNamespace(client=lambda *a,**k:None)\nserver=types.ModuleType('common.server');server.serve=lambda routes:None\nsys.modules['common']=types.ModuleType('common');sys.modules['common.server']=server\nwith tempfile.TemporaryDirectory() as d:\n os.environ['STATE_DIR']=d;s=importlib.util.spec_from_file_location('evaluator',${modulePath});m=importlib.util.module_from_spec(s);s.loader.exec_module(m)\n print(json.dumps({'null':m.token_recall('authored context',None),'match':m.token_recall('authored context','The authored context is present')}))`],{cwd:process.cwd(),encoding:'utf8'}));
 		expect(result).toEqual({null:0,match:1});
 	});
+	it('uses deterministic non-thinking Qwen requests only inside evaluation',()=>{
+		const source=readFileSync('workers/evaluator/worker.py','utf8');
+		expect(source).toContain('def nonthinking(body):');
+		expect(source).toContain('"chat_template_kwargs":{"enable_thinking":False}');
+		expect(source.match(/nonthinking\(/gu)?.length).toBeGreaterThanOrEqual(5);
+	});
 	it('uses canonical Compose discovery and probes the no-proxy HTTP path',()=>{
 		const override=readFileSync('deploy/inference/factory.override.yml','utf8'),compose=readFileSync('deploy/inference/compose.yml','utf8');
 		expect(override).not.toContain('network_mode: "service:vllm"');

@@ -20,8 +20,9 @@ def import_adapter(job):
     source = job["input"].get("manifestUri")
     if not source: raise ValueError("manifestUri is required")
     return write(job, "candidate", {"manifestUri": source, "status": "inactive"})
+def nonthinking(body):return{**body,"chat_template_kwargs":{"enable_thinking":False}}
 def completion(model,case):
-    body={"model":model,"messages":case["messages"],"temperature":0,"max_tokens":case.get("maxTokens",256)}
+    body=nonthinking({"model":model,"messages":case["messages"],"temperature":0,"max_tokens":case.get("maxTokens",256)})
     request=urllib.request.Request(f"{os.getenv('VLLM_URL','http://vllm:8000')}/v1/chat/completions",data=json.dumps(body).encode(),headers={"content-type":"application/json"})
     response=json.loads(PRIVATE_OPENER.open(request,timeout=240).read());return response["choices"][0]["message"]
 def case_score(case,message):
@@ -102,12 +103,12 @@ def deployment(job, action):
     except PrivateHttpError as error:
         if error.status not in {400,404}: raise
     post("/v1/load_lora_adapter",{"lora_name":candidate,"lora_path":str(target)})
-    with ThreadPoolExecutor(max_workers=2) as pool:list(pool.map(lambda _:post("/v1/chat/completions",{"model":candidate,"messages":[{"role":"user","content":"Reply with ready."}],"max_tokens":8}),range(2)))
+    with ThreadPoolExecutor(max_workers=2) as pool:list(pool.map(lambda _:post("/v1/chat/completions",nonthinking({"model":candidate,"messages":[{"role":"user","content":"Reply with ready."}],"max_tokens":8})),range(2)))
     return write(job,"deployment",{"action":action,"candidateId":candidate,"warm":True})
 def canary(job):
     candidate=str(job["input"]["candidateId"])
     composed=job["input"].get("manifest",{}).get("sourceManifest",{}).get("adapter",{}).get("modality")=="composed";pixel="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
-    requests=[{"model":candidate,"messages":[{"role":"user","content":"Reply with canary-one."}],"temperature":0,"max_tokens":32},{"model":candidate,"messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":f"data:image/png;base64,{pixel}"}},{"type":"text","text":"Confirm that an image was supplied without guessing its subject."}]}],"temperature":0,"max_tokens":32}] if composed else [{"model":candidate,"messages":[{"role":"user","content":"Reply with canary-two."}],"temperature":0,"max_tokens":32}]
+    requests=[nonthinking(body) for body in ([{"model":candidate,"messages":[{"role":"user","content":"Reply with canary-one."}],"temperature":0,"max_tokens":32},{"model":candidate,"messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":f"data:image/png;base64,{pixel}"}},{"type":"text","text":"Confirm that an image was supplied without guessing its subject."}]}],"temperature":0,"max_tokens":32}] if composed else [{"model":candidate,"messages":[{"role":"user","content":"Reply with canary-two."}],"temperature":0,"max_tokens":32}])]
     with ThreadPoolExecutor(max_workers=2) as pool: responses=list(pool.map(lambda body:post("/v1/chat/completions",body),requests))
     if any(not json.loads(value)["choices"][0]["message"].get("content") for value in responses):raise ValueError("Canary response was empty")
     return write(job,"canary",{"candidateId":candidate,"passed":True,"concurrency":2,"multimodal":composed})
@@ -128,7 +129,7 @@ def visual_grounding(job):
                 item=images.get(part.get("path"));
                 if not item:raise ValueError("Visual example references an unavailable image")
                 data=object_bytes(item["uri"]);mime=mimetypes.guess_type(part["path"])[0] or "image/png";part.clear();part.update({"type":"image_url","image_url":{"url":f"data:{mime};base64,{base64.b64encode(data).decode()}"}})
-        response=json.loads(post("/v1/chat/completions",{"model":model,"messages":prompt,"temperature":0,"max_tokens":256}));actual=response["choices"][0]["message"].get("content");scores.append(token_recall(expected,actual))
+        response=json.loads(post("/v1/chat/completions",nonthinking({"model":model,"messages":prompt,"temperature":0,"max_tokens":256})));actual=response["choices"][0]["message"].get("content");scores.append(token_recall(expected,actual))
     if not scores:raise ValueError("Held-out visual corpus has no evaluable examples")
     return write(job,"visual-grounding",{"candidateId":model,"metric":"authored-context-token-recall","value":sum(scores)/len(scores),"examples":len(scores),"evaluationObject":{"sha256":evaluation.get("sha256"),"size":evaluation.get("size")}})
 def library_likelihood(job):
