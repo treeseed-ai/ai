@@ -91,10 +91,10 @@ export function createLabController(options: ControllerOptions = {}) {
 		appendEvent("trajectory.finalized", { id: trajectory.id, hermesSessionId: id });
 		return trajectory;
 	}
-	async function deepVerify() {
+	async function deepVerify(multimodal = false) {
 		const artifactName = `treeai-hermes-deep-check-${crypto.randomUUID()}.txt`, artifactContent = `TREEAI_HERMES_READY_${crypto.randomUUID()}`,
-			webArtifactName = `treeai-hermes-web-check-${crypto.randomUUID()}.md`;
-		async function completion(model: string, stream: boolean, content: string) {
+			webArtifactName = `treeai-hermes-web-check-${crypto.randomUUID()}.md`, qualificationImage = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAT0lEQVR42u3PQQkAAAgEsItiNKMazQi+hcEKLNXzWgQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQELgt2zgEtldSC/gAAAABJRU5ErkJggg==";
+		async function completion(model: string, stream: boolean, content: unknown) {
 			const response = await requestFetch(`${experienceUrl}/v1/chat/completions`, { method: "POST", headers: { authorization: "Bearer lab-hermes", "content-type": "application/json", "x-ai-client": "hermes" }, body: JSON.stringify({ model, stream, messages: [{ role: "user", content }], temperature: 0 }) });
 			const raw = await response.text();
 			if (!response.ok || !raw) throw new Error(`${model} ${stream ? "streaming" : "non-streaming"} verification failed`);
@@ -117,7 +117,13 @@ export function createLabController(options: ControllerOptions = {}) {
 		const webTrajectory = await finalize(webAgent.sessionId), webObservations = lines(`${stateRoot}/artifact-observations.jsonl`), webCorrelated = webObservations.find((item) => webTrajectory.artifactObservationIds.includes(String(item.id)) && item.relativePath === webArtifactName);
 		if (!webCorrelated) throw new Error("Hermes web verification did not produce the expected correlated workspace artifact");
 		if (!hasSuccessfulWebEvidence(webTrajectory.events)) throw new Error("Hermes web verification did not retain successful search and extraction evidence");
-		return { status: "ready", direct: true, streaming: true, hermes: true, web: true, trajectoryId: trajectory.id, webTrajectoryId: webTrajectory.id, artifacts: [...trajectory.artifactObservationIds, ...webTrajectory.artifactObservationIds] };
+		if (multimodal) {
+			const content = [{ type: "image_url", image_url: { url: `data:image/png;base64,${qualificationImage}` } }, { type: "text", text: "Inspect this image and reply IMAGE_READY." }];
+			await completion("local-model", false, content);
+			const multimodalAgent = await completion("hermes-agent", false, content);
+			if (!multimodalAgent.sessionId) throw new Error("Hermes multimodal verification did not return a session identifier");
+		}
+		return { status: "ready", direct: true, streaming: true, hermes: true, web: true, multimodalDirect: multimodal || undefined, multimodalHermes: multimodal || undefined, trajectoryId: trajectory.id, webTrajectoryId: webTrajectory.id, artifacts: [...trajectory.artifactObservationIds, ...webTrajectory.artifactObservationIds] };
 	}
 	async function idempotent(context: Context, action: string, operation: () => Promise<unknown>) {
 		const key = context.req.header("idempotency-key");
@@ -187,7 +193,7 @@ export function createLabController(options: ControllerOptions = {}) {
 		try { return await idempotent(context, `finalize:${context.req.param("id")}`, () => finalize(context.req.param("id"))); } catch { return context.json({ error: { code: "finalization_failed", message: "Hermes evidence could not be finalized." } }, 422); }
 	});
 	app.post("/v1/hermes/verify", requireScope("lab:experience:write"), async (context) => {
-		try { return await idempotent(context, "hermes-verify", deepVerify); }
+		try { const body = await context.req.json().catch(() => ({})) as { multimodal?: boolean }; return await idempotent(context, "hermes-verify", () => deepVerify(body.multimodal === true)); }
 		catch (error) {
 			appendEvent("hermes.deep-verification-failed", { message: sanitize(error instanceof Error ? error.message : String(error)) });
 			return context.json({ error: { code: "deep_verification_failed", message: "Hermes completed an unhealthy deep verification step." } }, 422);
