@@ -31,6 +31,7 @@ export interface QualificationCampaign {
 	selectedProfileId?: string; error?: string; createdAt: string; updatedAt: string;
 }
 export interface SustainedTrainingProfile { schemaVersion: "treeai.sustained-training-profile/v1"; fingerprint: string; sequenceLength: number; diagnostics: unknown; qualifiedAt: string }
+export const supportedLoraRank = 16;
 type Runner = (file: string, args: string[]) => string;
 const defaultRunner: Runner = (file, args) => execFileSync(file, args, { encoding: "utf8", timeout: 120_000 }).trim();
 function atomic(path: string, value: unknown) { mkdirSync(dirname(path), { recursive: true, mode: 0o750 }); const next = `${path}.new`; writeFileSync(next, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o640 }); renameSync(next, path); }
@@ -90,7 +91,7 @@ export function probeCandidate(fp: MachineFingerprint, settings: MachineProfile[
 	const multimodalEnabled = safe(run, "docker", ["exec", "treeseed-ai-inference-vllm-1", "sh", "-lc", "test \"${TREEAI_MULTIMODAL_LORA_ENABLED:-false}\" = true && printf true"], "failed") === "true";
 	let multimodal = false, multimodalDiagnostic = multimodalEnabled ? undefined : "runtime_flag_not_active";
 	if (multimodalEnabled) try { run("docker", ["exec", "treeseed-ai-inference-vllm-1", "python3", "-c", multimodalCanary]);multimodal = true; } catch (error) { multimodalDiagnostic = diagnostic(error); }
-	const gates = { gpu, docker, inferenceConcurrency: canary.successes === 2, inferenceContext: configured >= settings.maxModelLength, axolotl, marker, memory: fp.gpuMemoryMiB >= 12_000, bounded: settings.maxModelLength <= 65_536 && settings.trainingSequenceLength <= 8192 };
+	const gates = { gpu, docker, inferenceConcurrency: canary.successes === 2, inferenceContext: configured >= settings.maxModelLength, axolotl, marker, memory: fp.gpuMemoryMiB >= 12_000, bounded: settings.maxModelLength <= 65_536 && settings.trainingSequenceLength <= 8192, loraRank: settings.loraRank === supportedLoraRank };
 	const passed = Object.values(gates).filter(Boolean).length;
 	return { gates, multimodal, multimodalDiagnostic, metrics: { quality: passed / Object.keys(gates).length, reliability: canary.successes === 2 && axolotl && marker ? 1 : 0, context: settings.maxModelLength / 65_536, latency: Math.max(0, 1 - Number(canary.latencyMs ?? Date.now() - started) / 120_000), latencyMs: Number(canary.latencyMs ?? Date.now() - started) } };
 }
@@ -116,7 +117,7 @@ export function runCampaign(preset: "baseline" | "balanced", run: Runner = defau
 	for (let index = 0; index < maxTrials && Date.now() < Date.parse(deadline); index++) {
 		if (campaign(value.id)?.state === "cancelled") return campaign(value.id)!;
 		const name = names[index % names.length]!, requestedTrainingLength=training[index%training.length]!, maxModelLength=contexts[Math.floor(index/training.length)%contexts.length]!, trainingSequenceLength = Math.min(requestedTrainingLength,sustained?.sequenceLength??requestedTrainingLength);
-		const settings = { maxModelLength, maxSequences: 2, gpuMemoryUtilization: index % 3 === 2 ? .9 : .85, trainingSequenceLength, multimodalSequenceLength: Math.min(trainingSequenceLength, 4096), maxImagePixels: index % 2 ? 786432 : 262144, loraRank: index % 3 === 2 ? 32 : 16, multimodalLoraEnabled: false };
+		const settings = { maxModelLength, maxSequences: 2, gpuMemoryUtilization: index % 3 === 2 ? .9 : .85, trainingSequenceLength, multimodalSequenceLength: Math.min(trainingSequenceLength, 4096), maxImagePixels: index % 2 ? 786432 : 262144, loraRank: supportedLoraRank, multimodalLoraEnabled: false };
 		const observation = probeCandidate(fp, settings, run); settings.multimodalLoraEnabled = observation.multimodal;
 		const gates = { ...observation.gates, ...(name === "training-multimodal" ? { multimodal: observation.multimodal } : {}) };
 		const profile = writeProfile(candidate(name, fp, settings, observation.metrics, gates));
