@@ -58,4 +58,11 @@ describe('library adapter ranking',()=>{
 		expect(override).not.toContain('aliases: [inference-vllm]');
 		expect(compose).toContain("open('http://127.0.0.1:8080/healthz',timeout=3)");
 	});
+	it('keeps long evaluator calls cancellable without transport timeouts',()=>{
+		const source=readFileSync('packages/inference-manager/src/main.ts','utf8'),manifest=readFileSync('packages/inference-manager/package.json','utf8');
+		expect(source).toContain('new Agent({headersTimeout:0,bodyTimeout:0})');
+		expect(source).toContain('dispatcher:evaluatorDispatcher');
+		expect(source).toContain('signal,dispatcher');
+		expect(manifest).toContain('"undici": "8.10.0"');
+	});
 });

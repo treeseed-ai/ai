@@ -2,13 +2,16 @@
 import { httpHandler,JobWorker,PostgresJobRepository,reconcileCompose,requiredEnv,type JobHandler } from '@ai-platform/common';
 import { readFileSync } from 'node:fs';
 import { Pool } from 'pg';
+import { Agent,fetch as undiciFetch } from 'undici';
+
+const evaluatorDispatcher=new Agent({headersTimeout:0,bodyTimeout:0});
 
 const command=process.argv[2]??'worker';
 function artifactImportHandler(fallback:string):JobHandler{
   if(!process.env.ARTIFACT_IMPORT_URL)return httpHandler(`${fallback}/import`);
   return async(job,signal,progress)=>{await progress(.05);const token=readFileSync(process.env.ARTIFACT_IMPORT_TOKEN_FILE!,'utf8').trim();const response=await fetch(process.env.ARTIFACT_IMPORT_URL!,{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify(job),signal});if(!response.ok)throw new Error(`Artifact importer returned ${response.status}: ${await response.text()}`);await progress(.95);return((await response.json())as{resultManifest:string}).resultManifest;};
 }
-async function evaluatorCall(evaluator:string,path:string,job:any,input:unknown,signal:AbortSignal){const response=await fetch(`${evaluator}/${path}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jobId:job.id,type:job.type,input}),signal});if(!response.ok)throw new Error(`${path} worker returned ${response.status}: ${await response.text()}`);return response.json()as Promise<{resultManifest?:string}>;}
+async function evaluatorCall(evaluator:string,path:string,job:any,input:unknown,signal:AbortSignal){const response=await undiciFetch(`${evaluator}/${path}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jobId:job.id,type:job.type,input}),signal,dispatcher:evaluatorDispatcher});if(!response.ok)throw new Error(`${path} worker returned ${response.status}: ${await response.text()}`);return response.json()as Promise<{resultManifest?:string}>;}
 function evaluationHandler(evaluator:string):JobHandler{return async(job,signal,progress)=>{await progress(.05);const metric=(job.request as any).metric,path=metric==='completion-negative-log-likelihood'?'library-likelihood':metric==='visual-grounding'?'visual-grounding':'evaluate',result=await evaluatorCall(evaluator,path,job,job.request,signal);await progress(.95);return result.resultManifest;};}
 function rankingHandler(pool:Pool,evaluator:string):JobHandler{return async(job,signal,progress)=>{await progress(.05);const request=job.request as any,isLibrary=request.policy==='library-strict-improvement-v1';let input=request;if(isLibrary){const candidate=await pool.query('SELECT manifest FROM candidates WHERE id=$1',[String(request.candidateId??'')]);if(!candidate.rowCount)throw new Error('Library ranking candidate was not found.');const evaluations=candidate.rows[0].manifest?.sourceManifest?.evaluations,likelihoodEvidence=Array.isArray(evaluations)?evaluations.find((item:any)=>item?.schemaVersion==='ai.library-likelihood-evaluation/v1'&&item?.metric==='completion-negative-log-likelihood'):null;if(!likelihoodEvidence)throw new Error('Imported candidate has no signed Axolotl held-out likelihood evidence.');input={...request,likelihoodEvidence};}const result=await evaluatorCall(evaluator,isLibrary?'rank-library':'rank',job,input,signal);await progress(.95);return result.resultManifest;};}
 function deploymentHandler(pool:Pool,evaluator:string,action:'promote'|'rollback'):JobHandler{
