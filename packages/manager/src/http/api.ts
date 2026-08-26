@@ -118,7 +118,6 @@ function queue(
 	}
 	return getWork(work.id)!;
 }
-function completedTransition(mode:string,idempotencyKey:string){const work=createWork('transition',idempotencyKey,{mode});return work.state==='queued'?finishWork(work.id,'succeeded',{mode,changed:false,reason:'already_in_mode'}):work;}
 export async function recoverInterruptedTransitions(supervisor: typeof callSupervisor = callSupervisor) {
 	const pending=unfinishedWork("transition"),work=pending.pop();for(const superseded of pending)finishWork(superseded.id,"failed",undefined,"Transition was superseded by newer desired state during restart recovery.");if(!work)return;
 	const mode=(work.request as {mode?:unknown})?.mode;
@@ -193,7 +192,7 @@ export function createManagerApp() {
 				},
 				400,
 			);
-		const mode=String(body.mode),current=setting('mode','awake');return c.json(current===mode?completedTransition(mode,body.idempotencyKey):queue("transition", "mode.set", { mode }, body.idempotencyKey),202);
+		const mode=String(body.mode);return c.json(queue("transition", "mode.set", { mode }, body.idempotencyKey),202);
 	});
 	app.get("/v1/transitions/:id", requireScope("platform:read"), (c) => {
 		const work = getWork(c.req.param("id"));
