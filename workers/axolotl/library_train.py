@@ -35,7 +35,7 @@ def fixed_config(value,dataset,target):
     if sequence not in {1024,2048,3072,4096}:raise ValueError("Training sequence length is not qualified")
     return{"base_model":BASE_MODEL,"revision":BASE_REVISION,"datasets":[{"path":str(dataset),"type":"completion"}],"sequence_len":sequence,"sample_packing":False,"adapter":"qlora","load_in_4bit":True,"lora_r":16,"lora_alpha":32,"lora_dropout":0.05,"lora_target_modules":TARGETS,"bf16":True,"gradient_checkpointing":True,"micro_batch_size":1,"gradient_accumulation_steps":8,"learning_rate":0.0001,"weight_decay":0.01,"warmup_ratio":0.03,"num_epochs":1,"seed":42,"output_dir":str(target),"save_steps":int(value.get("saveSteps",25)),"evals_per_epoch":1}
 def evaluation_config(training,evaluation,probe,target,adapter=None):
-    config={key:value for key,value in training.items() if key not in {"datasets","output_dir","save_steps","evals_per_epoch","num_epochs","max_steps","warmup_ratio","learning_rate","weight_decay","gradient_checkpointing"}}
+    config={key:value for key,value in training.items() if key not in {"datasets","output_dir","save_steps","evals_per_epoch","num_epochs","max_steps","warmup_ratio","weight_decay","gradient_checkpointing"}}
     config.update({"datasets":[{"path":str(probe),"type":"completion"}],"test_datasets":[{"path":str(evaluation),"type":"completion"}],"output_dir":str(target),"eval_batch_size":1,"dataset_num_proc":1,"shuffle_merged_datasets":False})
     if adapter is not None:config["lora_model_dir"]=str(adapter)
     return config
