@@ -25,6 +25,19 @@ def object_bytes(client,bucket,item):
     data=client.get_object(Bucket=bucket,Key=s3_key(item["uri"],bucket))["Body"].read()
     if len(data)!=item["size"] or hashlib.sha256(data).hexdigest()!=item["sha256"]:raise ValueError("Adapter object checksum or size mismatch")
     return data
+def canonical_peft_objects(manifest,client,bucket):
+    model=None;config=None
+    for item in manifest["objects"]:
+        relative=relative_object(manifest,item);data=object_bytes(client,bucket,item)
+        if len(relative.parts)!=1:continue
+        if relative.name=="adapter_model.safetensors":
+            if model is not None:raise ValueError(f"Adapter {manifest['artifactId']} contains duplicate canonical PEFT weights")
+            model=data
+        elif relative.name=="adapter_config.json":
+            if config is not None:raise ValueError(f"Adapter {manifest['artifactId']} contains duplicate canonical PEFT configuration")
+            config=json.loads(data)
+    if model is None or config is None:raise ValueError(f"Adapter {manifest['artifactId']} has no canonical PEFT weights and configuration")
+    return model,config
 def read_safetensors(data):
     if len(data)<8:raise ValueError("Invalid safetensors object")
     length=struct.unpack("<Q",data[:8])[0];header=json.loads(data[8:8+length]);body=data[8+length:]
@@ -59,15 +72,8 @@ def compose(job,client,bucket,key_path,upload,sign):
     if modalities!={"language","vision"}:raise ValueError("Composition requires disjoint language and vision artifacts")
     targets=[target for item in manifests for target in item["adapter"].get("targetModules",[])]
     if len(targets)!=len(set(targets)):raise ValueError("Adapter target declarations overlap")
-    models=[];config=None
-    for manifest in manifests:
-        for item in manifest["objects"]:
-            relative=relative_object(manifest,item);data=object_bytes(client,bucket,item)
-            if relative.name=="adapter_model.safetensors":models.append(data)
-            elif relative.name=="adapter_config.json":
-                current=json.loads(data)
-                if config is None:config=current
-    if len(models)!=2 or config is None:raise ValueError("Both adapters must contain PEFT safetensors and configuration")
+    parents=[canonical_peft_objects(manifest,client,bucket) for manifest in manifests];models=[item[0] for item in parents]
+    config=parents[next(index for index,item in enumerate(manifests) if item["adapter"].get("modality","language")=="language")][1]
     config={**config,"target_modules":"(?:"+")|(?:".join(targets)+")"}
     with tempfile.TemporaryDirectory(prefix="treeai-compose-") as temporary:
         root=Path(temporary);(root/"adapter_model.safetensors").write_bytes(merge_safetensors(models));(root/"adapter_config.json").write_bytes(canonical(config));objects=[]

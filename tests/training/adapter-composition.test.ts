@@ -26,6 +26,22 @@ merged=module.merge_safetensors([tensor('model.language.weight',b'abc'),tensor('
 		expect(source).not.toMatch(/\b(?:average|weighted|ties|dare)\b/iu);
 	});
 
+	it('selects canonical PEFT objects while checksum-verifying resumable checkpoints',()=>{
+		const modulePath=JSON.stringify(join(process.cwd(),'workers/artifact/composition.py'));
+		const result=python(`import hashlib,importlib.util,json,sys,types
+sys.modules['cryptography']=types.ModuleType('cryptography');sys.modules['cryptography.hazmat']=types.ModuleType('hazmat');sys.modules['cryptography.hazmat.primitives']=types.SimpleNamespace(serialization=None);sys.modules['cryptography.hazmat.primitives.asymmetric']=types.ModuleType('asymmetric');sys.modules['cryptography.hazmat.primitives.asymmetric.ed25519']=types.SimpleNamespace(Ed25519PrivateKey=object)
+spec=importlib.util.spec_from_file_location('composition',${modulePath});module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+objects={'adapters/parent/adapter_model.safetensors':b'canonical','adapters/parent/adapter_config.json':b'{"r":16}','adapters/parent/checkpoint-25/adapter_model.safetensors':b'checkpoint'}
+class Body:
+ def __init__(self,value):self.value=value
+ def read(self):return self.value
+class Client:
+ def get_object(self,**value):return {'Body':Body(objects[value['Key']])}
+manifest={'artifactId':'parent','objects':[{'uri':'s3://bucket/'+key,'size':len(value),'sha256':hashlib.sha256(value).hexdigest()} for key,value in objects.items()]}
+model,config=module.canonical_peft_objects(manifest,Client(),'bucket');print(json.dumps({'model':model.decode(),'config':config}))`);
+		expect(result).toEqual({model:'canonical',config:{r:16}});
+	});
+
 	it('keeps multimodal vLLM disabled until a qualified profile enables it',()=>{
 		const entrypoint=readFileSync('containers/inference/vllm-entrypoint.sh','utf8'),compose=readFileSync('deploy/inference/compose.yml','utf8');
 		expect(entrypoint).toContain('TREEAI_MULTIMODAL_LORA_ENABLED:-false');
