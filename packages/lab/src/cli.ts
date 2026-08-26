@@ -98,7 +98,7 @@ function urls() {
 		interfaces,
 	};
 }
-function verify(deep = false) {
+function verify(deep = false, multimodal = false) {
 	const controller = call("/v1/status"), settings = client(), webui = settings.interfaces?.openWebUi;
 	if (!webui) return { status: "warning", controller, openWebUi: "not-configured" };
 	const health = run("curl", ["--silent", "--show-error", "--fail", "--cacert", settings.ca, `${webui.browserUrl}/health`]);
@@ -109,7 +109,7 @@ function verify(deep = false) {
 		const probe = spawnSync("curl", ["--silent", "--fail", "--max-time", "1", `http://127.0.0.1:${port}/`]);
 		if (probe.status === 0) throw new Error(`Private Hermes port ${port} is unexpectedly reachable from the host.`);
 	}
-	return { status: "ready", controller, isolation: { hostPortsClosed: [4792, 8642] }, openWebUi: { url: webui.browserUrl, authentication: webui.authentication, health: health || "ok", models: providerModels }, hermes: call("/v1/hermes/status"), ...(deep ? { deep: call("/v1/hermes/verify", "POST") } : {}) };
+	return { status: "ready", controller, isolation: { hostPortsClosed: [4792, 8642] }, openWebUi: { url: webui.browserUrl, authentication: webui.authentication, health: health || "ok", models: providerModels }, hermes: call("/v1/hermes/status"), ...(deep ? { deep: call("/v1/hermes/verify", "POST", { multimodal }) } : {}) };
 }
 function imageReference(id: string) {
 	const catalog = JSON.parse(readFileSync("/usr/share/treeseed-ai/release/catalog.json", "utf8")) as { runtimeImages: Array<{ id: string; reference: string }> };
@@ -199,7 +199,7 @@ async function main() {
 	}
 	if (command === "stop") { requireRoot("stop"); compose(["down"]); return output({ status: "ready" }); }
 	if (command === "status") return output(call("/v1/status"));
-	if (command === "verify") return output(verify(args.includes("--deep")));
+	if (command === "verify") { if (args.includes("--multimodal") && !args.includes("--deep")) throw new Error("--multimodal requires --deep."); return output(verify(args.includes("--deep"), args.includes("--multimodal"))); }
 	if (["enable", "pause", "resume"].includes(command ?? "")) return output(call(`/v1/loop/${command}`, "POST"));
 	if (command === "cycle-now") return output(call("/v1/loop/cycle-now", "POST"));
 	if (command === "watch") {

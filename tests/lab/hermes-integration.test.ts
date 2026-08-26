@@ -105,6 +105,11 @@ describe("tight Hermes integration", () => {
 		const controller = readFileSync("packages/lab/src/controller.ts", "utf8");
 		expect(controller).toContain('{ method: "GET", path: "/v1/provider/models"');
 		expect(controller).toContain('app.get("/v1/provider/models", requireScope("lab:read")');
+		expect(controller).toContain('multimodalDirect: multimodal || undefined');
+		expect(controller).toContain('await completion("hermes-agent", false, content)');
+		const cli = readFileSync("packages/lab/src/cli.ts", "utf8");
+		expect(cli).toContain('call("/v1/hermes/verify", "POST", { multimodal })');
+		expect(cli).toContain('"--multimodal"')
 	});
 
 	it("rejects error-bearing extraction output as web evidence", () => {
