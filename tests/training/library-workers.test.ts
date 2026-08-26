@@ -8,7 +8,8 @@ function python(source:string){
 }
 
 describe('library document workers',()=>{
-	it('keeps long Axolotl operations on one manager request',()=>{const source=readFileSync('packages/training-manager/src/main.ts','utf8'),manifest=readFileSync('packages/training-manager/package.json','utf8');expect(source).toContain('setGlobalDispatcher(new Agent({ headersTimeout: 3_900_000, bodyTimeout: 3_900_000 }))');expect(manifest).toContain('"undici": "8.10.0"');});
+	it('keeps bounded Axolotl operations on one transport-unlimited cancellable request',()=>{const source=readFileSync('packages/training-manager/src/main.ts','utf8'),manifest=readFileSync('packages/training-manager/package.json','utf8');expect(source).toContain('new Agent({headersTimeout:0,bodyTimeout:0})');expect(source).toContain('dispatcher:axolotlWorkerDispatcher');expect(source).toContain("await cancelAxolotl(axolotl,job.id)");expect(manifest).toContain('"undici": "8.10.0"');});
+	it('admits one Axolotl subprocess per job and terminates its process group',()=>{const source=readFileSync('workers/axolotl/library_train.py','utf8'),server=readFileSync('workers/common/server.py','utf8');expect(source).toContain('fcntl.LOCK_EX|fcntl.LOCK_NB');expect(source).toContain('start_new_session=True');expect(source).toContain('os.killpg(process.pid,signal.SIGTERM)');expect(source).toContain('_PROCESSES[job_id]=process');expect(server).toContain('getattr(error,"status_code",500)');});
 	it('detects supported content by signature and rejects unsafe containers',()=>{
 		const modulePath=JSON.stringify(join(process.cwd(),'workers/artifact/library.py'));
 		const result=python(`import importlib.util,json,sys,types\nsys.modules['boto3']=types.SimpleNamespace(client=lambda *a,**k:None)\ns=importlib.util.spec_from_file_location('library',${modulePath});m=importlib.util.module_from_spec(s);s.loader.exec_module(m)\nvalues=[m.detect(b'%PDF-1.7\\n','wrong.txt'),m.detect(b'# Heading\\nBody','guide.md')]\nerrors=[]\nfor data,name in [(b'PK\\x03\\x04not-a-zip','payload.zip'),(b'\\x00binary','notes.txt')]:\n try:m.detect(data,name)\n except ValueError as e:errors.append(str(e))\nprint(json.dumps({'values':values,'errors':errors}))`);
@@ -50,13 +51,36 @@ with tempfile.TemporaryDirectory() as root:
  os.environ.update({'OUTPUT_DIR':root,'S3_BUCKET':'training','AWS_ENDPOINT_URL':'http://s3','AWS_ACCESS_KEY_ID':'id','AWS_SECRET_ACCESS_KEY':'secret','TREEAI_IMAGE_ID':'image'})
  m.subprocess.check_output=lambda *a,**k:'GPU-test, 595.84'
  trials=[]
- def run(path,timeout):
+ def run(path,timeout,*_):
   config=json.loads(pathlib.Path(path).read_text());trials.append({'sequence':config['sequence_len'],'steps':config['max_steps']});return types.SimpleNamespace(returncode=1 if config['sequence_len']==4096 else 0,stdout='CUDA out of memory')
  m.run_axolotl=run
- value=m.qualify({'input':{'trainUri':'s3://training/datasets/train.jsonl'}})
+ value=m.qualify({'jobId':'qualification-test','input':{'trainUri':'s3://training/datasets/train.jsonl'}})
  print(json.dumps({'value':value,'trials':trials,'steps':m.QUALIFICATION_STEPS,'policy':m.ALLOCATOR_POLICY}))`);
 		expect(result.value).toMatchObject({resultManifest:'profile://3072',sequenceLength:3072,diagnostics:{failed:[{sequenceLength:4096,exitCode:1}]}});
 		expect(result.trials).toEqual([{sequence:4096,steps:8},{sequence:3072,steps:8}]);expect(result.steps).toBe(8);expect(result.policy).toBe('expandable_segments:True');
+	});
+	it('rejects a concurrent duplicate worker execution lock',()=>{
+		const modulePath=JSON.stringify(join(process.cwd(),'workers/axolotl/library_train.py'));
+		const result=python(`import importlib.util,json,pathlib,sys,tempfile,types
+sys.modules['boto3']=types.SimpleNamespace(client=lambda *a,**k:None)
+s=importlib.util.spec_from_file_location('library_train',${modulePath});m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
+with tempfile.TemporaryDirectory() as d:
+ root=pathlib.Path(d);blocked=False
+ with m.job_guard(root):
+  try:
+   with m.job_guard(root):pass
+  except m.JobAlreadyRunning as error:blocked=error.status_code==409
+ print(json.dumps({'blocked':blocked}))`);
+		expect(result).toEqual({blocked:true});
+	});
+	it('cancels the exact registered Axolotl process group',()=>{
+		const modulePath=JSON.stringify(join(process.cwd(),'workers/axolotl/library_train.py'));
+		const result=python(`import importlib.util,json,subprocess,sys,time,types
+sys.modules['boto3']=types.SimpleNamespace(client=lambda *a,**k:None)
+s=importlib.util.spec_from_file_location('library_train',${modulePath});m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
+process=subprocess.Popen(['sleep','60'],start_new_session=True);m._PROCESSES['job-1']=process
+cancelled=m.cancel_axolotl('job-1');print(json.dumps({'cancelled':cancelled,'terminal':process.poll() is not None,'unknown':m.cancel_axolotl('missing')}))`);
+		expect(result).toEqual({cancelled:true,terminal:true,unknown:false});
 	});
 	it('bounds and redacts Axolotl diagnostics',()=>{
 		const modulePath=JSON.stringify(join(process.cwd(),'workers/axolotl/library_train.py'));

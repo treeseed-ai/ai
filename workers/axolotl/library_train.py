@@ -1,4 +1,5 @@
-import csv,hashlib,json,os,re,shutil,subprocess
+import csv,fcntl,hashlib,json,os,re,shutil,signal,subprocess,threading
+from contextlib import contextmanager
 from pathlib import Path
 import boto3
 
@@ -10,18 +11,55 @@ PRIVATE_PATH=re.compile(r"(?:(?:/home|/root)/[^\s'\"]+|/run/secrets/[^\s'\"]+)")
 QUALIFICATION_SEQUENCES=(4096,3072,2048,1024)
 QUALIFICATION_STEPS=8
 ALLOCATOR_POLICY="expandable_segments:True"
+_PROCESSES={};_PROCESS_LOCK=threading.Lock()
+
+class JobAlreadyRunning(RuntimeError):status_code=409
+
+@contextmanager
+def job_guard(root):
+    path=root/"execution.lock";handle=path.open("a+")
+    try:
+        try:fcntl.flock(handle,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError:raise JobAlreadyRunning("Axolotl job is already running")
+        yield
+    finally:handle.close()
 
 def safe_diagnostic(value,limit=2000):
     text=SECRET.sub("[REDACTED]",str(value or ""));text=PRIVATE_PATH.sub("[REDACTED_PATH]",text)
     return text.replace("\x00","")[-limit:].strip()
 
-def run_axolotl(config_path,timeout):
-    command=["accelerate","launch","-m","axolotl.cli.train",str(config_path)]
+def terminate(process):
+    if process.poll() is not None:return
+    try:os.killpg(process.pid,signal.SIGTERM);process.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        try:os.killpg(process.pid,signal.SIGKILL)
+        except ProcessLookupError:pass
+        process.wait()
+    except ProcessLookupError:process.wait()
+def cancel_axolotl(job_id):
+    with _PROCESS_LOCK:process=_PROCESSES.get(job_id)
+    if process is None:return False
+    terminate(process);return True
+def run_process(command,timeout,environment,job_id=None):
+    process=subprocess.Popen(command,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,env=environment,start_new_session=True)
+    if job_id:
+        with _PROCESS_LOCK:
+            if job_id in _PROCESSES:terminate(process);raise JobAlreadyRunning("Axolotl job is already running")
+            _PROCESSES[job_id]=process
+    try:
+        output,_=process.communicate(timeout=timeout);return subprocess.CompletedProcess(command,process.returncode,output)
+    except subprocess.TimeoutExpired:
+        terminate(process);raise
+    finally:
+        if job_id:
+            with _PROCESS_LOCK:
+                if _PROCESSES.get(job_id) is process:_PROCESSES.pop(job_id,None)
+def run_axolotl(config_path,timeout,job_id=None):
     environment=os.environ.copy();environment.setdefault("PYTORCH_CUDA_ALLOC_CONF",ALLOCATOR_POLICY)
-    return subprocess.run(command,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=timeout,env=environment)
-def run_evaluation(config_path,timeout):
+    return run_process(["accelerate","launch","-m","axolotl.cli.train",str(config_path)],timeout,environment,job_id)
+def run_evaluation(config_path,timeout,job_id=None):
     environment=os.environ.copy();environment.setdefault("PYTORCH_CUDA_ALLOC_CONF",ALLOCATOR_POLICY)
-    return subprocess.run(["accelerate","launch","-m","axolotl.cli.evaluate",str(config_path)],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=timeout,env=environment)
+    return run_process(["accelerate","launch","-m","axolotl.cli.evaluate",str(config_path)],timeout,environment,job_id)
 def fixed_steps(config,steps,save_steps):
     config.pop("num_epochs",None);config.update({"max_steps":steps,"save_steps":save_steps});return config
 
@@ -46,12 +84,12 @@ def evaluation_loss(path):
         for row in csv.DictReader(source):
             if row.get("metric")=="loss" and row.get("validation") not in {None,""}:return float(row["validation"])
     raise RuntimeError("Axolotl evaluation did not report validation loss")
-def evaluate_pair(config,evaluation,target):
+def evaluate_pair(config,evaluation,target,job_id):
     probe=target/"evaluation-probe.jsonl";probe.write_text(next(line for line in evaluation.read_text().splitlines() if line.strip())+"\n")
     values={}
     for name,adapter in (("base",None),("candidate",target/"adapter")):
         output=target/f"evaluate-{name}";output.mkdir(exist_ok=True);path=target/f"evaluate-{name}.json";path.write_text(json.dumps(evaluation_config(config,evaluation,probe,output,adapter),sort_keys=True,separators=(",",":")))
-        execution=run_evaluation(path,int(os.getenv("EVALUATE_TIMEOUT","86400")))
+        execution=run_evaluation(path,int(os.getenv("EVALUATE_TIMEOUT","86400")),job_id)
         if execution.returncode:raise RuntimeError(f"Axolotl {name} evaluation exited {execution.returncode}: {safe_diagnostic(execution.stdout) or 'no diagnostic output'}")
         values[name]=evaluation_loss(output)
         shutil.rmtree(output,ignore_errors=True)
@@ -61,30 +99,32 @@ def train(job):
     if value.get("baseModel")!=BASE_MODEL or value.get("baseModelRevision")!=BASE_REVISION:raise ValueError("Library training requires the immutable qualified base revision")
     if value.get("mode") not in {"smoke","standard"}:raise ValueError("Library mode must be smoke or standard")
     root=Path(os.getenv("OUTPUT_DIR","/artifacts/training"))/job["jobId"];root.mkdir(parents=True,exist_ok=True);result=root/"result.json"
-    if result.exists():
-        existing=json.loads(result.read_text());return{"resultManifest":f"file://{result}","configurationDigest":existing["configDigest"],"evaluations":existing.get("evaluations",[])}
-    dataset=root/"train.jsonl";dataset.write_bytes(client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(value["trainUri"]))["Body"].read())
-    target=root/"adapter";config=fixed_config(value,dataset,target)
-    if value["mode"]=="smoke":fixed_steps(config,16,8)
-    config_path=root/"axolotl.json";config_path.write_text(json.dumps(config,sort_keys=True,separators=(",",":")))
-    execution=run_axolotl(config_path,int(os.getenv("TRAIN_TIMEOUT","86400")))
-    if execution.returncode:raise RuntimeError(f"Axolotl training exited {execution.returncode}: {safe_diagnostic(execution.stdout) or 'no diagnostic output'}")
-    evaluations=[]
-    if value["mode"]=="standard":
-        if not value.get("evaluationUri"):raise ValueError("Standard library training requires an immutable held-out corpus")
-        evaluation=root/"evaluation.jsonl";evaluation.write_bytes(client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(value["evaluationUri"]))["Body"].read());evaluations.append(evaluate_pair(config,evaluation,root))
-    payload={"schemaVersion":"ai.library-training-result/v1","baseModel":BASE_MODEL,"baseModelRevision":BASE_REVISION,"adapterPath":str(target),"config":str(config_path),"configDigest":hashlib.sha256(config_path.read_bytes()).hexdigest(),"mode":value["mode"],"libraryId":value["libraryId"],"librarySlug":value["librarySlug"],"snapshotId":value["snapshotId"],"datasetManifest":value["datasetManifest"],"targetModules":[TARGETS],"rank":16,"alpha":32,"evaluations":evaluations}
-    result.write_text(json.dumps(payload,sort_keys=True,separators=(",",":")));return{"resultManifest":f"file://{result}","configurationDigest":payload["configDigest"],"evaluations":evaluations}
+    with job_guard(root):
+        if result.exists():
+            existing=json.loads(result.read_text());return{"resultManifest":f"file://{result}","configurationDigest":existing["configDigest"],"evaluations":existing.get("evaluations",[])}
+        dataset=root/"train.jsonl";dataset.write_bytes(client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(value["trainUri"]))["Body"].read())
+        target=root/"adapter";config=fixed_config(value,dataset,target)
+        if value["mode"]=="smoke":fixed_steps(config,16,8)
+        config_path=root/"axolotl.json";config_path.write_text(json.dumps(config,sort_keys=True,separators=(",",":")))
+        execution=run_axolotl(config_path,int(os.getenv("TRAIN_TIMEOUT","86400")),job["jobId"])
+        if execution.returncode:raise RuntimeError(f"Axolotl training exited {execution.returncode}: {safe_diagnostic(execution.stdout) or 'no diagnostic output'}")
+        evaluations=[]
+        if value["mode"]=="standard":
+            if not value.get("evaluationUri"):raise ValueError("Standard library training requires an immutable held-out corpus")
+            evaluation=root/"evaluation.jsonl";evaluation.write_bytes(client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(value["evaluationUri"]))["Body"].read());evaluations.append(evaluate_pair(config,evaluation,root,job["jobId"]))
+        payload={"schemaVersion":"ai.library-training-result/v1","baseModel":BASE_MODEL,"baseModelRevision":BASE_REVISION,"adapterPath":str(target),"config":str(config_path),"configDigest":hashlib.sha256(config_path.read_bytes()).hexdigest(),"mode":value["mode"],"libraryId":value["libraryId"],"librarySlug":value["librarySlug"],"snapshotId":value["snapshotId"],"datasetManifest":value["datasetManifest"],"targetModules":[TARGETS],"rank":16,"alpha":32,"evaluations":evaluations}
+        result.write_text(json.dumps(payload,sort_keys=True,separators=(",",":")));return{"resultManifest":f"file://{result}","configurationDigest":payload["configDigest"],"evaluations":evaluations}
 def qualify(job):
     value=job["input"];identity=subprocess.check_output(["nvidia-smi","--query-gpu=uuid,driver_version","--format=csv,noheader"],text=True).strip();fingerprint=hashlib.sha256(f"{identity}|{os.getenv('TREEAI_IMAGE_ID','unknown')}|{BASE_REVISION}|r16|mb1|ga8|q{QUALIFICATION_STEPS}|{ALLOCATOR_POLICY}".encode()).hexdigest();root=Path(os.getenv("OUTPUT_DIR","/artifacts/training"))/f"qualification-{fingerprint}";root.mkdir(parents=True,exist_ok=True);dataset=root/"train.jsonl"
-    if not dataset.exists():dataset.write_bytes(client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(value["trainUri"]))["Body"].read())
-    failures=[]
-    for sequence in QUALIFICATION_SEQUENCES:
-        target=root/f"seq-{sequence}";shutil.rmtree(target,ignore_errors=True);config=fixed_steps(fixed_config({"sequenceLength":sequence},dataset,target),QUALIFICATION_STEPS,QUALIFICATION_STEPS);config_path=root/f"seq-{sequence}.json";config_path.write_text(json.dumps(config,sort_keys=True,separators=(",",":")))
-        try:
-            execution=run_axolotl(config_path,int(os.getenv("QUALIFY_TIMEOUT","3600")))
-            if execution.returncode==0:shutil.rmtree(target,ignore_errors=True);return{"resultManifest":f"profile://{sequence}","sequenceLength":sequence,"fingerprint":fingerprint,"diagnostics":{"failed":failures}}
-            failures.append({"sequenceLength":sequence,"exitCode":execution.returncode,"diagnostic":safe_diagnostic(execution.stdout) or "no diagnostic output"})
-        except subprocess.TimeoutExpired as error:failures.append({"sequenceLength":sequence,"error":"TimeoutExpired","diagnostic":safe_diagnostic(error.stdout)})
-        shutil.rmtree(target,ignore_errors=True)
-    raise ValueError(f"No library training sequence length of at least 1024 tokens qualified: {json.dumps(failures,separators=(',',':'))}")
+    with job_guard(root):
+        if not dataset.exists():dataset.write_bytes(client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(value["trainUri"]))["Body"].read())
+        failures=[]
+        for sequence in QUALIFICATION_SEQUENCES:
+            target=root/f"seq-{sequence}";shutil.rmtree(target,ignore_errors=True);config=fixed_steps(fixed_config({"sequenceLength":sequence},dataset,target),QUALIFICATION_STEPS,QUALIFICATION_STEPS);config_path=root/f"seq-{sequence}.json";config_path.write_text(json.dumps(config,sort_keys=True,separators=(",",":")))
+            try:
+                execution=run_axolotl(config_path,int(os.getenv("QUALIFY_TIMEOUT","3600")),job["jobId"])
+                if execution.returncode==0:shutil.rmtree(target,ignore_errors=True);return{"resultManifest":f"profile://{sequence}","sequenceLength":sequence,"fingerprint":fingerprint,"diagnostics":{"failed":failures}}
+                failures.append({"sequenceLength":sequence,"exitCode":execution.returncode,"diagnostic":safe_diagnostic(execution.stdout) or "no diagnostic output"})
+            except subprocess.TimeoutExpired as error:failures.append({"sequenceLength":sequence,"error":"TimeoutExpired","diagnostic":safe_diagnostic(error.stdout)})
+            shutil.rmtree(target,ignore_errors=True)
+        raise ValueError(f"No library training sequence length of at least 1024 tokens qualified: {json.dumps(failures,separators=(',',':'))}")
