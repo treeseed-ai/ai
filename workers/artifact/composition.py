@@ -2,7 +2,7 @@ import base64,hashlib,json,os,struct,tempfile
 from pathlib import Path
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from canonical_json import canonical
+from canonical_json import canonical,json_bytes,legacy_canonical
 
 def s3_key(uri,bucket):
     prefix=f"s3://{bucket}/"
@@ -13,7 +13,9 @@ def verified_manifest(client,bucket,uri,key_path):
     private=serialization.load_pem_private_key(Path(key_path).read_bytes(),password=None)
     if not isinstance(private,Ed25519PrivateKey) or not signature:raise ValueError("Adapter manifest has no valid signing identity")
     try:private.public_key().verify(base64.b64decode(signature),canonical(value))
-    except Exception as error:raise ValueError("Adapter manifest signature is invalid") from error
+    except Exception:
+        try:private.public_key().verify(base64.b64decode(signature),legacy_canonical(value))
+        except Exception as error:raise ValueError("Adapter manifest signature is invalid") from error
     return value
 def relative_object(manifest,item):
     marker=f"/adapters/{manifest['artifactId']}/";uri=str(item["uri"])
@@ -68,7 +70,7 @@ def merge_safetensors(values):
     header={"__metadata__":metadata};body=bytearray()
     for name in sorted(tensors):
         descriptor,data=tensors[name];start=len(body);body.extend(data);header[name]={**descriptor,"data_offsets":[start,len(body)]}
-    encoded=canonical(header);encoded+=b" "*((8-len(encoded)%8)%8)
+    encoded=json_bytes(header);encoded+=b" "*((8-len(encoded)%8)%8)
     return struct.pack("<Q",len(encoded))+encoded+bytes(body)
 def compose(job,client,bucket,key_path,upload,sign):
     value=job["input"];uris=value.get("manifestUris",[])
@@ -87,7 +89,7 @@ def compose(job,client,bucket,key_path,upload,sign):
     config=parents[next(index for index,item in enumerate(manifests) if item["adapter"].get("modality","language")=="language")][1]
     config={**config,"target_modules":"(?:"+")|(?:".join(targets)+")"}
     with tempfile.TemporaryDirectory(prefix="treeai-compose-") as temporary:
-        root=Path(temporary);(root/"adapter_model.safetensors").write_bytes(merge_safetensors(models));(root/"adapter_config.json").write_bytes(canonical(config));objects=[]
+        root=Path(temporary);(root/"adapter_model.safetensors").write_bytes(merge_safetensors(models));(root/"adapter_config.json").write_bytes(json_bytes(config));objects=[]
         for item in sorted(root.iterdir()):objects.append({"uri":upload(item,f"adapters/{job['jobId']}/{item.name}"),"size":item.stat().st_size,"sha256":hashlib.sha256(item.read_bytes()).hexdigest()})
         manifest={"schemaVersion":"ai.artifact/v3","artifactId":job["jobId"],"artifactType":"lora-adapter","createdAt":value.get("createdAt"),"baseModel":base,"trainingConfigDigest":hashlib.sha256("|".join(sorted(item["trainingConfigDigest"] for item in manifests)).encode()).hexdigest(),"datasets":sorted(set(uri for item in manifests for uri in item.get("datasets",[]))),"adapter":{"format":"peft","architecture":"multimodal-causal-lm","purpose":"continual-pretraining","modality":"composed","targetModules":targets,"rank":rank,"alpha":alpha},"library":library,"objects":objects,"evaluations":composition_evaluations(manifests,library),"lineage":{"composition":"exact-disjoint-union","parents":[item["artifactId"] for item in manifests]},"provenance":{"compositionJobId":job["jobId"]},"signingKeyId":os.getenv("SIGNING_KEY_ID","default")}
-        target=root/"artifact-manifest.json";target.write_bytes(canonical(sign(manifest)));return{"resultManifest":upload(target,f"manifests/{job['jobId']}.json")}
+        target=root/"artifact-manifest.json";target.write_bytes(json_bytes(sign(manifest)));return{"resultManifest":upload(target,f"manifests/{job['jobId']}.json")}
