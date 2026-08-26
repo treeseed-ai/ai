@@ -3,6 +3,7 @@ import{describe,expect,it}from'vitest';
 import{objectStoreAccessId}from'../../packages/manager/src/lifecycle/storage/identities.js';
 
 describe('manager-owned platform reconciliation',()=>{
+	it('derives artifact trust from the persisted signing identity on every convergence',()=>{const platform=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8');expect(platform).toContain('const derivedPublicKey=');expect(platform).toContain('command("openssl", ["pkey", "-in", privateKey, "-pubout"])');expect(platform).toContain('atomic(publicKey,derivedPublicKey,0o644)');expect(platform).not.toContain('"-pubout", "-out", publicKey');});
 	it('derives stable, separated bundled object-store access IDs',()=>{
 		const secret='credential-that-must-not-appear',training=objectStoreAccessId('training',secret);
 		expect(training).toBe(objectStoreAccessId('training',secret));expect(training).toMatch(/^trn-[a-f0-9]{12}$/u);expect(training).not.toContain(secret);expect(training.length).toBeLessThanOrEqual(20);
