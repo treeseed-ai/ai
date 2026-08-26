@@ -459,7 +459,7 @@ export async function reconcilePlatform() {
 let transitionInFlight: { target: "awake" | "sleep"; promise: Promise<unknown> } | undefined;
 async function runModeTransition(target: "awake" | "sleep", drain: { inferenceSeconds: number; trainingSeconds: number }) {
 	const configuration=validatePlatformConfiguration(JSON.parse(readFileSync(paths.configuration,"utf8"))),current=setting<string>("mode","awake"),enabled=enabledProducts();
-	if (current === target) return { mode: target, changed: false };const previous=current==="awake"||current==="sleep"?current:target==="sleep"?"awake":"sleep";writeMode(target === "awake" ? "transitioning_awake" : "transitioning_sleep");
+	if (current === target) {const reconciled=await reconcilePlatform();return { mode: target, changed: false, reconciled:true,services:reconciled.services };}const previous=current==="awake"||current==="sleep"?current:target==="sleep"?"awake":"sleep";writeMode(target === "awake" ? "transitioning_awake" : "transitioning_sleep");
 	let lifecycleChanged = false;try {
 		if (target === "sleep") {
 			if (enabled.has("inference") && !(await waitIdle("/run/treeseed-ai/inference/status.json", drain.inferenceSeconds))) {
