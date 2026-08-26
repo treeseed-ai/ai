@@ -57,6 +57,18 @@ with tempfile.TemporaryDirectory() as root:
 		expect(target.test('model.language_model.layers.0.self_attn.q_proj')).toBe(false);
 	});
 
+	it('resolves only verified worker-local image paths without mutating source JSONL',()=>{
+		const modulePath=JSON.stringify(join(process.cwd(),'workers/axolotl/multimodal_train.py'));
+		const result=python(`import importlib.util,json,pathlib,sys,tempfile,types
+sys.modules['boto3']=types.SimpleNamespace(client=lambda *a,**k:None)
+stub=types.ModuleType('library_train');stub.BASE_MODEL='model';stub.BASE_REVISION='revision';stub.fixed_steps=lambda c,*a:c;stub.run_axolotl=lambda *a:None;stub.safe_diagnostic=str;sys.modules['library_train']=stub
+spec=importlib.util.spec_from_file_location('multimodal',${modulePath});module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+with tempfile.TemporaryDirectory() as root:
+ source=(json.dumps({'messages':[{'role':'user','content':[{'type':'image','path':'images/figure.png'},{'type':'text','text':'Explain'}]},{'role':'assistant','content':[{'type':'text','text':'Grounded'}]}]})+'\\n').encode();original=bytes(source);image=pathlib.Path(root)/'images/figure.png';image.parent.mkdir();image.write_bytes(b'png')
+ resolved=module.resolve_local_images(source,{'images/figure.png':image.resolve()});record=json.loads(resolved);print(json.dumps({'path':record['messages'][0]['content'][0]['path'],'sourceUnchanged':source==original,'absolute':pathlib.Path(record['messages'][0]['content'][0]['path']).is_absolute()}))`);
+		expect(result).toMatchObject({sourceUnchanged:true,absolute:true});expect(result.path).toContain('/images/figure.png');
+	});
+
 	it('adds multimodal state without changing existing library rows',()=>{
 		const migration=execFileSync('bash',['-lc','cat migrations/training/005_multimodal_libraries.sql'],{cwd:process.cwd(),encoding:'utf8'});
 		expect(migration).toContain('ADD COLUMN IF NOT EXISTS multimodal_train_uri');
