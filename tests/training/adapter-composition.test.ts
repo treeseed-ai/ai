@@ -42,6 +42,23 @@ model,config=module.canonical_peft_objects(manifest,Client(),'bucket');print(jso
 		expect(result).toEqual({model:'canonical',config:{r:16}});
 	});
 
+	it('preserves exactly one valid language likelihood evaluation for promotion',()=>{
+		const modulePath=JSON.stringify(join(process.cwd(),'workers/artifact/composition.py'));
+		const result=python(`import importlib.util,json,sys,types
+sys.modules['cryptography']=types.ModuleType('cryptography');sys.modules['cryptography.hazmat']=types.ModuleType('hazmat');sys.modules['cryptography.hazmat.primitives']=types.SimpleNamespace(serialization=None);sys.modules['cryptography.hazmat.primitives.asymmetric']=types.ModuleType('asymmetric');sys.modules['cryptography.hazmat.primitives.asymmetric.ed25519']=types.SimpleNamespace(Ed25519PrivateKey=object)
+spec=importlib.util.spec_from_file_location('composition',${modulePath});module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+evidence={'schemaVersion':'ai.library-likelihood-evaluation/v1','metric':'completion-negative-log-likelihood','baseValue':2.0,'candidateValue':1.8}
+manifests=[{'adapter':{'modality':'vision'},'evaluations':[]},{'adapter':{'modality':'language'},'evaluations':[evidence]}]
+print(json.dumps(module.composition_evaluations(manifests,{'promotionEligible':True})))`);
+		expect(result).toEqual([{schemaVersion:'ai.library-likelihood-evaluation/v1',metric:'completion-negative-log-likelihood',baseValue:2,candidateValue:1.8}]);
+	});
+
+	it('rejects promotable composition without unique language evidence',()=>{
+		const source=readFileSync('workers/artifact/composition.py','utf8');
+		expect(source).toContain('Composed standard adapter requires exactly one language likelihood evaluation');
+		expect(source).toContain('Vision adapter must not declare language likelihood evidence');
+	});
+
 	it('keeps multimodal vLLM disabled until a qualified profile enables it',()=>{
 		const entrypoint=readFileSync('containers/inference/vllm-entrypoint.sh','utf8'),compose=readFileSync('deploy/inference/compose.yml','utf8');
 		expect(entrypoint).toContain('TREEAI_MULTIMODAL_LORA_ENABLED:-false');
