@@ -33,8 +33,8 @@ describe('library document workers',()=>{
 	it('builds fixed base and adapter held-out evaluation profiles',()=>{
 		const modulePath=JSON.stringify(join(process.cwd(),'workers/axolotl/library_train.py'));
 		const result=python(`import importlib.util,json,pathlib,sys,tempfile,types\nsys.modules['boto3']=types.SimpleNamespace(client=lambda *a,**k:None)\ns=importlib.util.spec_from_file_location('library_train',${modulePath});m=importlib.util.module_from_spec(s);s.loader.exec_module(m)\nwith tempfile.TemporaryDirectory() as d:\n root=pathlib.Path(d);training=m.fixed_config({'sequenceLength':3072},root/'train.jsonl',root/'adapter');base=m.evaluation_config(training,root/'heldout.jsonl',root/'probe.jsonl',root/'base');candidate=m.evaluation_config(training,root/'heldout.jsonl',root/'probe.jsonl',root/'candidate',root/'adapter');print(json.dumps({'base':base,'candidate':candidate}))`);
-		expect(result.base).toMatchObject({base_model:'Qwen/Qwen3.5-4B',sequence_len:3072,load_in_4bit:true,eval_batch_size:1,shuffle_merged_datasets:false});
-		expect(result.base).not.toHaveProperty('adapter');expect(result.base.test_datasets[0]).toMatchObject({type:'completion'});
+		expect(result.base).toMatchObject({base_model:'Qwen/Qwen3.5-4B',sequence_len:3072,adapter:'qlora',load_in_4bit:true,lora_r:16,eval_batch_size:1,shuffle_merged_datasets:false});
+		expect(result.base).not.toHaveProperty('lora_model_dir');expect(result.base.test_datasets[0]).toMatchObject({type:'completion'});
 		expect(result.candidate).toMatchObject({adapter:'qlora',lora_model_dir:expect.stringContaining('/adapter')});
 	});
 	it('falls through an unsafe sustained sequence probe and fingerprints the allocator policy',()=>{
