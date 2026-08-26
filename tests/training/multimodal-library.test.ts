@@ -48,6 +48,13 @@ with tempfile.TemporaryDirectory() as root:
 		expect(result).toMatchObject({base_model:'Qwen/Qwen3.5-4B',processor_type:'AutoProcessor',chat_template:'qwen3_5',skip_prepare_dataset:true,remove_unused_columns:false,sample_packing:false,image_size:512,adapter:'qlora',load_in_4bit:true,lora_r:16,lora_alpha:32});
 		expect(result.datasets).toEqual([expect.objectContaining({type:'chat_template'})]);
 		expect(result.lora_target_modules).toContain('model\\.visual');
+		const target=new RegExp(`^(?:${result.lora_target_modules})$`,'u');
+		expect(target.test('model.visual.blocks.0.attn.qkv')).toBe(true);
+		expect(target.test('model.visual.blocks.7.attn.proj')).toBe(true);
+		expect(target.test('model.visual.blocks.3.mlp.linear_fc1')).toBe(true);
+		expect(target.test('model.visual.merger.linear_fc2')).toBe(true);
+		expect(target.test('model.visual.blocks.0')).toBe(false);
+		expect(target.test('model.language_model.layers.0.self_attn.q_proj')).toBe(false);
 	});
 
 	it('adds multimodal state without changing existing library rows',()=>{
