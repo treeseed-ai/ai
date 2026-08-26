@@ -9,6 +9,10 @@ from common.server import serve
 
 STATE = Path(os.getenv("STATE_DIR", "/state")); STATE.mkdir(parents=True, exist_ok=True)
 PRIVATE_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+class PrivateHttpError(RuntimeError):
+    def __init__(self,status,detail):
+        self.status=status
+        super().__init__(f"private vLLM HTTP {status}: {detail or 'empty response'}")
 def digest(value): return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 def write(job, kind, value):
     target = STATE / f"{job['jobId']}-{kind}.json"; target.write_text(json.dumps(value, sort_keys=True)); return {"resultManifest": f"file://{target}"}
@@ -83,7 +87,7 @@ def post(path, body):
     try:return PRIVATE_OPENER.open(request, timeout=240).read()
     except urllib.error.HTTPError as error:
         detail=error.read(1024).decode("utf-8",errors="replace").replace("\n"," ").strip()
-        raise RuntimeError(f"private vLLM HTTP {error.code}: {detail or 'empty response'}") from error
+        raise PrivateHttpError(error.code,detail) from error
     except urllib.error.URLError as error:raise RuntimeError(f"private vLLM request failed: {type(error.reason).__name__}") from error
 def deployment(job, action):
     candidate=str(job["input"]["candidateId"]); value=job["input"]["manifest"]
@@ -95,8 +99,8 @@ def deployment(job, action):
         if marker not in original["uri"] or name.is_absolute() or ".." in name.parts: raise ValueError("Adapter object has no safe relative path")
         destination=target/name;destination.parent.mkdir(parents=True,exist_ok=True);client.download_file(os.environ["S3_BUCKET"],key(stored["uri"]),str(destination))
     try: post("/v1/unload_lora_adapter",{"lora_name":candidate})
-    except urllib.error.HTTPError as error:
-        if error.code not in {400,404}: raise
+    except PrivateHttpError as error:
+        if error.status not in {400,404}: raise
     post("/v1/load_lora_adapter",{"lora_name":candidate,"lora_path":str(target)})
     with ThreadPoolExecutor(max_workers=2) as pool:list(pool.map(lambda _:post("/v1/chat/completions",{"model":candidate,"messages":[{"role":"user","content":"Reply with ready."}],"max_tokens":8}),range(2)))
     return write(job,"deployment",{"action":action,"candidateId":candidate,"warm":True})
