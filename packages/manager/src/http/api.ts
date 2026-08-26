@@ -120,15 +120,12 @@ function queue(
 }
 function completedTransition(mode:string,idempotencyKey:string){const work=createWork('transition',idempotencyKey,{mode});return work.state==='queued'?finishWork(work.id,'succeeded',{mode,changed:false,reason:'already_in_mode'}):work;}
 export async function recoverInterruptedTransitions(supervisor: typeof callSupervisor = callSupervisor) {
-	for (const work of unfinishedWork("transition")) {
-		const mode=(work.request as {mode?:unknown})?.mode;
-		if (mode!=="awake"&&mode!=="sleep") { finishWork(work.id,"failed",undefined,"Persisted transition has an invalid target."); continue; }
-		finishWork(work.id,"running");
-		try {
-			const result=await supervisor({operation:"mode.set",parameters:{mode},idempotencyKey:work.idempotencyKey});
-			finishWork(work.id,(result as {state?:string})?.state==="postponed"?"postponed":"succeeded",result);
-		} catch (error) { finishWork(work.id,"failed",undefined,error instanceof Error?error.message:String(error)); }
-	}
+	const pending=unfinishedWork("transition"),work=pending.pop();for(const superseded of pending)finishWork(superseded.id,"failed",undefined,"Transition was superseded by newer desired state during restart recovery.");if(!work)return;
+	const mode=(work.request as {mode?:unknown})?.mode;
+	if (mode!=="awake"&&mode!=="sleep") { finishWork(work.id,"failed",undefined,"Persisted transition has an invalid target."); return; }
+	finishWork(work.id,"running");
+	try {const result=await supervisor({operation:"mode.set",parameters:{mode},idempotencyKey:work.idempotencyKey});finishWork(work.id,(result as {state?:string})?.state==="postponed"?"postponed":"succeeded",result);}
+	catch (error) { finishWork(work.id,"failed",undefined,error instanceof Error?error.message:String(error)); }
 }
 export function createManagerApp() {
 	const app = new Hono();
