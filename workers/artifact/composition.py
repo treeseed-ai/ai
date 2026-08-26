@@ -38,6 +38,17 @@ def canonical_peft_objects(manifest,client,bucket):
             config=json.loads(data)
     if model is None or config is None:raise ValueError(f"Adapter {manifest['artifactId']} has no canonical PEFT weights and configuration")
     return model,config
+def composition_evaluations(manifests,library):
+    language=next(item for item in manifests if item["adapter"].get("modality","language")=="language")
+    vision=next(item for item in manifests if item["adapter"].get("modality")=="vision")
+    matches=lambda item:[evidence for evidence in item.get("evaluations",[]) if evidence.get("schemaVersion")=="ai.library-likelihood-evaluation/v1"]
+    evidence=matches(language)
+    if matches(vision):raise ValueError("Vision adapter must not declare language likelihood evidence")
+    if len(evidence)>1 or (library.get("promotionEligible") and len(evidence)!=1):raise ValueError("Composed standard adapter requires exactly one language likelihood evaluation")
+    if evidence:
+        value=evidence[0]
+        if value.get("metric")!="completion-negative-log-likelihood" or not all(isinstance(value.get(key),(int,float)) for key in ("baseValue","candidateValue")):raise ValueError("Language likelihood evidence is malformed")
+    return evidence
 def read_safetensors(data):
     if len(data)<8:raise ValueError("Invalid safetensors object")
     length=struct.unpack("<Q",data[:8])[0];header=json.loads(data[8:8+length]);body=data[8+length:]
@@ -78,5 +89,5 @@ def compose(job,client,bucket,key_path,upload,sign):
     with tempfile.TemporaryDirectory(prefix="treeai-compose-") as temporary:
         root=Path(temporary);(root/"adapter_model.safetensors").write_bytes(merge_safetensors(models));(root/"adapter_config.json").write_bytes(canonical(config));objects=[]
         for item in sorted(root.iterdir()):objects.append({"uri":upload(item,f"adapters/{job['jobId']}/{item.name}"),"size":item.stat().st_size,"sha256":hashlib.sha256(item.read_bytes()).hexdigest()})
-        manifest={"schemaVersion":"ai.artifact/v3","artifactId":job["jobId"],"artifactType":"lora-adapter","createdAt":value.get("createdAt"),"baseModel":base,"trainingConfigDigest":hashlib.sha256("|".join(sorted(item["trainingConfigDigest"] for item in manifests)).encode()).hexdigest(),"datasets":sorted(set(uri for item in manifests for uri in item.get("datasets",[]))),"adapter":{"format":"peft","architecture":"multimodal-causal-lm","purpose":"continual-pretraining","modality":"composed","targetModules":targets,"rank":rank,"alpha":alpha},"library":library,"objects":objects,"evaluations":[],"lineage":{"composition":"exact-disjoint-union","parents":[item["artifactId"] for item in manifests]},"provenance":{"compositionJobId":job["jobId"]},"signingKeyId":os.getenv("SIGNING_KEY_ID","default")}
+        manifest={"schemaVersion":"ai.artifact/v3","artifactId":job["jobId"],"artifactType":"lora-adapter","createdAt":value.get("createdAt"),"baseModel":base,"trainingConfigDigest":hashlib.sha256("|".join(sorted(item["trainingConfigDigest"] for item in manifests)).encode()).hexdigest(),"datasets":sorted(set(uri for item in manifests for uri in item.get("datasets",[]))),"adapter":{"format":"peft","architecture":"multimodal-causal-lm","purpose":"continual-pretraining","modality":"composed","targetModules":targets,"rank":rank,"alpha":alpha},"library":library,"objects":objects,"evaluations":composition_evaluations(manifests,library),"lineage":{"composition":"exact-disjoint-union","parents":[item["artifactId"] for item in manifests]},"provenance":{"compositionJobId":job["jobId"]},"signingKeyId":os.getenv("SIGNING_KEY_ID","default")}
         target=root/"artifact-manifest.json";target.write_bytes(canonical(sign(manifest)));return{"resultManifest":upload(target,f"manifests/{job['jobId']}.json")}
