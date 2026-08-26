@@ -1,10 +1,12 @@
 import {execFileSync} from 'node:child_process';
+import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {describe,expect,it} from 'vitest';
 
 function python(source:string){return JSON.parse(execFileSync('python3',['-c',source],{cwd:process.cwd(),encoding:'utf8'}));}
 
 describe('multimodal library processing',()=>{
+	it('finalizes the owning run only when a phase job is terminal',()=>{const manager=readFileSync('packages/training-manager/src/main.ts','utf8');expect(manager).toContain("signal.aborted||job.cancellationRequested||job.attempts>=job.maxAttempts");expect(manager.match(/finalizeRunFailure\(jobs\.pool/g)).toHaveLength(3);expect(manager).toContain("state NOT IN ('succeeded','rejected')");});
 	it('retains only checksum-bound source-authored image evidence',()=>{
 		const worker=JSON.stringify(join(process.cwd(),'workers/marker/worker.py'));
 		const result=python(`import importlib.util,json,os,pathlib,sys,tempfile,types
