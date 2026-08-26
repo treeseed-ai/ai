@@ -1,7 +1,7 @@
 import hashlib,json,os,re,shutil,subprocess
 from pathlib import Path
 import boto3
-from library_train import BASE_MODEL,BASE_REVISION,fixed_steps,run_axolotl,safe_diagnostic
+from library_train import BASE_MODEL,BASE_REVISION,fixed_steps,job_guard,run_axolotl,safe_diagnostic
 
 VISION_TARGET=r"model\.visual\.(blocks\.\d+\.(attn\.(qkv|proj)|mlp\.(linear_fc1|linear_fc2))|merger\.(linear_fc1|linear_fc2))"
 SEQUENCES=(4096,3072,2048,1024)
@@ -55,23 +55,26 @@ def train(job):
     value=job["input"]
     if value.get("baseModel")!=BASE_MODEL or value.get("baseModelRevision")!=BASE_REVISION:raise ValueError("Multimodal training requires the immutable qualified base revision")
     root=Path(os.getenv("OUTPUT_DIR","/artifacts/training"))/job["jobId"];root.mkdir(parents=True,exist_ok=True);result=root/"multimodal-result.json"
-    if result.exists():return{"resultManifest":f"file://{result}","configurationDigest":json.loads(result.read_text())["configDigest"]}
-    dataset,manifest=download_dataset(value,root);target=root/"vision-adapter";config=fixed_config(value,dataset,target)
-    if value.get("mode")=="smoke":fixed_steps(config,16,8)
-    config_path=root/"multimodal-axolotl.json";config_path.write_text(json.dumps(config,sort_keys=True,separators=(",",":")))
-    execution=run_axolotl(config_path,int(os.getenv("TRAIN_TIMEOUT","86400")))
-    if execution.returncode:raise RuntimeError(f"Axolotl multimodal training exited {execution.returncode}: {safe_diagnostic(execution.stdout,12000) or 'no diagnostic output'}")
-    payload={"schemaVersion":"ai.library-training-result/v2","modality":"vision","baseModel":BASE_MODEL,"baseModelRevision":BASE_REVISION,"adapterPath":str(target),"config":str(config_path),"configDigest":hashlib.sha256(config_path.read_bytes()).hexdigest(),"mode":value["mode"],"libraryId":value["libraryId"],"librarySlug":value["librarySlug"],"snapshotId":value["snapshotId"],"datasetManifest":value["datasetManifest"],"datasetDigest":hashlib.sha256(json.dumps(manifest,sort_keys=True).encode()).hexdigest(),"targetModules":[VISION_TARGET],"rank":16,"alpha":32}
-    result.write_text(json.dumps(payload,sort_keys=True,separators=(",",":")));return{"resultManifest":f"file://{result}","configurationDigest":payload["configDigest"]}
+    with job_guard(root):
+        if result.exists():return{"resultManifest":f"file://{result}","configurationDigest":json.loads(result.read_text())["configDigest"]}
+        dataset,manifest=download_dataset(value,root);target=root/"vision-adapter";config=fixed_config(value,dataset,target)
+        if value.get("mode")=="smoke":fixed_steps(config,16,8)
+        config_path=root/"multimodal-axolotl.json";config_path.write_text(json.dumps(config,sort_keys=True,separators=(",",":")))
+        execution=run_axolotl(config_path,int(os.getenv("TRAIN_TIMEOUT","86400")),job["jobId"])
+        if execution.returncode:raise RuntimeError(f"Axolotl multimodal training exited {execution.returncode}: {safe_diagnostic(execution.stdout,12000) or 'no diagnostic output'}")
+        payload={"schemaVersion":"ai.library-training-result/v2","modality":"vision","baseModel":BASE_MODEL,"baseModelRevision":BASE_REVISION,"adapterPath":str(target),"config":str(config_path),"configDigest":hashlib.sha256(config_path.read_bytes()).hexdigest(),"mode":value["mode"],"libraryId":value["libraryId"],"librarySlug":value["librarySlug"],"snapshotId":value["snapshotId"],"datasetManifest":value["datasetManifest"],"datasetDigest":hashlib.sha256(json.dumps(manifest,sort_keys=True).encode()).hexdigest(),"targetModules":[VISION_TARGET],"rank":16,"alpha":32}
+        result.write_text(json.dumps(payload,sort_keys=True,separators=(",",":")));return{"resultManifest":f"file://{result}","configurationDigest":payload["configDigest"]}
 def qualify(job):
-    value=job["input"];identity=subprocess.check_output(["nvidia-smi","--query-gpu=uuid,driver_version","--format=csv,noheader"],text=True).strip();fingerprint=hashlib.sha256(f"{identity}|{os.getenv('TREEAI_IMAGE_ID','unknown')}|{BASE_REVISION}|vision-r16-leaf-v1|mb1|ga8".encode()).hexdigest();root=Path(os.getenv("OUTPUT_DIR","/artifacts/training"))/f"multimodal-qualification-{fingerprint}";root.mkdir(parents=True,exist_ok=True);dataset,_=download_dataset(value,root);failures=[]
-    for sequence in SEQUENCES:
-        for pixels in PIXEL_TIERS:
-            target=root/f"seq-{sequence}-px-{pixels}";config=fixed_steps(fixed_config({"sequenceLength":sequence,"maxPixels":pixels},dataset,target),1,1);config_path=root/f"seq-{sequence}-px-{pixels}.json";config_path.write_text(json.dumps(config,sort_keys=True,separators=(",",":")))
-            try:
-                execution=run_axolotl(config_path,int(os.getenv("QUALIFY_TIMEOUT","3600")))
-                if execution.returncode==0:shutil.rmtree(target,ignore_errors=True);return{"resultManifest":f"multimodal-profile://{sequence}/{pixels}","sequenceLength":sequence,"maxPixels":pixels,"fingerprint":fingerprint,"diagnostics":{"failed":failures}}
-                failures.append({"sequenceLength":sequence,"maxPixels":pixels,"exitCode":execution.returncode,"diagnostic":safe_diagnostic(execution.stdout)})
-            except subprocess.TimeoutExpired as error:failures.append({"sequenceLength":sequence,"maxPixels":pixels,"error":"TimeoutExpired","diagnostic":safe_diagnostic(error.stdout)})
-            shutil.rmtree(target,ignore_errors=True)
-    raise ValueError(f"No conservative multimodal profile qualified: {json.dumps(failures,separators=(',',':'))}")
+    value=job["input"];identity=subprocess.check_output(["nvidia-smi","--query-gpu=uuid,driver_version","--format=csv,noheader"],text=True).strip();fingerprint=hashlib.sha256(f"{identity}|{os.getenv('TREEAI_IMAGE_ID','unknown')}|{BASE_REVISION}|vision-r16-leaf-v1|mb1|ga8".encode()).hexdigest();root=Path(os.getenv("OUTPUT_DIR","/artifacts/training"))/f"multimodal-qualification-{fingerprint}";root.mkdir(parents=True,exist_ok=True);failures=[]
+    with job_guard(root):
+        dataset,_=download_dataset(value,root)
+        for sequence in SEQUENCES:
+            for pixels in PIXEL_TIERS:
+                target=root/f"seq-{sequence}-px-{pixels}";config=fixed_steps(fixed_config({"sequenceLength":sequence,"maxPixels":pixels},dataset,target),1,1);config_path=root/f"seq-{sequence}-px-{pixels}.json";config_path.write_text(json.dumps(config,sort_keys=True,separators=(",",":")))
+                try:
+                    execution=run_axolotl(config_path,int(os.getenv("QUALIFY_TIMEOUT","3600")),job["jobId"])
+                    if execution.returncode==0:shutil.rmtree(target,ignore_errors=True);return{"resultManifest":f"multimodal-profile://{sequence}/{pixels}","sequenceLength":sequence,"maxPixels":pixels,"fingerprint":fingerprint,"diagnostics":{"failed":failures}}
+                    failures.append({"sequenceLength":sequence,"maxPixels":pixels,"exitCode":execution.returncode,"diagnostic":safe_diagnostic(execution.stdout)})
+                except subprocess.TimeoutExpired as error:failures.append({"sequenceLength":sequence,"maxPixels":pixels,"error":"TimeoutExpired","diagnostic":safe_diagnostic(error.stdout)})
+                shutil.rmtree(target,ignore_errors=True)
+        raise ValueError(f"No conservative multimodal profile qualified: {json.dumps(failures,separators=(',',':'))}")

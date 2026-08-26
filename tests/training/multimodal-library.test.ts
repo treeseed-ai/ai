@@ -39,9 +39,9 @@ with tempfile.TemporaryDirectory() as root:
 
 	it('renders a bounded Qwen 3.5 vision QLoRA config without sample packing',()=>{
 		const modulePath=JSON.stringify(join(process.cwd(),'workers/axolotl/multimodal_train.py'));
-		const result=python(`import importlib.util,json,pathlib,sys,tempfile,types
+		const result=python(`import contextlib,importlib.util,json,pathlib,sys,tempfile,types
 sys.modules['boto3']=types.SimpleNamespace(client=lambda *a,**k:None)
-stub=types.ModuleType('library_train');stub.BASE_MODEL='Qwen/Qwen3.5-4B';stub.BASE_REVISION='851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a';stub.fixed_steps=lambda c,*a:c;stub.run_axolotl=lambda *a:None;stub.safe_diagnostic=str;sys.modules['library_train']=stub
+stub=types.ModuleType('library_train');stub.BASE_MODEL='Qwen/Qwen3.5-4B';stub.BASE_REVISION='851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a';stub.fixed_steps=lambda c,*a:c;stub.job_guard=lambda *a:contextlib.nullcontext();stub.run_axolotl=lambda *a:None;stub.safe_diagnostic=str;sys.modules['library_train']=stub
 spec=importlib.util.spec_from_file_location('multimodal',${modulePath});module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 with tempfile.TemporaryDirectory() as root:
  config=module.fixed_config({'sequenceLength':2048,'maxPixels':262144},pathlib.Path(root)/'train.jsonl',pathlib.Path(root)/'adapter');print(json.dumps(config))`);
@@ -59,9 +59,9 @@ with tempfile.TemporaryDirectory() as root:
 
 	it('resolves only verified worker-local image paths without mutating source JSONL',()=>{
 		const modulePath=JSON.stringify(join(process.cwd(),'workers/axolotl/multimodal_train.py'));
-		const result=python(`import importlib.util,json,pathlib,sys,tempfile,types
+		const result=python(`import contextlib,importlib.util,json,pathlib,sys,tempfile,types
 sys.modules['boto3']=types.SimpleNamespace(client=lambda *a,**k:None)
-stub=types.ModuleType('library_train');stub.BASE_MODEL='model';stub.BASE_REVISION='revision';stub.fixed_steps=lambda c,*a:c;stub.run_axolotl=lambda *a:None;stub.safe_diagnostic=str;sys.modules['library_train']=stub
+stub=types.ModuleType('library_train');stub.BASE_MODEL='model';stub.BASE_REVISION='revision';stub.fixed_steps=lambda c,*a:c;stub.job_guard=lambda *a:contextlib.nullcontext();stub.run_axolotl=lambda *a:None;stub.safe_diagnostic=str;sys.modules['library_train']=stub
 spec=importlib.util.spec_from_file_location('multimodal',${modulePath});module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 with tempfile.TemporaryDirectory() as root:
  source=(json.dumps({'messages':[{'role':'user','content':[{'type':'image','path':'images/figure.png'},{'type':'text','text':'Explain'}]},{'role':'assistant','content':[{'type':'text','text':'Grounded'}]}]})+'\\n').encode();original=bytes(source);image=pathlib.Path(root)/'images/figure.png';image.parent.mkdir();image.write_bytes(b'png')
