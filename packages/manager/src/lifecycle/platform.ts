@@ -148,9 +148,9 @@ function ensureSigningMaterial() {
 	mkdirSync(root, { recursive: true, mode: 0o750 });chmodSync(root, 0o750);command("chown", ["root:treeseed-ai-manager", root]);
 	const privateKey = `${root}/artifact-signing-key.pem`,
 		publicKey = `${root}/artifact-signing-public.pem`;
-	if (!existsSync(privateKey)) {
-		command("openssl", ["genpkey", "-algorithm", "Ed25519", "-out", privateKey]);command("openssl", ["pkey", "-in", privateKey, "-pubout", "-out", publicKey]);chmodSync(privateKey, 0o600);
-	}
+	if (!existsSync(privateKey)){command("openssl", ["genpkey", "-algorithm", "Ed25519", "-out", privateKey]);chmodSync(privateKey, 0o600);}
+	const derivedPublicKey=`${command("openssl", ["pkey", "-in", privateKey, "-pubout"]).trim()}\n`;
+	atomic(publicKey,derivedPublicKey,0o644);
 	chmodSync(publicKey, 0o644);command("chown", ["root:treeseed-ai-manager", publicKey]);
 	if(enabledProducts().has("training")){chmodSync(privateKey,0o640);command("chown",["root:treeseed-ai-training",privateKey]);}
 	return { root, privateKey, publicKey };
