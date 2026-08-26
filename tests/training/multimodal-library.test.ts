@@ -45,7 +45,7 @@ stub=types.ModuleType('library_train');stub.BASE_MODEL='Qwen/Qwen3.5-4B';stub.BA
 spec=importlib.util.spec_from_file_location('multimodal',${modulePath});module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 with tempfile.TemporaryDirectory() as root:
  config=module.fixed_config({'sequenceLength':2048,'maxPixels':262144},pathlib.Path(root)/'train.jsonl',pathlib.Path(root)/'adapter');print(json.dumps(config))`);
-		expect(result).toMatchObject({base_model:'Qwen/Qwen3.5-4B',processor_type:'AutoProcessor',chat_template:'qwen3_5',skip_prepare_dataset:true,remove_unused_columns:false,sample_packing:false,image_size:512,adapter:'qlora',load_in_4bit:true,lora_r:16,lora_alpha:32});
+		expect(result).toMatchObject({base_model:'Qwen/Qwen3.5-4B',processor_type:'AutoProcessor',chat_template:'qwen3_5',skip_prepare_dataset:true,remove_unused_columns:false,sample_packing:false,dataset_num_proc:1,dataloader_num_workers:0,dataloader_pin_memory:true,image_size:512,adapter:'qlora',load_in_4bit:true,lora_r:16,lora_alpha:32});
 		expect(result.datasets).toEqual([expect.objectContaining({type:'chat_template'})]);
 		expect(result.lora_target_modules).toContain('model\\.visual');
 		const target=new RegExp(`^(?:${result.lora_target_modules})$`,'u');
