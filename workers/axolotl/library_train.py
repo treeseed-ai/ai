@@ -1,4 +1,5 @@
-import csv,fcntl,hashlib,json,os,re,shutil,signal,subprocess,threading
+import csv,fcntl,hashlib,json,os,re,shutil,signal,subprocess,threading,time
+from collections import deque
 from contextlib import contextmanager
 from pathlib import Path
 import boto3
@@ -11,7 +12,7 @@ PRIVATE_PATH=re.compile(r"(?:(?:/home|/root)/[^\s'\"]+|/run/secrets/[^\s'\"]+)")
 QUALIFICATION_SEQUENCES=(4096,3072,2048,1024)
 QUALIFICATION_STEPS=8
 ALLOCATOR_POLICY="expandable_segments:True"
-_PROCESSES={};_PROCESS_LOCK=threading.Lock()
+_PROCESSES={};_STATUS={};_STATUS_ORDER=deque();_PROCESS_LOCK=threading.Lock()
 
 class JobAlreadyRunning(RuntimeError):status_code=409
 
@@ -40,20 +41,49 @@ def cancel_axolotl(job_id):
     with _PROCESS_LOCK:process=_PROCESSES.get(job_id)
     if process is None:return False
     terminate(process);return True
+def progress_from_output(value):
+    matches=list(re.finditer(r"(\d{1,3})%\|[^\r\n]*?\|\s*(\d+)\s*/\s*(\d+)",value))
+    if not matches:return None
+    match=matches[-1];current,total=int(match.group(2)),int(match.group(3))
+    if total<1 or current<0 or current>total:return None
+    return{"progress":current/total,"currentStep":current,"totalSteps":total,"percent":int(match.group(1))}
+def execution_status(job_id):
+    with _PROCESS_LOCK:return dict(_STATUS.get(job_id,{"state":"unknown","progress":0}))
 def run_process(command,timeout,environment,job_id=None):
-    process=subprocess.Popen(command,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,env=environment,start_new_session=True)
+    process=subprocess.Popen(command,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,env=environment,start_new_session=True,bufsize=0)
     if job_id:
         with _PROCESS_LOCK:
             if job_id in _PROCESSES:terminate(process);raise JobAlreadyRunning("Axolotl job is already running")
             _PROCESSES[job_id]=process
+            if job_id not in _STATUS_ORDER:
+                while len(_STATUS_ORDER)>=128:_STATUS.pop(_STATUS_ORDER.popleft(),None)
+                _STATUS_ORDER.append(job_id)
+            _STATUS[job_id]={"state":"running","progress":_STATUS.get(job_id,{}).get("progress",0),"updatedAt":time.time()}
+    output=deque(maxlen=256);tail=b""
+    def read_output():
+        nonlocal tail
+        if process.stdout is None:return
+        while True:
+            chunk=os.read(process.stdout.fileno(),4096)
+            if not chunk:break
+            output.append(chunk);tail=(tail+chunk)[-8192:]
+            if job_id:
+                observed=progress_from_output(tail.decode("utf-8",errors="replace"))
+                if observed:
+                    with _PROCESS_LOCK:
+                        current=_STATUS.get(job_id)
+                        if current and observed["progress"]>=current.get("progress",0):current.update(observed,updatedAt=time.time())
+    reader=threading.Thread(target=read_output,daemon=True);reader.start()
     try:
-        output,_=process.communicate(timeout=timeout);return subprocess.CompletedProcess(command,process.returncode,output)
+        process.wait(timeout=timeout);reader.join(timeout=5);value=b"".join(output).decode("utf-8",errors="replace")
+        return subprocess.CompletedProcess(command,process.returncode,value)
     except subprocess.TimeoutExpired:
         terminate(process);raise
     finally:
         if job_id:
             with _PROCESS_LOCK:
-                if _PROCESSES.get(job_id) is process:_PROCESSES.pop(job_id,None)
+                if _PROCESSES.get(job_id) is process:
+                    _PROCESSES.pop(job_id,None);_STATUS[job_id]={**_STATUS.get(job_id,{}),"state":"succeeded" if process.returncode==0 else "failed","updatedAt":time.time()}
 def run_axolotl(config_path,timeout,job_id=None):
     environment=os.environ.copy();environment.setdefault("PYTORCH_CUDA_ALLOC_CONF",ALLOCATOR_POLICY)
     return run_process(["accelerate","launch","-m","axolotl.cli.train",str(config_path)],timeout,environment,job_id)
