@@ -200,7 +200,7 @@ function build(product: string) {
 		copyFileSync(resolve(root, "scripts/manager/update-helper.sh"), resolve(base, "usr/lib/treeseed-ai/manager/update-helper"));
 		chmodSync(resolve(base, "usr/lib/treeseed-ai/manager/update-helper"), 0o755);
 		for (const name of ["api.service", "supervisor.service", "reconcile.service", "update.service", "stable.timer", "development.timer", "update-helper.service", "update-helper.timer"]) copyFileSync(resolve(root, `systemd/treeseed-ai-manager-${name}`), resolve(base, `usr/lib/systemd/system/treeseed-ai-manager-${name}`));
-		descriptor(["platform", "qualify", "update", "mode", "config", "recovery", "local-build"], base);
+		descriptor(["platform", "storage", "qualify", "update", "mode", "config", "recovery", "local-build"], base);
 		return finish(product, base);
 	}
 	descriptor(product === "host-runtime" ? ["host"] : [product], base);
