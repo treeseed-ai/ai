@@ -35,6 +35,16 @@ describe('selective image build identities',()=>{
     expect(workflow).not.toContain('mirror-apt-suite.sh');
   });
 
+	it('promotes verified candidate digests without rebuilding them',()=>{
+		const workflow=readFileSync('.github/workflows/release.yml','utf8');
+		expect(workflow).toContain('candidate: { description: Exact verified release candidate to promote');
+		expect(workflow).toContain('TREEAI_PROMOTE_REUSED=1');
+		expect(workflow).toContain('candidate-download/image-manifest.json');
+		expect(workflow).toContain('git rev-parse "$candidate_commit^{tree}"');
+		expect(workflow).toContain('test ! -f "previous-assets/vulnerabilities/$role.json"');
+		expect(workflow).toContain('docker buildx imagetools create -t "treeseed/$role:${{ inputs.version }}"');
+	});
+
   it('covers every coordinated role with explicit inputs',()=>{
     const release=JSON.parse(readFileSync('release/manifest.json','utf8'))as{images:string[]};
     const builds=JSON.parse(readFileSync('release/image-builds.json','utf8'))as{platform:string;images:Record<string,ImageBuild>};
