@@ -68,13 +68,15 @@ jobs:
               repository=$(jq -r --arg role "$role" '.images[$role].repository' plan/image-plan.json)
               identity=$(jq -r --arg role "$role" '.images[$role].buildIdentity' plan/image-plan.json)
               action=$(jq -r --arg role "$role" '.images[$role].action' plan/image-plan.json)
-              digest=$(docker buildx imagetools inspect "$repository:$recovery_tag" | awk '/^Digest:/{print $2;exit}')
-              printf '%s' "$digest" | grep -Eq '^sha256:[a-f0-9]{64}$'
-              cosign verify "$repository@$digest" --certificate-identity-regexp '^https://github.com/treeseed-ai/ai/' --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' >/dev/null
               if test "$action" = built; then
+                digest=$(docker buildx imagetools inspect "$repository:$recovery_tag" | awk '/^Digest:/{print $2;exit}')
+                printf '%s' "$digest" | grep -Eq '^sha256:[a-f0-9]{64}$'
+                cosign verify "$repository@$digest" --certificate-identity-regexp '^https://github.com/treeseed-ai/ai/' --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' >/dev/null
                 jq --arg role "$role" --arg digest "$digest" --arg tag "$recovery_tag" --arg identity "$identity" '.images[$role].digest=$digest | .images[$role].tag=$tag | .images[$role].buildIdentity=$identity | .images[$role].disposition="built" | .images[$role].firstBuiltVersion=$tag' prior/recovered-image-manifest.json > prior/recovered-image-manifest.json.new
               else
-                test "$digest" = "$(jq -r --arg role "$role" '.images[$role].digest' prior/recovered-image-manifest.json)"
+                digest=$(jq -r --arg role "$role" '.images[$role].digest' prior/recovered-image-manifest.json)
+                printf '%s' "$digest" | grep -Eq '^sha256:[a-f0-9]{64}$'
+                cosign verify "$repository@$digest" --certificate-identity-regexp '^https://github.com/treeseed-ai/ai/' --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' >/dev/null
                 jq --arg role "$role" --arg identity "$identity" '.images[$role].buildIdentity=$identity | .images[$role].disposition="reused"' prior/recovered-image-manifest.json > prior/recovered-image-manifest.json.new
               fi
               mv prior/recovered-image-manifest.json.new prior/recovered-image-manifest.json
