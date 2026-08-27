@@ -24,6 +24,10 @@
 - Keep handwritten source and tests below 500 lines and direct executable directories below ten files.
 - Do not add a push-triggered hosted deployment workflow.
 - Use plan for non-mutating Compose previews and apply for live reconciliation; never add dry-run behavior.
+- Do not create, retain, or dispatch legacy/transitional delivery paths after the replacement owner is available. TreeAI publishes immutable component releases; Deployment owns host APT repositories and lifecycle integration.
+- Reuse prior successful GPU qualification evidence until a relevant fingerprint, implementation, dataset contract, or final release gate changes. Do not repeat long training merely for reassurance.
+- For long external workflows, use infrequent bounded status snapshots. Do not stream repetitive watch output or spend active work cycles polling unchanged state.
+- Before an expensive build, scan, publication, or GPU run, identify the exact unresolved acceptance criterion it proves and use the smallest affected package/image/test scope.
 
 ## Qualification evidence and GPU cost
 

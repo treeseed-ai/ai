@@ -1,4 +1,4 @@
-import{chmodSync,mkdtempSync,readFileSync,writeFileSync}from'node:fs';
+import{chmodSync,existsSync,mkdtempSync,readFileSync,writeFileSync}from'node:fs';
 import{tmpdir}from'node:os';
 import{join}from'node:path';
 import{afterEach,describe,expect,it,vi}from'vitest';
@@ -35,4 +35,4 @@ describe('repository-local image admission',()=>{
   it('allows a non-pullable sentinel only for an exact development local build',()=>{const value=catalog();value.images[0]!.digest=`sha256:${'0'.repeat(64)}`;value.images[0]!.localBuildOnly=true;expect(validateCatalog(value).images[0]!.localBuildOnly).toBe(true);value.imagePolicy.requiredLocalImages=[];expect(()=>validateCatalog(value)).toThrow(/image delivery policy/u);});
   it('rejects a non-release source URL',()=>{const value=catalog();value.imagePolicy.sourceBundle={...value.imagePolicy.sourceBundle!,url:'https://example.com/source.tar.gz'};expect(()=>validateCatalog(value)).toThrow(/image delivery policy/u);});
   it('delegates APT publication to Deployment',()=>{const workflow=readFileSync('.github/workflows/publish-development.yml','utf8');expect(workflow).toContain('Managed TreeSeed component release');expect(workflow).not.toContain('mirror-apt-suite.sh');expect(workflow).not.toContain('dpkg-buildpackage');});
-	it('keeps the legacy updater bridge exact, source-built, and development-only',()=>{const workflow=readFileSync('.github/workflows/publish-legacy-manager-bridge.yml','utf8');expect(workflow).toContain("grep -Eq '^[1-9][0-9]*$'");expect(workflow).toContain('expected_generation=$((10000000 + 10#$TREEAI_INPUT_RC))');expect(workflow).toContain('test "$TREEAI_INPUT_GENERATION" = "$expected_generation"');expect(workflow).toContain("gh release view \"$tag\" --json targetCommitish");expect(workflow).toContain('TREEAI_RELEASE_GENERATION="$TREEAI_CATALOG_GENERATION"');expect(workflow).toContain('(cd component && sha256sum -c SHA256SUMS)');expect(workflow).toContain('TREEAI_FORCE_PACKAGE_ONLY=0');expect(workflow).toContain('TREEAI_CATALOG_PACKAGE_SET=all');expect(workflow).toContain("-eq 12");expect(workflow).not.toContain('docker build');expect(workflow).not.toContain('gh release create');});
+	it('has no transitional APT publication workflow',()=>{expect(existsSync('.github/workflows/publish-legacy-manager-bridge.yml')).toBe(false);});

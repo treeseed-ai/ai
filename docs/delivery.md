@@ -42,12 +42,10 @@ never build downloaded repository source. Unchanged roles retain their prior
 signed image digest and do not restart merely because a component release was
 published.
 
-The existing single-host TreeAI development installation predates Deployment.
-For `0.10.0-rc7` only, the manually dispatched legacy-manager bridge attaches
-the six management packages to the already verified component release and
-updates the old signed development suite. It publishes no application image,
-cannot target stable, and refuses every other RC or catalog generation. Remove
-this workflow after the managed full-factory handoff is known-good.
+TreeAI does not publish host APT suites. Deployment consumes the immutable
+component bundle and publishes the exact component package and catalog through
+its protected release workflow. Do not add a transitional TreeAI APT bridge or
+use a component repository to reconstruct Deployment-owned package indexes.
 
 After GitHub Pages publication, clients can install the archive with a
 dedicated keyring and deb822 source:
