@@ -10,6 +10,12 @@ describe('manager-owned platform reconciliation',()=>{
 		expect(new Set([objectStoreAccessId('inference',secret),training,objectStoreAccessId('trainingImport',secret)]).size).toBe(3);
 		expect(()=>objectStoreAccessId('training','')).toThrow('credential material is missing');
 	});
+	it('binds product clients to a non-secret object-store credential generation',()=>{
+		const platform=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8'),inference=readFileSync('deploy/inference/factory.override.yml','utf8');
+		expect(platform).toContain('S3_CREDENTIAL_GENERATION: secretGeneration');
+		expect(inference).toContain('TREEAI_S3_CREDENTIAL_GENERATION: "${S3_CREDENTIAL_GENERATION:-compatibility-v1}"');
+		for(const product of['inference','training'])expect(readFileSync(`deploy/${product}/compose.yml`,'utf8')).toContain('TREEAI_S3_CREDENTIAL_GENERATION: "${S3_CREDENTIAL_GENERATION:-compatibility-v1}"');
+	});
   it('does not start standalone inference and training units',()=>{
     const converge=readFileSync('packages/manager/src/bin/converge.ts','utf8');
     const platform=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8');
@@ -45,7 +51,7 @@ describe('manager-owned platform reconciliation',()=>{
     expect(platform).toContain('if(existsSync(path))writeFileSync(path,value,{mode})');
 		expect(overlay.match(/ARTIFACT_SOURCE_SECRET_GENERATION/g)).toHaveLength(2);
 		expect(overlay.match(/ARTIFACT_IMPORT_TOKEN_GENERATION/g)).toHaveLength(4);
-		expect(overlay.match(/:-compatibility-v1/g)).toHaveLength(3);
+		expect(overlay.match(/:-compatibility-v1/g)).toHaveLength(4);
 		expect(overlay).not.toMatch(/(?:SOURCE_SECRET|IMPORT_TOKEN)_GENERATION[^\n]+:\?/u);
 		expect(platform).toContain('ARTIFACT_SOURCE_SECRET_GENERATION:secretGeneration(sourceValue)');
 		expect(platform).toContain('ARTIFACT_IMPORT_TOKEN_GENERATION:secretGeneration(artifactImportToken)');

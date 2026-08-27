@@ -9,6 +9,7 @@ function objectKey(uri:string,bucket:string){const match=uri.match(/^s3:\/\/([^/
 function store(bucket:string,endpoint:string,accessKeyId:string,secretAccessKey:string){return new ArtifactStore(bucket,{endpoint,region:process.env.S3_REGION??'us-east-1',forcePathStyle:true,credentials:{accessKeyId,secretAccessKey}});}
 function sourceRegistry(){return JSON.parse(readFileSync(process.env.ARTIFACT_SOURCE_REGISTRY!,'utf8'))as SourceRegistry;}
 export async function verifyArtifactSource(createStore:typeof store=store){const source=sourceRegistry(),input=createStore(source.bucket,source.endpoint,source.accessKeyId,source.secretAccessKey);await input.client.send(new ListObjectsV2Command({Bucket:source.bucket,MaxKeys:1}));}
+export async function verifyArtifactDestination(createStore:typeof store=store){const output=createStore(process.env.S3_BUCKET??'ai-inference',process.env.S3_ENDPOINT!,process.env.S3_ACCESS_KEY!,process.env.S3_SECRET_KEY!);await output.client.send(new ListObjectsV2Command({Bucket:output.bucket,MaxKeys:1}));}
 async function putOnce(store:ArtifactStore,key:string,bytes:Uint8Array,contentType?:string){const digest=sha256(bytes);try{const existing=await store.head(key);if(existing.ContentLength===bytes.byteLength&&existing.Metadata?.sha256===digest)return{uri:`s3://${store.bucket}/${key}`,size:bytes.byteLength,sha256:digest};}catch{/* missing or incomplete objects are copied */}return store.put(key,bytes,contentType);}
 
 export function createArtifactImporter(pool:Pool){
