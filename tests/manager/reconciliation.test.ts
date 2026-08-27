@@ -94,7 +94,7 @@ describe('manager-owned platform reconciliation',()=>{
 	it('keeps evaluator liveness independent while separately gating its private dependencies',()=>{
 		const compose=readFileSync('deploy/inference/compose.yml','utf8'),overlay=readFileSync('deploy/inference/factory.override.yml','utf8');
 		expect(overlay).toMatch(/evaluator:[\s\S]*depends_on:\n\s+minio: \{ condition: service_healthy \}\n\s+vllm: \{ condition: service_healthy \}/u);
-		expect(overlay).toMatch(/evaluator:[\s\S]*AWS_ENDPOINT_URL: http:\/\/minio:9000/u);
+		expect(overlay).toMatch(/evaluator:[\s\S]*AWS_ENDPOINT_URL: http:\/\/inference-minio:9000/u);
 		expect(overlay).not.toContain('network_mode: "service:vllm"');
 		expect(overlay).toMatch(/evaluator:[\s\S]*VLLM_URL: http:\/\/vllm:8000/u);
 		expect(overlay).toMatch(/manager:[\s\S]*EVALUATOR_URL: "http:\/\/evaluator:8080"/u);
@@ -106,6 +106,7 @@ describe('manager-owned platform reconciliation',()=>{
 		expect(compose).not.toContain("opener.open(os.environ['VLLM_URL']+'/health'");
 		expect(overlay).not.toMatch(/evaluator:[\s\S]*ports:/u);
 	});
+	it('uses product-qualified object-store DNS for shared-network inference consumers',()=>{const overlay=readFileSync('deploy/inference/factory.override.yml','utf8');expect(overlay).toContain('S3_ENDPOINT: http://inference-minio:9000');expect(overlay).toContain('AWS_ENDPOINT_URL: http://inference-minio:9000');expect(overlay).not.toContain('S3_ENDPOINT: http://minio:9000');expect(overlay).not.toContain('AWS_ENDPOINT_URL: http://minio:9000');});
 	it('preserves configured images for image-inert package generations',()=>{
 		const platform=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8');
 		const variables=readFileSync('packages/manager/src/core/image-variables.ts','utf8');
