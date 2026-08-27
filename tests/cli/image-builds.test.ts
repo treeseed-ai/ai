@@ -41,6 +41,7 @@ describe('selective image build identities',()=>{
 		expect(workflow).toContain('TREEAI_PROMOTE_REUSED=1');
 		expect(workflow).toContain('candidate-download/image-manifest.json');
 		expect(workflow).toContain('git rev-parse "$candidate_commit^{tree}"');
+		expect(workflow).toMatch(/resolve-images:[\s\S]*actions\/checkout@v4\n\s+with: \{ fetch-depth: 0 \}/u);
 		expect(workflow).toContain('test ! -f "previous-assets/vulnerabilities/$role.json"');
 		expect(workflow).toContain('docker buildx imagetools create -t "treeseed/$role:${{ inputs.version }}"');
 	});
