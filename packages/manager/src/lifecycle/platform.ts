@@ -215,7 +215,7 @@ function ensureProductConfiguration() {
 			POSTGRES_PASSWORD: stored[`${product}Db`]!,
 			S3_ENDPOINT: `http://${product}-minio:9000`,
 			S3_BUCKET: `ai-${product}`,
-			S3_ACCESS_KEY: accessIds[product],S3_SECRET_KEY: stored[`${product}S3`]!,
+			S3_ACCESS_KEY: accessIds[product],S3_SECRET_KEY: stored[`${product}S3`]!,S3_CREDENTIAL_GENERATION: secretGeneration(`${accessIds[product]}\0${stored[`${product}S3`]!}`),
 			MINIO_ROOT_USER: `${product}-root`,
 			MINIO_ROOT_PASSWORD: stored[`${product}Minio`]!,
 			...(product==="training"?{IMPORT_S3_ACCESS_KEY:accessIds.trainingImport,IMPORT_S3_SECRET_KEY:stored.trainingImportS3}:{}),

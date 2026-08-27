@@ -22,6 +22,7 @@ services:
       S3_ACCESS_KEY: "${S3_ACCESS_KEY:-inference}"
       S3_SECRET_KEY: "${S3_SECRET_KEY:-inference-development}"
       S3_BUCKET: "${S3_BUCKET:-ai-inference}"
+      TREEAI_S3_CREDENTIAL_GENERATION: "${S3_CREDENTIAL_GENERATION:-compatibility-v1}"
       ARTIFACT_SOURCE_SECRET_GENERATION: "${ARTIFACT_SOURCE_SECRET_GENERATION:-compatibility-v1}"
       ARTIFACT_IMPORT_TOKEN_GENERATION: "${ARTIFACT_IMPORT_TOKEN_GENERATION:-compatibility-v1}"
   manager:
