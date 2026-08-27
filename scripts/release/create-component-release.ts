@@ -155,7 +155,10 @@ for (const componentId of Object.keys(definitions) as Array<keyof typeof definit
 		services: serviceContracts(componentId), stateVolumes: definition.states, migrations: definition.migrations,
 		requiredCapabilities: componentId === 'ai-lab' ? ['docker-compose'] : ['docker-compose', 'nvidia-container-runtime'], dependencies: definition.dependencies,
 	};
-	const localImages = definition.roles.map((role) => ({ role, ...manifest.images[role]!, platforms: ['linux/amd64'], consumers: [componentId] }));
+	const localImages = definition.roles.map((role) => {
+		const image = manifest.images[role]!;
+		return { role, repository: image.repository, digest: image.digest, platforms: ['linux/amd64'], consumers: [componentId] };
+	});
 	// Upstream runtime images remain pinned in Compose. The current portable
 	// component schema admits project-owned Docker Hub repositories only.
 	const componentImages = localImages;

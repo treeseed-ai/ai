@@ -16,7 +16,10 @@ describe('managed AI component releases', () => {
 	it('materializes three immutable bundles without the legacy host manager', () => {
 		const root = mkdtempSync(resolve(tmpdir(), 'treeai-components-'));
 		const manifest = resolve(root, 'images.json'), output = resolve(root, 'output');
-		writeFileSync(manifest, JSON.stringify({ images: Object.fromEntries(roles.map((role) => [role, { repository: `treeseed/${role}`, digest: `sha256:${createHash('sha256').update(role).digest('hex')}` }])) }));
+		writeFileSync(manifest, JSON.stringify({ images: Object.fromEntries(roles.map((role) => [role, {
+			repository: `treeseed/${role}`, digest: `sha256:${createHash('sha256').update(role).digest('hex')}`,
+			tag: '0.11.0-rc1', buildIdentity: `sha256:${'b'.repeat(64)}`, disposition: 'built', firstBuiltVersion: '0.11.0-rc1',
+		}])) }));
 		execFileSync(process.execPath, ['--import', 'tsx', 'scripts/release/create-component-release.ts'], {
 			cwd: process.cwd(), env: { ...process.env, TREEAI_COMPONENT_RELEASE: '0.11.0-rc1', TREEAI_COMPONENT_REVISION: '2', TREEAI_SOURCE_COMMIT: 'a'.repeat(40), TREEAI_IMAGE_MANIFEST: manifest, TREEAI_COMPONENT_OUTPUT: output },
 		});
