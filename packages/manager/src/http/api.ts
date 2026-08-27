@@ -23,7 +23,7 @@ import {
 import { updateStatus } from "../lifecycle/update.js";
 import { normalizeStoredComponents } from "../lifecycle/status.js";
 import { campaign, campaigns, profiles, qualificationStatus } from "../lifecycle/qualification/index.js";
-const VERSION = "0.10.0";
+const VERSION = "0.11.0";
 function keys(): ApiKeyRecord[] {
 	try {
 		return JSON.parse(readFileSync(paths.apiKeys, "utf8")) as ApiKeyRecord[];
@@ -34,7 +34,7 @@ function keys(): ApiKeyRecord[] {
 function resolve(id: string) {
 	return Promise.resolve(keys().find((item) => item.id === id) ?? null);
 }
-function openapi() {
+export function managerOpenApi() {
 	const secured = { security: [{ apiKey: [] }] };
 	return {
 		openapi: "3.1.1",
@@ -130,7 +130,7 @@ export function createManagerApp() {
 	const app = new Hono();
 	app.get("/healthz", (c) => c.json({ status: "ready", version: VERSION }));
 	app.get("/readyz", (c) => c.json({ status: "ready", manager: true }));
-	app.get("/openapi.json", (c) => c.json(openapi()));
+	app.get("/openapi.json", (c) => c.json(managerOpenApi()));
 	app.get("/docs", (c) =>
 		c.html(
 			'<!doctype html><title>TreeAI Manager API</title><script id="api-reference" data-url="/openapi.json"></script><script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>',

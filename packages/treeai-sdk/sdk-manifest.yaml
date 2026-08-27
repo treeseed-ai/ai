@@ -1,0 +1,26 @@
+sdk: treeai-typescript
+language: typescript
+version: 0.11.0
+openapiVersion: 3.1.1
+operationInventory: operation-inventory.json
+services: [inference, training, lab, qualification]
+capabilities:
+  health.basic: implemented
+  inference.models: implemented
+  inference.jobs: implemented
+  inference.deployments: implemented
+  inference.adapters: implemented
+  training.jobs: implemented
+  training.libraries: implemented
+  training.documents: implemented
+  training.datasets: implemented
+  training.runs: implemented
+  lab.agents: implemented
+  lab.sessions: implemented
+  lab.routing: implemented
+  lab.library_cycles: implemented
+  qualification.profiles: implemented
+  qualification.campaigns: implemented
+  platform.gpu_mode: implemented
+  observability.events: implemented
+  observability.metrics: implemented

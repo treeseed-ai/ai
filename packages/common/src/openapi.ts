@@ -1,11 +1,17 @@
 export interface RouteSpec { method: string; path: string; summary: string; scope?: string; requestSchema?: object; requestContentType?:string; responseSchema?: object }
 
-export function openApiDocument(input: { title: string; version: string; routes: RouteSpec[] }) {
+function operationId(namespace: string, method: string, path: string) {
+	const segments = path.replace(/^\/v1\//u, '').replace(/^\//u, '').split('/').filter(Boolean).map((segment) => segment.replace(/^:/u, 'by-').replaceAll(/[^a-zA-Z0-9-]/gu, '-'));
+	return [namespace, method.toLowerCase(), ...segments].join('.');
+}
+
+export function openApiDocument(input: { title: string; version: string; routes: RouteSpec[]; operationNamespace?: string }) {
 	const paths: Record<string,Record<string,unknown>> = {};
 	for (const route of input.routes) {
 		const path = route.path.replace(/:([^/]+)/gu, '{$1}');
 		paths[path] ??= {};
 		paths[path]![route.method.toLowerCase()] = {
+			operationId: operationId(input.operationNamespace ?? 'treeai', route.method, route.path),
 			summary: route.summary,
 			security: route.scope ? [{ apiKey: [route.scope] }] : [],
 			...(route.requestSchema ? { requestBody: { required: true, content: { [route.requestContentType??'application/json']: { schema: route.requestSchema } } } } : {}),

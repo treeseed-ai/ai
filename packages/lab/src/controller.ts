@@ -57,6 +57,45 @@ function extractItems(value: unknown, key = "data") {
 	return [];
 }
 
+export const labRoutes: RouteSpec[] = [
+	{ method: "GET", path: "/healthz", summary: "Liveness" }, { method: "GET", path: "/readyz", summary: "Readiness" },
+	{ method: "GET", path: "/v1/status", summary: "Lab state", scope: "lab:read" },
+	{ method: "GET", path: "/v1/provider/models", summary: "Sanitized provider model discovery", scope: "lab:read" },
+	{ method: "GET", path: "/v1/agents", summary: "Agent profiles", scope: "lab:read" },
+	{ method: "POST", path: "/v1/agents", summary: "Create agent profile", scope: "lab:write" },
+	{ method: "GET", path: "/v1/agents/:id", summary: "Agent profile", scope: "lab:read" },
+	{ method: "PATCH", path: "/v1/agents/:id", summary: "Edit agent profile", scope: "lab:write" },
+	{ method: "POST", path: "/v1/agents/:id/enable", summary: "Enable agent profile", scope: "lab:write" },
+	{ method: "POST", path: "/v1/agents/:id/disable", summary: "Disable agent profile", scope: "lab:write" },
+	{ method: "GET", path: "/v1/agents/:id/evaluations", summary: "Agent evaluation evidence", scope: "lab:read" },
+	{ method: "GET", path: "/v1/routing-decisions", summary: "Agent routing decisions", scope: "lab:read" },
+	{ method: "GET", path: "/v1/hermes/status", summary: "Hermes status", scope: "lab:hermes:read" },
+	{ method: "GET", path: "/v1/hermes/capabilities", summary: "Hermes capabilities", scope: "lab:hermes:read" },
+	{ method: "GET", path: "/v1/hermes/tools", summary: "Hermes tools", scope: "lab:hermes:read" },
+	{ method: "GET", path: "/v1/hermes/sessions", summary: "Hermes sessions", scope: "lab:hermes:read" },
+	{ method: "GET", path: "/v1/hermes/sessions/:id", summary: "Hermes session", scope: "lab:hermes:read" },
+	{ method: "POST", path: "/v1/hermes/sessions/:id/finalize", summary: "Finalize Hermes evidence", scope: "lab:experience:write" },
+	{ method: "POST", path: "/v1/hermes/verify", summary: "Run bounded Hermes verification", scope: "lab:experience:write" },
+	{ method: "GET", path: "/v1/trajectories", summary: "Agent trajectories", scope: "lab:read" },
+	{ method: "GET", path: "/v1/trajectories/:id", summary: "Agent trajectory", scope: "lab:read" },
+	{ method: "GET", path: "/v1/artifacts", summary: "Artifact observations", scope: "lab:read" },
+	{ method: "GET", path: "/v1/libraries", summary: "Training libraries", scope: "lab:read" },
+	{ method: "GET", path: "/v1/libraries/:id", summary: "Training library", scope: "lab:read" },
+	{ method: "POST", path: "/v1/libraries/:id/train", summary: "Start a bounded library cycle", scope: "lab:write" },
+	{ method: "GET", path: "/v1/library-cycles", summary: "Library cycles", scope: "lab:read" },
+	{ method: "GET", path: "/v1/library-cycles/:id", summary: "Library cycle", scope: "lab:read" },
+	{ method: "GET", path: "/v1/cycles", summary: "Disabled training cycles", scope: "lab:read" },
+	{ method: "GET", path: "/v1/experience", summary: "Captured trajectories", scope: "lab:read" },
+	{ method: "GET", path: "/v1/events/stream", summary: "Events", scope: "lab:read" },
+	{ method: "GET", path: "/v1/metrics", summary: "Metrics", scope: "metrics:read" },
+	{ method: "POST", path: "/v1/loop/enable", summary: "Enable loop", scope: "lab:write" },
+	{ method: "POST", path: "/v1/loop/cycle-now", summary: "Start cycle", scope: "lab:write" },
+	{ method: "POST", path: "/v1/loop/pause", summary: "Pause loop", scope: "lab:write" },
+	{ method: "POST", path: "/v1/loop/resume", summary: "Resume loop", scope: "lab:write" },
+];
+
+export const labOpenApi = (version = "0.11.0") => openApiDocument({ title: "AI Experience Lab API", version, routes: labRoutes, operationNamespace: "lab" });
+
 export function createLabController(options: ControllerOptions = {}) {
 	migrateCaptureV1();
 	const requestFetch = options.fetch ?? fetch, now = options.now ?? Date.now;
@@ -133,45 +172,9 @@ export function createLabController(options: ControllerOptions = {}) {
 		const result = await operation(); receipts[receiptKey] = result; atomic(path, receipts);
 		return context.json(result, 202);
 	}
-	const routes: RouteSpec[] = [
-		{ method: "GET", path: "/healthz", summary: "Liveness" }, { method: "GET", path: "/readyz", summary: "Readiness" },
-		{ method: "GET", path: "/v1/status", summary: "Lab state", scope: "lab:read" },
-		{ method: "GET", path: "/v1/provider/models", summary: "Sanitized provider model discovery", scope: "lab:read" },
-		{ method: "GET", path: "/v1/agents", summary: "Agent profiles", scope: "lab:read" },
-		{ method: "POST", path: "/v1/agents", summary: "Create agent profile", scope: "lab:write" },
-		{ method: "GET", path: "/v1/agents/:id", summary: "Agent profile", scope: "lab:read" },
-		{ method: "PATCH", path: "/v1/agents/:id", summary: "Edit agent profile", scope: "lab:write" },
-		{ method: "POST", path: "/v1/agents/:id/enable", summary: "Enable agent profile", scope: "lab:write" },
-		{ method: "POST", path: "/v1/agents/:id/disable", summary: "Disable agent profile", scope: "lab:write" },
-		{ method: "GET", path: "/v1/agents/:id/evaluations", summary: "Agent evaluation evidence", scope: "lab:read" },
-		{ method: "GET", path: "/v1/routing-decisions", summary: "Agent routing decisions", scope: "lab:read" },
-		{ method: "GET", path: "/v1/hermes/status", summary: "Hermes status", scope: "lab:hermes:read" },
-		{ method: "GET", path: "/v1/hermes/capabilities", summary: "Hermes capabilities", scope: "lab:hermes:read" },
-		{ method: "GET", path: "/v1/hermes/tools", summary: "Hermes tools", scope: "lab:hermes:read" },
-		{ method: "GET", path: "/v1/hermes/sessions", summary: "Hermes sessions", scope: "lab:hermes:read" },
-		{ method: "GET", path: "/v1/hermes/sessions/:id", summary: "Hermes session", scope: "lab:hermes:read" },
-		{ method: "POST", path: "/v1/hermes/sessions/:id/finalize", summary: "Finalize Hermes evidence", scope: "lab:experience:write" },
-		{ method: "POST", path: "/v1/hermes/verify", summary: "Run bounded Hermes verification", scope: "lab:experience:write" },
-		{ method: "GET", path: "/v1/trajectories", summary: "Agent trajectories", scope: "lab:read" },
-		{ method: "GET", path: "/v1/trajectories/:id", summary: "Agent trajectory", scope: "lab:read" },
-		{ method: "GET", path: "/v1/artifacts", summary: "Artifact observations", scope: "lab:read" },
-		{ method: "GET", path: "/v1/libraries", summary: "Training libraries", scope: "lab:read" },
-		{ method: "GET", path: "/v1/libraries/:id", summary: "Training library", scope: "lab:read" },
-		{ method: "POST", path: "/v1/libraries/:id/train", summary: "Start a bounded library cycle", scope: "lab:write" },
-		{ method: "GET", path: "/v1/library-cycles", summary: "Library cycles", scope: "lab:read" },
-		{ method: "GET", path: "/v1/library-cycles/:id", summary: "Library cycle", scope: "lab:read" },
-		{ method: "GET", path: "/v1/cycles", summary: "Disabled training cycles", scope: "lab:read" },
-		{ method: "GET", path: "/v1/experience", summary: "Captured trajectories", scope: "lab:read" },
-		{ method: "GET", path: "/v1/events/stream", summary: "Events", scope: "lab:read" },
-		{ method: "GET", path: "/v1/metrics", summary: "Metrics", scope: "metrics:read" },
-		{ method: "POST", path: "/v1/loop/enable", summary: "Enable loop", scope: "lab:write" },
-		{ method: "POST", path: "/v1/loop/cycle-now", summary: "Start cycle", scope: "lab:write" },
-		{ method: "POST", path: "/v1/loop/pause", summary: "Pause loop", scope: "lab:write" },
-		{ method: "POST", path: "/v1/loop/resume", summary: "Resume loop", scope: "lab:write" },
-	];
 	const app = new Hono();
 	app.get("/healthz", (context) => context.json({ ok: true })); app.get("/readyz", async (context) => { try { await hermes("/health"); return context.json({ ok: true }); } catch { return context.json({ ok: false, reason: "hermes-unavailable" }, 503); } });
-	app.get("/openapi.json", (context) => context.json(openApiDocument({ title: "AI Experience Lab API", version: "0.10.0", routes })));
+	app.get("/openapi.json", (context) => context.json(labOpenApi()));
 	app.get("/docs", (context) => context.html('<!doctype html><title>TreeAI Lab API</title><script id="api-reference" data-url="/openapi.json"></script><script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>'));
 	app.onError((error, context) => context.json({ error: { code: "agent_unavailable", message: "Hermes Agent is unavailable." } }, 503));
 	app.use("/v1/*", apiKeyAuthorization(async (id) => keys.find((key) => key.id === id) ?? null));

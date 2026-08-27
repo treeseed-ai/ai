@@ -14,7 +14,7 @@ function filesBelow(directory: string): string[] {
 }
 
 const files = filesBelow(root);
-const handwritten = files.filter((path) => executableExtensions.has(extname(path)));
+const handwritten = files.filter((path) => executableExtensions.has(extname(path)) && !path.includes('/src/generated/'));
 const oversized = handwritten.filter((path) => readFileSync(path, 'utf8').split(/\r?\n/u).length > 500);
 if (oversized.length) throw new Error(`Handwritten files exceed 500 lines: ${oversized.map((path) => relative(root, path)).join(', ')}`);
 

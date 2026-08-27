@@ -2,9 +2,11 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { componentReleaseSchema, deploymentDigest } from '@treeseed/sdk/deployment';
+import YAML from 'yaml';
 
 interface Image { repository: string; digest: string }
 interface ImageManifest { images: Record<string, Image> }
+interface RuntimeImage { id: string; reference: string; digest: string }
 
 const release = process.env.TREEAI_COMPONENT_RELEASE;
 const sourceCommit = process.env.TREEAI_SOURCE_COMMIT;
@@ -16,57 +18,158 @@ if (!Number.isInteger(revision) || revision < 1) throw new Error('Component revi
 const track = release.includes('-rc') ? 'development' : 'stable';
 const debianRelease = `${release.replace(/-rc\.?([0-9]+)$/u, '~rc$1')}-${revision}`;
 const manifest = JSON.parse(readFileSync(resolve(manifestPath), 'utf8')) as ImageManifest;
-const roles = ['inference-api', 'inference-manager', 'inference-vllm', 'inference-evaluator', 'inference-migrations', 'training-api', 'training-manager', 'axolotl-worker', 'marker-worker', 'artifact-worker', 'training-migrations'] as const;
-let compose = readFileSync(resolve('deploy/component/compose.template.yml'), 'utf8');
-for (const role of roles) {
-	const image = manifest.images[role];
-	if (!image || !/^treeseed\/[a-z0-9-]+$/u.test(image.repository) || !/^sha256:[a-f0-9]{64}$/u.test(image.digest)) throw new Error(`Missing immutable image ${role}.`);
-	compose = compose.replaceAll(`@${role.replaceAll('-', '_').toUpperCase()}_IMAGE@`, `${image.repository}@${image.digest}`);
-}
-if (/\bbuild\s*:/u.test(compose) || /@[A-Z_]+_IMAGE@/u.test(compose) || /^\s*ports\s*:/mu.test(compose)) throw new Error('Production Compose is not fully immutable and manager-owned.');
-const composeDigest = `sha256:${createHash('sha256').update(compose).digest('hex')}`;
-const services = [
-	{ id: 'inference-migrations', composeService: 'inference-migrations', endpoints: [] },
-	{ id: 'inference-vllm', composeService: 'inference-vllm', endpoints: [] },
-	{ id: 'inference-evaluator', composeService: 'inference-evaluator', endpoints: [] },
-	{ id: 'inference-manager', composeService: 'inference-manager', endpoints: [] },
-	{ id: 'inference-api', composeService: 'inference-api', endpoints: [
-		{ id: 'control', protocol: 'http', port: 4770, visibility: 'host', defaultAlias: 'inference.ai.treeseed.localhost', aliasOverride: true, tls: 'edge', authentication: 'application', healthGate: { protocol: 'http', path: '/readyz', timeoutSeconds: 600 } },
-		{ id: 'inference', protocol: 'http', port: 4771, visibility: 'private', aliasOverride: false, tls: 'none', authentication: 'application', healthGate: { protocol: 'http', path: '/healthz', timeoutSeconds: 600 } },
-	] },
-	{ id: 'training-migrations', composeService: 'training-migrations', endpoints: [] },
-	{ id: 'training-marker', composeService: 'training-marker', endpoints: [] },
-	{ id: 'training-axolotl', composeService: 'training-axolotl', endpoints: [] },
-	{ id: 'training-artifact', composeService: 'training-artifact', endpoints: [] },
-	{ id: 'training-manager', composeService: 'training-manager', endpoints: [] },
-	{ id: 'training-api', composeService: 'training-api', endpoints: [{ id: 'control', protocol: 'http', port: 4780, visibility: 'host', defaultAlias: 'training.ai.treeseed.localhost', aliasOverride: true, tls: 'edge', authentication: 'application', healthGate: { protocol: 'http', path: '/readyz', timeoutSeconds: 600 } }] },
-];
-const runtime = {
-	schemaVersion: 'treeseed.package-runtime/v1' as const,
-	componentId: 'ai', version: debianRelease,
-	compose: { projectName: 'treeseed-ai', files: [{ path: 'compose.yml', digest: composeDigest }] },
-	services,
-	stateVolumes: [
-		{ id: 'inference', volume: '/var/lib/treeseed/components/ai/inference', backup: 'required' as const },
-		{ id: 'training', volume: '/var/lib/treeseed/components/ai/training', backup: 'required' as const },
-		{ id: 'archive', volume: '/var/lib/treeseed/components/ai/archive', backup: 'required' as const },
-		{ id: 'models', volume: '/var/lib/treeseed/components/ai/models', backup: 'optional' as const },
-	],
-	migrations: [{ id: 'inference-database', order: 0, backupRequired: true }, { id: 'training-database', order: 1, backupRequired: true }],
-	requiredCapabilities: ['docker-compose', 'nvidia-container-runtime'], dependencies: [],
-};
-const tagUrl = (repository: string) => `https://hub.docker.com/r/${repository}/tags?name=${encodeURIComponent(release)}`;
-const bundle = componentReleaseSchema.parse({
-	schemaVersion: 'treeseed.component-release/v1', componentId: 'ai', release: debianRelease, applicationVersion: release, revision, track,
-	source: { repository: 'treeseed-ai/ai', commit: sourceCommit },
-	stableBase: track === 'development' ? { releaseRange: '>=0.1.0 <0.2.0', compatibilityId: 'treeseed-linux-amd64-v1', catalogDigest: null } : null,
-	packages: [{ name: 'treeseed-component-ai', version: debianRelease, architecture: 'all', origin: 'TreeSeed Deployment', order: 50 }],
-	images: roles.map((role) => ({ role, repository: manifest.images[role]!.repository, digest: manifest.images[role]!.digest, platforms: ['linux/amd64'], consumers: ['ai'] })),
-	runtime, runtimeDigest: deploymentDigest(runtime), rollback: { compatible: true, requiresBackup: true },
-	evidence: { provenance: roles.map((role) => tagUrl(manifest.images[role]!.repository)), sboms: roles.map((role) => tagUrl(manifest.images[role]!.repository)), vulnerabilities: [] },
-});
 const output = resolve(process.env.TREEAI_COMPONENT_OUTPUT ?? 'release-assets/component');
 mkdirSync(output, { recursive: true });
-writeFileSync(resolve(output, 'compose.yml'), compose);
-writeFileSync(resolve(output, 'component-release.json'), `${JSON.stringify(bundle, null, 2)}\n`);
-console.log(JSON.stringify({ ok: true, release, debianRelease, runtimeDigest: bundle.runtimeDigest, composeDigest }));
+
+const definitions = {
+	'ai-inference': {
+		roles: ['inference-api', 'inference-manager', 'inference-vllm', 'inference-evaluator', 'inference-migrations'],
+		services: ['inference-migrations', 'inference-vllm', 'inference-evaluator', 'inference-manager', 'inference-api'],
+		states: [
+			{ id: 'inference', volume: '/var/lib/treeseed/components/ai-inference/data/inference', backup: 'required' },
+			{ id: 'models', volume: '/var/lib/treeseed/components/ai-inference/data/models', backup: 'optional' },
+		],
+		migrations: [{ id: 'inference-database', order: 0, backupRequired: true }], dependencies: [], order: 50,
+	},
+	'ai-training': {
+		roles: ['training-api', 'training-manager', 'axolotl-worker', 'marker-worker', 'artifact-worker', 'training-migrations'],
+		services: ['training-migrations', 'training-marker', 'training-axolotl', 'training-artifact', 'training-manager', 'training-api'],
+		states: [
+			{ id: 'training', volume: '/var/lib/treeseed/components/ai-training/data/training', backup: 'required' },
+			{ id: 'archive', volume: '/var/lib/treeseed/components/ai-training/data/archive', backup: 'required' },
+			{ id: 'models', volume: '/var/lib/treeseed/components/ai-training/data/models', backup: 'optional' },
+		],
+		migrations: [{ id: 'training-database', order: 0, backupRequired: true }], dependencies: [], order: 51,
+	},
+	'ai-lab': {
+		roles: ['lab-controller', 'lab-experience-proxy', 'lab-library-bridge', 'hermes-agent', 'lab-web-tool-proxy'],
+		services: ['experience-proxy', 'controller', 'library-bridge', 'open-webui', 'web-tool-proxy', 'hermes-agent', 'hermes-dashboard'],
+		states: [
+			{ id: 'state', volume: '/var/lib/treeseed/components/ai-lab/data/state', backup: 'required' },
+			{ id: 'hermes', volume: '/var/lib/treeseed/components/ai-lab/data/hermes', backup: 'required' },
+			{ id: 'webui', volume: '/var/lib/treeseed/components/ai-lab/data/open-webui', backup: 'required' },
+		],
+		migrations: [],
+		dependencies: [
+			{ id: 'inference', capability: 'treeai-inference-api', locality: 'local', optional: false },
+			{ id: 'training', capability: 'treeai-training-api', locality: 'local', optional: false },
+		], order: 52,
+	},
+} as const;
+
+function exactImage(role: string) {
+	const image = manifest.images[role];
+	if (!image || !/^(?:[a-z0-9.-]+\/)?[a-z0-9-]+\/[a-z0-9-]+$/u.test(image.repository) || !/^sha256:[a-f0-9]{64}$/u.test(image.digest)) throw new Error(`Missing immutable image ${role}.`);
+	return `${image.repository}@${image.digest}`;
+}
+
+function openWebUi(): Image {
+	const catalog = JSON.parse(readFileSync(resolve('release/catalog.json'), 'utf8')) as { runtimeImages: RuntimeImage[] };
+	const selected = catalog.runtimeImages.find(({ id }) => id === 'open-webui');
+	if (!selected || !selected.reference.endsWith(`@${selected.digest}`) || !/^sha256:[a-f0-9]{64}$/u.test(selected.digest)) throw new Error('The Open WebUI runtime image is not pinned.');
+	return { repository: selected.reference.slice(0, selected.reference.indexOf('@')).replace(/:[^/:]+$/u, ''), digest: selected.digest };
+}
+
+function baseCompose(componentId: 'ai-inference' | 'ai-training') {
+	const family = componentId === 'ai-inference' ? 'inference' : 'training';
+	let source = readFileSync(resolve('deploy/component/compose.template.yml'), 'utf8')
+		.replaceAll('/etc/treeseed/components/ai/environment', `/etc/treeseed/components/${componentId}/environment`)
+		.replaceAll('/ai/data/', `/${componentId}/data/`);
+	for (const role of definitions[componentId].roles) source = source.replaceAll(`@${role.replaceAll('-', '_').toUpperCase()}_IMAGE@`, exactImage(role));
+	const parsed = YAML.parse(source) as Record<string, any>;
+	parsed.name = `treeseed-${componentId}`;
+	parsed.services = Object.fromEntries(definitions[componentId].services.map((name) => [name, parsed.services[name]]));
+	parsed.networks = Object.fromEntries(Object.entries(parsed.networks).filter(([name]) => name === `${family}-private` || name === 'platform' || name === 'treeseed-edge'));
+	if (componentId === 'ai-inference') delete parsed.secrets;
+	return parsed;
+}
+
+function labCompose() {
+	const parsed = YAML.parse(readFileSync(resolve('deploy/lab/compose.yml'), 'utf8')) as Record<string, any>;
+	const roleByService: Record<string, string> = {
+		'experience-proxy': 'lab-experience-proxy', controller: 'lab-controller', 'library-bridge': 'lab-library-bridge',
+		'web-tool-proxy': 'lab-web-tool-proxy', 'hermes-agent': 'hermes-agent', 'hermes-dashboard': 'hermes-agent',
+	};
+	parsed.name = 'treeseed-ai-lab';
+	delete parsed.services.gateway;
+	for (const [service, role] of Object.entries(roleByService)) parsed.services[service].image = exactImage(role);
+	const webui = openWebUi();
+	parsed.services['open-webui'].image = `${webui.repository}@${webui.digest}`;
+	const dataRoot = '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-lab/data';
+	const replaceVolume = (service: string, target: string, source: string, suffix = '') => {
+		parsed.services[service].volumes = (parsed.services[service].volumes ?? []).map((volume: string) =>
+			volume.split(':')[1] === target ? `${dataRoot}/${source}:${target}${suffix}` : volume);
+	};
+	for (const service of ['experience-proxy', 'controller']) replaceVolume(service, '/state', 'state');
+	replaceVolume('controller', '/workspace', 'workspace', ':ro');
+	replaceVolume('open-webui', '/app/backend/data', 'open-webui');
+	for (const service of ['hermes-agent', 'hermes-dashboard']) {
+		replaceVolume(service, '/home/hermes/.hermes', 'hermes');
+		replaceVolume(service, '/workspace', 'workspace');
+	}
+	for (const service of ['experience-proxy', 'controller', 'library-bridge']) parsed.services[service].networks = ['lab-private', 'platform'];
+	for (const service of ['open-webui', 'hermes-dashboard', 'controller']) parsed.services[service].networks = [...new Set([...parsed.services[service].networks, 'treeseed-edge'])];
+	delete parsed.networks['ai-shared']; delete parsed.networks['lab-edge'];
+	parsed.networks.platform = { name: 'treeseed-platform', external: true };
+	parsed.networks['treeseed-edge'] = { name: 'treeseed-edge', external: true };
+	delete parsed.volumes;
+	for (const secret of Object.values(parsed.secrets) as Array<{ file: string }>) secret.file = secret.file.replace('/etc/treeseed-ai/lab/secrets/', '/etc/treeseed/credentials/ai-lab-').replace('/etc/treeseed-ai/lab/', '/etc/treeseed/components/ai-lab/');
+	return parsed;
+}
+
+function serviceContracts(componentId: keyof typeof definitions) {
+	if (componentId === 'ai-inference') return [
+		{ id: 'inference-migrations', composeService: 'inference-migrations', endpoints: [] }, { id: 'inference-vllm', composeService: 'inference-vllm', endpoints: [] },
+		{ id: 'inference-evaluator', composeService: 'inference-evaluator', endpoints: [] }, { id: 'inference-manager', composeService: 'inference-manager', endpoints: [] },
+		{ id: 'inference-api', composeService: 'inference-api', endpoints: [
+			{ id: 'control', protocol: 'http', port: 4770, visibility: 'host', defaultAlias: 'inference.ai.treeseed.localhost', aliasOverride: true, tls: 'edge', authentication: 'application', healthGate: { protocol: 'http', path: '/readyz', timeoutSeconds: 600 } },
+			{ id: 'inference', protocol: 'http', port: 4771, visibility: 'private', aliasOverride: false, tls: 'none', authentication: 'application', healthGate: { protocol: 'http', path: '/healthz', timeoutSeconds: 600 } },
+		] },
+	];
+	if (componentId === 'ai-training') return [
+		{ id: 'training-migrations', composeService: 'training-migrations', endpoints: [] }, { id: 'training-marker', composeService: 'training-marker', endpoints: [] },
+		{ id: 'training-axolotl', composeService: 'training-axolotl', endpoints: [] }, { id: 'training-artifact', composeService: 'training-artifact', endpoints: [] },
+		{ id: 'training-manager', composeService: 'training-manager', endpoints: [] },
+		{ id: 'training-api', composeService: 'training-api', endpoints: [{ id: 'control', protocol: 'http', port: 4780, visibility: 'host', defaultAlias: 'training.ai.treeseed.localhost', aliasOverride: true, tls: 'edge', authentication: 'application', healthGate: { protocol: 'http', path: '/readyz', timeoutSeconds: 600 } }] },
+	];
+	return [
+		{ id: 'experience-proxy', composeService: 'experience-proxy', endpoints: [] },
+		{ id: 'controller', composeService: 'controller', endpoints: [{ id: 'control', protocol: 'http', port: 8081, visibility: 'host', defaultAlias: 'lab.ai.treeseed.localhost', aliasOverride: true, tls: 'edge', authentication: 'application', healthGate: { protocol: 'http', path: '/readyz', timeoutSeconds: 120 } }] },
+		{ id: 'library-bridge', composeService: 'library-bridge', endpoints: [] },
+		{ id: 'open-webui', composeService: 'open-webui', endpoints: [{ id: 'web', protocol: 'http', port: 8080, visibility: 'host', defaultAlias: 'chat.ai.treeseed.localhost', aliasOverride: true, tls: 'edge', authentication: 'none', healthGate: { protocol: 'http', path: '/health', timeoutSeconds: 120 } }] },
+		{ id: 'web-tool-proxy', composeService: 'web-tool-proxy', endpoints: [] }, { id: 'hermes-agent', composeService: 'hermes-agent', endpoints: [] },
+		{ id: 'hermes-dashboard', composeService: 'hermes-dashboard', endpoints: [{ id: 'web', protocol: 'http', port: 9119, visibility: 'host', defaultAlias: 'hermes.ai.treeseed.localhost', aliasOverride: true, tls: 'edge', authentication: 'application', healthGate: { protocol: 'http', path: '/', timeoutSeconds: 120 } }] },
+	];
+}
+
+const results = [];
+for (const componentId of Object.keys(definitions) as Array<keyof typeof definitions>) {
+	const definition = definitions[componentId];
+	const composeName = `${componentId}-compose.yml`, manifestName = `${componentId}-component-release.json`;
+	const compose = YAML.stringify(componentId === 'ai-lab' ? labCompose() : baseCompose(componentId));
+	if (/\bbuild\s*:/u.test(compose) || /@[A-Z_]+_IMAGE@/u.test(compose) || /^\s*ports\s*:/mu.test(compose)) throw new Error(`${componentId} Compose is not immutable and manager-owned.`);
+	const composeDigest = `sha256:${createHash('sha256').update(compose).digest('hex')}`;
+	const runtime = {
+		schemaVersion: 'treeseed.package-runtime/v1' as const, componentId, version: debianRelease,
+		compose: { projectName: `treeseed-${componentId}`, files: [{ path: composeName, digest: composeDigest }] },
+		services: serviceContracts(componentId), stateVolumes: definition.states, migrations: definition.migrations,
+		requiredCapabilities: componentId === 'ai-lab' ? ['docker-compose'] : ['docker-compose', 'nvidia-container-runtime'], dependencies: definition.dependencies,
+	};
+	const localImages = definition.roles.map((role) => ({ role, ...manifest.images[role]!, platforms: ['linux/amd64'], consumers: [componentId] }));
+	// Upstream runtime images remain pinned in Compose. The current portable
+	// component schema admits project-owned Docker Hub repositories only.
+	const componentImages = localImages;
+	const tagUrl = ({ repository }: { repository: string }) => repository.startsWith('treeseed/') ? `https://hub.docker.com/r/${repository}/tags?name=${encodeURIComponent(release)}` : `https://${repository}`;
+	const bundle = componentReleaseSchema.parse({
+		schemaVersion: 'treeseed.component-release/v1', componentId, release: debianRelease, applicationVersion: release, revision, track,
+		source: { repository: 'treeseed-ai/ai', commit: sourceCommit },
+		stableBase: track === 'development' ? { releaseRange: '>=0.1.0 <0.2.0', compatibilityId: 'treeseed-linux-amd64-v1', catalogDigest: null } : null,
+		packages: [{ name: `treeseed-component-${componentId}`, version: debianRelease, architecture: 'all', origin: 'TreeSeed Deployment', order: definition.order }],
+		images: componentImages, runtime, runtimeDigest: deploymentDigest(runtime), rollback: { compatible: true, requiresBackup: true },
+		evidence: { provenance: componentImages.map(tagUrl), sboms: componentImages.map(tagUrl), vulnerabilities: [] },
+	});
+	writeFileSync(resolve(output, composeName), compose);
+	writeFileSync(resolve(output, manifestName), `${JSON.stringify(bundle, null, 2)}\n`);
+	results.push({ componentId, manifestName, composeName, runtimeDigest: bundle.runtimeDigest, composeDigest });
+}
+console.log(JSON.stringify({ ok: true, release, debianRelease, components: results }));
