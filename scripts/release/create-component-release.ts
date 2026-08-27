@@ -30,6 +30,20 @@ const definitions = {
 			{ id: 'inference', volume: '/var/lib/treeseed/components/ai-inference/data/inference', backup: 'required' },
 			{ id: 'models', volume: '/var/lib/treeseed/components/ai-inference/data/models', backup: 'optional' },
 		],
+		configuration: {
+			environment: [
+				{ name: 'SOURCE_MODEL', required: false, default: 'Qwen/Qwen3.5-4B' },
+				{ name: 'SOURCE_MODEL_REVISION', required: false, default: '851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a' },
+				{ name: 'PUBLIC_MODEL', required: false, default: 'local-model' },
+				{ name: 'MAX_MODEL_LENGTH', required: false, default: '16384' },
+			],
+			secretEnvironment: [
+				{ name: 'INFERENCE_DATABASE_URL', required: true },
+				{ name: 'INFERENCE_POSTGRES_PASSWORD', required: true },
+				{ name: 'AI_API_KEYS', required: true },
+			],
+			secretFiles: [], files: [],
+		},
 		migrations: [{ id: 'inference-database', order: 0, backupRequired: true }], dependencies: [], order: 50,
 	},
 	'ai-training': {
@@ -41,6 +55,18 @@ const definitions = {
 			{ id: 'archive', volume: '/var/lib/treeseed/components/ai-training/data/archive', backup: 'required' },
 			{ id: 'models', volume: '/var/lib/treeseed/components/ai-training/data/models', backup: 'optional' },
 		],
+		configuration: {
+			environment: [
+				{ name: 'ARTIFACT_BACKEND', required: false, default: 'filesystem' },
+				{ name: 'ARTIFACT_ROOT', required: false, default: '/artifacts' },
+			],
+			secretEnvironment: [
+				{ name: 'TRAINING_DATABASE_URL', required: true },
+				{ name: 'TRAINING_POSTGRES_PASSWORD', required: true },
+				{ name: 'AI_API_KEYS', required: true },
+			],
+			secretFiles: [{ id: 'artifact-signing-key', path: '/etc/treeseed/credentials/ai-artifact-signing-key', required: true }], files: [],
+		},
 		migrations: [{ id: 'training-database', order: 0, backupRequired: true }], dependencies: [], order: 51,
 	},
 	'ai-lab': {
@@ -49,8 +75,28 @@ const definitions = {
 		states: [
 			{ id: 'state', volume: '/var/lib/treeseed/components/ai-lab/data/state', backup: 'required' },
 			{ id: 'hermes', volume: '/var/lib/treeseed/components/ai-lab/data/hermes', backup: 'required' },
+			{ id: 'workspace', volume: '/var/lib/treeseed/components/ai-lab/data/workspace', backup: 'required' },
 			{ id: 'webui', volume: '/var/lib/treeseed/components/ai-lab/data/open-webui', backup: 'required' },
 		],
+		configuration: {
+			environment: [
+				{ name: 'BASE_MODEL_REVISION', required: true, default: '851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a' },
+				{ name: 'RUNTIME_GID', required: true },
+			],
+			secretEnvironment: [{ name: 'AI_LAB_API_KEYS', required: true }],
+			secretFiles: [
+				{ id: 'training-source', path: '/etc/treeseed/credentials/ai-lab-training-source', required: true },
+				{ id: 'factory-control-key', path: '/etc/treeseed/credentials/ai-lab-factory-control-key', required: true },
+				{ id: 'factory-inference-key', path: '/etc/treeseed/credentials/ai-lab-factory-inference-key', required: true },
+				{ id: 'factory-training-key', path: '/etc/treeseed/credentials/ai-lab-factory-training-key', required: true },
+				{ id: 'hermes-api-key', path: '/etc/treeseed/credentials/ai-lab-hermes-api-key', required: true },
+				{ id: 'hermes-password-hash', path: '/etc/treeseed/credentials/ai-lab-hermes-password-hash', required: true },
+				{ id: 'hermes-session-secret', path: '/etc/treeseed/credentials/ai-lab-hermes-session-secret', required: true },
+				{ id: 'training-ingest-key', path: '/etc/treeseed/credentials/ai-lab-training-ingest-key', required: true },
+				{ id: 'lab-library-action-key', path: '/etc/treeseed/credentials/ai-lab-lab-library-action-key', required: true },
+			],
+			files: [],
+		},
 		migrations: [],
 		dependencies: [
 			{ id: 'inference', capability: 'treeai-inference-api', locality: 'local', optional: false },
@@ -84,6 +130,7 @@ function baseCompose(componentId: 'ai-inference' | 'ai-training') {
 	parsed.name = `treeseed-${componentId}`;
 	parsed.services = Object.fromEntries(definitions[componentId].services.map((name) => [name, parsed.services[name]]));
 	parsed.networks = Object.fromEntries(Object.entries(parsed.networks).filter(([name]) => name === `${family}-private` || name === 'platform' || name === 'treeseed-edge'));
+	if (componentId === 'ai-training') parsed.services['training-api'].volumes = [{ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-training/data/training', target: '/artifacts' }];
 	if (componentId === 'ai-inference') delete parsed.secrets;
 	return parsed;
 }
@@ -117,7 +164,9 @@ function labCompose() {
 	parsed.networks.platform = { name: 'treeseed-platform', external: true };
 	parsed.networks['treeseed-edge'] = { name: 'treeseed-edge', external: true };
 	delete parsed.volumes;
-	for (const secret of Object.values(parsed.secrets) as Array<{ file: string }>) secret.file = secret.file.replace('/etc/treeseed-ai/lab/secrets/', '/etc/treeseed/credentials/ai-lab-').replace('/etc/treeseed-ai/lab/', '/etc/treeseed/components/ai-lab/');
+	for (const secret of Object.values(parsed.secrets) as Array<{ file: string }>) secret.file = secret.file.endsWith('/training-source.json')
+		? '/etc/treeseed/credentials/ai-lab-training-source'
+		: secret.file.replace('/etc/treeseed-ai/lab/secrets/', '/etc/treeseed/credentials/ai-lab-');
 	return parsed;
 }
 
@@ -158,6 +207,7 @@ for (const componentId of Object.keys(definitions) as Array<keyof typeof definit
 	const runtime = {
 		schemaVersion: 'treeseed.package-runtime/v1' as const, componentId, version: debianRelease,
 		compose: { projectName: `treeseed-${componentId}`, files: [{ path: composeName, digest: composeDigest }] },
+		configuration: definition.configuration,
 		services: serviceContracts(componentId), stateVolumes: definition.states, migrations: definition.migrations,
 		requiredCapabilities: componentId === 'ai-lab' ? ['docker-compose'] : ['docker-compose', 'nvidia-container-runtime'], dependencies: definition.dependencies,
 	};
