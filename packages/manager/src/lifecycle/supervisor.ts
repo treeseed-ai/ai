@@ -39,6 +39,7 @@ import {
 import { rotateHermesPassword } from "./hermes/rotation.js";
 import { hermesDiagnostics } from "./hermes/diagnostics.js";
 import { activateProfile, cancelCampaign, rollbackProfile, runCampaign } from "./qualification/index.js";
+import{configureR2}from'./storage/index.js';
 function rootOnly() {
 	if (process.getuid?.() !== 0)
 		throw new Error("Manager supervisor must run as root.");
@@ -123,6 +124,8 @@ export async function execute(request: SupervisorRequest) {
 	switch (request.operation) {
 		case "auth.rotate":
 			return rotateOperatorCredential();
+		case "storage.r2.configure":
+			return configureR2();
 		case "update.check":
 			return checkForUpdate();
 		case "update.plan":
