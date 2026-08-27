@@ -22,6 +22,14 @@
 - Do not add a push-triggered hosted deployment workflow.
 - Use plan for non-mutating Compose previews and apply for live reconciliation; never add dry-run behavior.
 
+## Qualification evidence and GPU cost
+
+- Treat successful full-corpus GPU qualifications as reusable evidence. Preserve their immutable datasets, signed artifacts, machine profiles, image digests, configuration digests, results, and receipts so routine fixes can replay downstream import, evaluation, promotion, rollback, and agent canaries without retraining.
+- Do not rerun proven EDGAR, NASA, or equivalent long-running training solely to validate an unrelated API, packaging, updater, orchestration, evaluation, or presentation change. Run the smallest affected smoke test or canary instead.
+- Invalidate prior training evidence when a training-critical fingerprint changes, including the base-model revision, training dataset or split, Axolotl/Marker/CUDA image digest, objective, adapter topology or rank, tokenizer, sequence or image limits, optimizer profile, or relevant hardware/runtime identity.
+- Require one final end-to-end integration qualification before a release that claims the training loop. It may reuse previously proven immutable intermediate artifacts until the final training gate, but the final gate must exercise the real release candidate from ingestion through training, signing, import, evaluation, serving, and rollback.
+- Record why evidence was reused or invalidated in the issue and pull request. Never trade away signature verification, checksum verification, compatibility checks, health gates, or rollback validation to save GPU time.
+
 ## Project library
 
 Use `trsd library show ai` and `status` before querying `treeseed-ai/ai-library`. Read root-level paths at an exact commit. Author only through governed library workspaces and reviews. Never recreate `src/content` or edit `.treeseed/data` directly.
