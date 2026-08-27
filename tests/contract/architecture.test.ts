@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 describe("independent product architecture", () => {
 	it("uses the SDK only to publish portable deployment contracts", () => {
 		const metadata = JSON.parse(readFileSync(resolve("package.json"), "utf8"));
-		expect(metadata.devDependencies["@treeseed/sdk"]).toBe("0.13.0-rc.32");
+		expect(metadata.devDependencies["@treeseed/sdk"]).toBe("0.13.0-rc.49");
 		const sources = ["packages/common", "packages/host-runtime", "packages/inference-api", "packages/inference-manager", "packages/training-api", "packages/training-manager"]
 			.map((path) => readFileSync(resolve(path, "package.json"), "utf8"))
 			.join("\n");

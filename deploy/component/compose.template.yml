@@ -4,11 +4,31 @@ x-product-environment: &product-environment
 x-security: &security
   security_opt: ["no-new-privileges:true"]
 services:
+  inference-postgres:
+    image: "@POSTGRES_IMAGE@"
+    <<: *security
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: inference
+      POSTGRES_USER: inference
+      POSTGRES_PASSWORD: "${INFERENCE_POSTGRES_PASSWORD:?INFERENCE_POSTGRES_PASSWORD is required}"
+    volumes:
+      - type: bind
+        source: ${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai/data/postgres
+        target: /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U inference -d inference"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks: [inference-private]
   inference-migrations:
     image: "@INFERENCE_MIGRATIONS_IMAGE@"
     <<: [*product-environment, *security]
     environment:
       DATABASE_URL: "${INFERENCE_DATABASE_URL:?INFERENCE_DATABASE_URL is required}"
+    depends_on:
+      inference-postgres: { condition: service_healthy }
     restart: "no"
     networks: [inference-private]
   inference-vllm:
@@ -91,7 +111,27 @@ services:
     <<: [*product-environment, *security]
     environment:
       DATABASE_URL: "${TRAINING_DATABASE_URL:?TRAINING_DATABASE_URL is required}"
+    depends_on:
+      training-postgres: { condition: service_healthy }
     restart: "no"
+    networks: [training-private]
+  training-postgres:
+    image: "@POSTGRES_IMAGE@"
+    <<: *security
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: training
+      POSTGRES_USER: training
+      POSTGRES_PASSWORD: "${TRAINING_POSTGRES_PASSWORD:?TRAINING_POSTGRES_PASSWORD is required}"
+    volumes:
+      - type: bind
+        source: ${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai/data/postgres
+        target: /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U training -d training"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
     networks: [training-private]
   training-marker:
     image: "@MARKER_WORKER_IMAGE@"
