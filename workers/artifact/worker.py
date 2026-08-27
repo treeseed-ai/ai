@@ -1,9 +1,9 @@
 import base64, hashlib, json, os, re, shutil
-import boto3
 from pathlib import Path
 from sys import path
 path.insert(0,"/app")
 from common.server import serve
+from common.artifacts import ArtifactRepository
 from canonical_json import canonical,json_bytes
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -12,6 +12,7 @@ from composition import compose as compose_adapters
 
 ROOT=Path(os.getenv("ARTIFACT_ROOT","/artifacts")).resolve();ARCHIVE=Path(os.getenv("ARCHIVE_ROOT","/archive")).resolve();ROOT.mkdir(parents=True,exist_ok=True);ARCHIVE.mkdir(parents=True,exist_ok=True)
 KEY_PATH=Path(os.getenv("SIGNING_KEY","/run/secrets/artifact-signing-key"))
+REPOSITORY=ArtifactRepository.from_env()
 def safe(value,base=ROOT):
     target=Path(value).resolve()
     if base not in target.parents and target!=base: raise ValueError("Path is outside the artifact root")
@@ -20,10 +21,8 @@ def sign_manifest(manifest):
     key=serialization.load_pem_private_key(KEY_PATH.read_bytes(),password=None)
     if not isinstance(key,Ed25519PrivateKey): raise ValueError("Signing key must be Ed25519")
     return{**manifest,"signature":base64.b64encode(key.sign(canonical(manifest))).decode()}
-def client(): return boto3.client("s3",endpoint_url=os.environ["AWS_ENDPOINT_URL"],region_name=os.getenv("AWS_REGION","us-east-1"),aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"])
-def upload(path,key):
-    bucket=os.environ["S3_BUCKET"];client().upload_file(str(path),bucket,key);return f"s3://{bucket}/{key}"
-def compose(job):return compose_adapters(job,client(),os.environ["S3_BUCKET"],KEY_PATH,upload,sign_manifest)
+def upload(path,key):return REPOSITORY.put_file(key,path)["uri"]
+def compose(job):return compose_adapters(job,REPOSITORY,KEY_PATH,upload,sign_manifest)
 def dataset(job):
     sources=job["input"].get("sources",[])
     if not sources: raise ValueError("sources are required")
@@ -44,10 +43,8 @@ def validate_experience(manifest):
         if not item.get("id") or item["id"] in seen or not isinstance(item.get("messages"),list): raise ValueError("Malformed or duplicate trajectory")
         seen.add(item["id"])
         for artifact in item.get("artifacts",[]):
-            if not re.fullmatch(r"[a-f0-9]{64}",artifact.get("sha256","")) or not str(artifact.get("uri","")).startswith("s3://"): raise ValueError("Artifact is not content-addressed")
-            prefix=f"s3://{os.environ['S3_BUCKET']}/"
-            if not artifact["uri"].startswith(prefix): raise ValueError("Experience artifact is outside the training bucket")
-            body=client().get_object(Bucket=os.environ["S3_BUCKET"],Key=artifact["uri"][len(prefix):])["Body"].read()
+            if not re.fullmatch(r"[a-f0-9]{64}",artifact.get("sha256","")): raise ValueError("Artifact is not content-addressed")
+            body=REPOSITORY.bytes(artifact["uri"])
             if len(body)!=artifact.get("size") or hashlib.sha256(body).hexdigest()!=artifact["sha256"]: raise ValueError("Experience artifact checksum or size does not match")
     return clean(manifest)
 def experience_register(job):

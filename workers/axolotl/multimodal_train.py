@@ -1,6 +1,6 @@
 import hashlib,json,os,re,shutil,subprocess
 from pathlib import Path
-import boto3
+from common.artifacts import ArtifactRepository
 from library_train import BASE_MODEL,BASE_REVISION,fixed_steps,job_guard,run_axolotl,safe_diagnostic
 
 VISION_TARGET=r"model\.visual\.(blocks\.\d+\.(attn\.(qkv|proj)|mlp\.(linear_fc1|linear_fc2))|merger\.(linear_fc1|linear_fc2))"
@@ -8,11 +8,7 @@ SEQUENCES=(4096,3072,2048,1024)
 PIXEL_TIERS=(786432,524288,262144)
 MULTIMODAL_QUALIFICATION_STEPS=8
 
-def client():return boto3.client("s3",endpoint_url=os.environ["AWS_ENDPOINT_URL"],region_name=os.getenv("AWS_REGION","us-east-1"),aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"])
-def key(uri):
-    prefix=f"s3://{os.environ['S3_BUCKET']}/"
-    if not str(uri).startswith(prefix):raise ValueError("Multimodal dataset is outside the training bucket")
-    return str(uri)[len(prefix):]
+REPOSITORY=ArtifactRepository.from_env()
 def resolve_local_images(data,images):
     output=[]
     for line in data.decode("utf-8").splitlines():
@@ -29,18 +25,18 @@ def resolve_local_images(data,images):
     if not output:raise ValueError("Multimodal dataset contains no examples")
     return ("\n".join(output)+"\n").encode()
 def download_dataset(value,root):
-    manifest=json.loads(client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(value["datasetManifest"]))["Body"].read())
+    manifest=json.loads(REPOSITORY.bytes(value["datasetManifest"]))
     if manifest.get("schemaVersion")!="ai.library-dataset/v2":raise ValueError("Multimodal training requires ai.library-dataset/v2")
     multi=manifest.get("multimodal",{});source=multi.get("trainObject")
     if not source:raise ValueError("Dataset contains no qualified source-authored image examples")
-    dataset_data=client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(source["uri"]))["Body"].read()
+    dataset_data=REPOSITORY.bytes(source["uri"])
     if hashlib.sha256(dataset_data).hexdigest()!=source["sha256"] or len(dataset_data)!=source["size"]:raise ValueError("Multimodal dataset checksum or size mismatch")
     images={}
     for item in multi.get("imageObjects",[]):
         relative=Path(str(item.get("relativePath","")))
         if relative.is_absolute() or ".." in relative.parts:raise ValueError("Unsafe dataset image path")
         destination=root/relative;destination.parent.mkdir(parents=True,exist_ok=True)
-        data=client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(item["uri"]))["Body"].read()
+        data=REPOSITORY.bytes(item["uri"])
         if hashlib.sha256(data).hexdigest()!=item["sha256"] or len(data)!=item["size"]:raise ValueError("Multimodal dataset image checksum or size mismatch")
         destination.write_bytes(data);name=relative.as_posix()
         if name in images:raise ValueError("Duplicate multimodal image path")

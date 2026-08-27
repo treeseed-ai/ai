@@ -1,6 +1,6 @@
-import { readFile,stat } from 'node:fs/promises';
+import { stat } from 'node:fs/promises';
 import type { Pool,PoolClient } from 'pg';
-import type{ObjectWriter}from'./minio-storage.js';
+import type{ArtifactRepository}from'@ai-platform/common';
 
 export const documentStates=['received','classified','pending_processing','processing','ready','quarantined','deleted'] as const;
 export interface LibraryInput {sourceKind:'open-webui'|'api';externalId:string;slug:string;name:string;description?:string}
@@ -11,7 +11,7 @@ const maximumDocumentBytes=100*1024*1024;
 export async function boundedDocumentBytes(path:string,expectedSize:number){
 	const details=await stat(path);if(details.size!==expectedSize)throw new Error('Document size changed before object storage');
 	if(details.size<0||details.size>maximumDocumentBytes)throw new Error('Document exceeds the 100 MiB limit');
-	const bytes=await readFile(path);if(bytes.byteLength!==expectedSize)throw new Error('Document size changed while reading');return bytes;
+	return details.size;
 }
 
 export function sameDocumentRevision(current:Record<string,unknown>,input:DocumentInput){
@@ -27,7 +27,7 @@ function row(value:Record<string,unknown>){return{id:String(value.id),sourceKind
 function documentRow(value:Record<string,unknown>){return{id:String(value.id),libraryId:String(value.library_id),externalId:value.external_id,state:value.state,deletedAt:value.deleted_at?new Date(value.deleted_at as string).toISOString():null,currentRevision:value.current_revision_id?{id:String(value.current_revision_id),sha256:value.object_sha256,objectUri:value.object_uri,filename:value.filename,relativePath:value.relative_path,directoryExternalId:value.directory_external_id,declaredMimeType:value.declared_mime_type,detectedMimeType:value.detected_mime_type,revision:Number(value.revision),provenance:value.provenance,diagnostics:value.diagnostics,normalizedManifestUri:value.normalized_manifest_uri,tokenCount:value.token_count===null?null:Number(value.token_count)}:null,createdAt:new Date(value.created_at as string).toISOString(),updatedAt:new Date(value.updated_at as string).toISOString()};}
 
 export class LibraryRepository {
-	constructor(readonly pool:Pool,readonly objects:ObjectWriter){}
+	constructor(readonly pool:Pool,readonly objects:Pick<ArtifactRepository,'putFile'>){}
 	async list(){const result=await this.pool.query('SELECT * FROM libraries WHERE deleted=false ORDER BY name,id');return result.rows.map(row);}
 	async get(id:string){const result=await this.pool.query('SELECT * FROM libraries WHERE id=$1 AND deleted=false',[id]);return result.rowCount?row(result.rows[0]):null;}
 	async upsert(input:LibraryInput){
@@ -38,7 +38,7 @@ export class LibraryRepository {
 	async documents(libraryId:string){const result=await this.pool.query(`SELECT d.*,r.object_sha256,o.object_uri,r.filename,r.relative_path,r.directory_external_id,r.declared_mime_type,r.detected_mime_type,r.revision,r.provenance,r.diagnostics,r.normalized_manifest_uri,r.token_count FROM library_documents d LEFT JOIN document_revisions r ON r.id=d.current_revision_id LEFT JOIN document_objects o ON o.sha256=r.object_sha256 WHERE d.library_id=$1 ORDER BY r.relative_path,d.id`,[libraryId]);return result.rows.map(documentRow);}
 	async ingest(libraryId:string,input:DocumentInput,temporaryPath:string){
 		if(!/^[a-f0-9]{64}$/u.test(input.sha256))throw new Error('A valid SHA-256 digest is required');
-		const bytes=await boundedDocumentBytes(temporaryPath,input.size),stored=await this.objects.put(`library-source/${input.sha256}`,bytes,input.detectedMimeType);
+		await boundedDocumentBytes(temporaryPath,input.size);const stored=await this.objects.putFile(`library-source/${input.sha256}`,temporaryPath,input.detectedMimeType);
 		if(stored.sha256!==input.sha256)throw new Error('Document SHA-256 changed before object storage');
 		const client=await this.pool.connect();try{return await this.ingestTransaction(client,libraryId,input,stored.uri);}finally{client.release();}
 	}

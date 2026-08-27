@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {describe,expect,it} from 'vitest';
 
-function python(source:string){return JSON.parse(execFileSync('python3',['-c',source],{cwd:process.cwd(),encoding:'utf8'}));}
+function python(source:string){const preamble=`import os,tempfile\nos.environ.setdefault('ARTIFACT_ROOT',tempfile.mkdtemp(prefix='treeai-test-artifacts-'))\nos.environ.setdefault('ARTIFACT_STORE_ID','training')\n`;return JSON.parse(execFileSync('python3',['-c',preamble+source],{cwd:process.cwd(),encoding:'utf8',env:{...process.env,PYTHONPATH:join(process.cwd(),'workers')}}));}
 
 describe('multimodal library processing',()=>{
 	it('finalizes the owning run only when a phase job is terminal',()=>{const manager=readFileSync('packages/training-manager/src/main.ts','utf8');expect(manager).toContain("signal.aborted||job.cancellationRequested||job.attempts>=job.maxAttempts");expect(manager.match(/finalizeRunFailure\(jobs\.pool/g)).toHaveLength(3);expect(manager).toContain("state NOT IN ('succeeded','rejected')");});
@@ -11,7 +11,7 @@ describe('multimodal library processing',()=>{
 		const worker=JSON.stringify(join(process.cwd(),'workers/marker/worker.py'));
 		const result=python(`import importlib.util,json,os,pathlib,sys,tempfile,types
 os.environ['OUTPUT_DIR']=tempfile.mkdtemp(prefix='treeai-marker-test-')
-sys.modules['boto3']=types.SimpleNamespace(client=lambda *a,**k:None);sys.modules['common']=types.ModuleType('common');sys.modules['common.server']=types.SimpleNamespace(serve=lambda routes:None)
+sys.modules['common.server']=types.SimpleNamespace(serve=lambda routes:None)
 spec=importlib.util.spec_from_file_location('marker',${worker});module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 with tempfile.TemporaryDirectory() as root:
  target=pathlib.Path(root);structured=target/'structured';structured.mkdir();images=target/'images';images.mkdir();(images/'figure.png').write_bytes(b'\\x89PNG\\r\\n\\x1a\\nsource-authored-image')
@@ -26,7 +26,7 @@ with tempfile.TemporaryDirectory() as root:
 		const worker=JSON.stringify(join(process.cwd(),'workers/marker/worker.py'));
 		const result=python(`import importlib.util,json,os,pathlib,sys,tempfile,types
 os.environ['OUTPUT_DIR']=tempfile.mkdtemp(prefix='treeai-marker-test-')
-sys.modules['boto3']=types.SimpleNamespace(client=lambda *a,**k:None);sys.modules['common']=types.ModuleType('common');sys.modules['common.server']=types.SimpleNamespace(serve=lambda routes:None)
+sys.modules['common.server']=types.SimpleNamespace(serve=lambda routes:None)
 spec=importlib.util.spec_from_file_location('marker',${worker});module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 with tempfile.TemporaryDirectory() as root:
  target=pathlib.Path(root);structured=target/'structured';structured.mkdir();markdown=target/'markdown';markdown.mkdir();images=target/'images';images.mkdir()
