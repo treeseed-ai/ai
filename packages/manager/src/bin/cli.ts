@@ -6,7 +6,7 @@ import { redactSensitiveText, transportFailure } from "@ai-platform/common";
 import { callSupervisor, type SupervisorOperation } from "../lifecycle/socket.js";
 import { paths } from "../core/paths.js";
 import { buildLocalImages, planLocalBuild } from "../lifecycle/local-build.js";
-import{discardR2Input,stageR2Environment}from'../lifecycle/storage/index.js';
+import{collectR2Environment,discardR2Input,stageR2Environment}from'../lifecycle/storage/index.js';
 const [group, command, ...args] = process.argv.slice(2),
 	json = args.includes("--json");
 function settings() {
@@ -101,7 +101,7 @@ async function main() {
 	if (group === "auth") {
 		if (command !== "rotate") throw new Error("Unknown auth command.");
 		result = await local("auth.rotate");
-	} else if(group==='storage'){if(command!=='configure'||args.find(item=>!item.startsWith('--'))!=='r2')throw new Error('Usage: treeai storage configure r2');root();stageR2Environment();try{result=await local('storage.r2.configure');}finally{discardR2Input();}}
+	} else if(group==='storage'){if(command!=='configure'||args.find(item=>!item.startsWith('--'))!=='r2')throw new Error('Usage: treeai storage configure r2');root();stageR2Environment(await collectR2Environment());try{result=await local('storage.r2.configure');}finally{discardR2Input();}}
 	else if (group === "platform") result = await platform();
 	else if (group === "qualify") result = await qualify();
 	else if (group === "update") result = await update();
