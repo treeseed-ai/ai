@@ -4,6 +4,7 @@ export * from './jobs.js';
 export * from './manifest.js';
 export * from './openapi.js';
 export * from './storage.js';
+export * from './artifacts/repository.js';
 export * from './supervisor.js';
 export * from './types.js';
 export * from './platform/index.js';
