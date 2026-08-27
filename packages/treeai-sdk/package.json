@@ -1,0 +1,15 @@
+{
+  "name": "@treeseed/treeai",
+  "version": "0.11.0",
+  "description": "Generic TypeScript SDK and authoritative operation catalog for TreeAI services.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "files": ["dist", "openapi", "operation-inventory.json", "sdk-manifest.yaml"],
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./openapi": { "types": "./dist/contract.d.ts", "default": "./dist/contract.js" }
+  },
+  "scripts": { "build": "tsc -p tsconfig.json", "test": "vitest run" },
+  "publishConfig": { "access": "public" }
+}

@@ -1,0 +1,153 @@
+{
+  "openapi": "3.1.1",
+  "info": {
+    "title": "TreeAI Qualification and Mode API",
+    "version": "0.11.0"
+  },
+  "components": {
+    "securitySchemes": {
+      "apiKey": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  },
+  "paths": {
+    "/healthz": {
+      "get": {
+        "operationId": "qualification.get.healthz"
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "qualification.get.readyz"
+      }
+    },
+    "/v1/version": {
+      "get": {
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "operationId": "qualification.get.version"
+      }
+    },
+    "/v1/status": {
+      "get": {
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "operationId": "qualification.get.status"
+      }
+    },
+    "/v1/qualification/profile": {
+      "get": {
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "operationId": "qualification.get.qualification.profile"
+      }
+    },
+    "/v1/qualification/profiles": {
+      "get": {
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "operationId": "qualification.get.qualification.profiles"
+      }
+    },
+    "/v1/qualification/campaigns": {
+      "get": {
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "operationId": "qualification.get.qualification.campaigns"
+      },
+      "post": {
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "operationId": "qualification.post.qualification.campaigns"
+      }
+    },
+    "/v1/qualification/campaigns/{id}": {
+      "get": {
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "operationId": "qualification.get.qualification.campaigns.id"
+      }
+    },
+    "/v1/qualification/campaigns/{id}/cancel": {
+      "post": {
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "operationId": "qualification.post.qualification.campaigns.id.cancel"
+      }
+    },
+    "/v1/mode": {
+      "get": {
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "operationId": "qualification.get.mode"
+      },
+      "post": {
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "operationId": "qualification.post.mode"
+      }
+    },
+    "/v1/transitions/{id}": {
+      "get": {
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "operationId": "qualification.get.transitions.id"
+      }
+    },
+    "/v1/events/stream": {
+      "get": {
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "operationId": "qualification.get.events.stream"
+      }
+    },
+    "/v1/metrics": {
+      "get": {
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "operationId": "qualification.get.metrics"
+      }
+    }
+  }
+}

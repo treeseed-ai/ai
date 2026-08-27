@@ -14,45 +14,13 @@ dockerImages:
   releaseWorkflow: release.yml
   architectures:
     - amd64
-packageRuntime:
-  schemaVersion: treeseed.package-runtime/v1
-  componentId: ai
-  services:
-    - id: inference-api
-      composeService: inference-api
-      endpoints:
-        - id: http
-          protocol: http
-          port: 4770
-          visibility: host
-          defaultAlias: inference.ai.treeseed.localhost
-          aliasOverride: true
-          tls: edge
-          authentication: application
-          healthGate: { protocol: http, path: /readyz, timeoutSeconds: 600 }
-    - id: inference-data
-      composeService: inference-api
-      endpoints:
-        - id: http
-          protocol: http
-          port: 4771
-          visibility: private
-          aliasOverride: false
-          tls: none
-          authentication: application
-          healthGate: { protocol: http, path: /healthz, timeoutSeconds: 600 }
-    - id: training-api
-      composeService: training-api
-      endpoints:
-        - id: http
-          protocol: http
-          port: 4780
-          visibility: host
-          defaultAlias: training.ai.treeseed.localhost
-          aliasOverride: true
-          tls: edge
-          authentication: application
-          healthGate: { protocol: http, path: /readyz, timeoutSeconds: 600 }
+componentReleases:
+  schemaVersion: treeseed.component-release-set/v1
+  generator: scripts/release/create-component-release.ts
+  components:
+    - { id: ai-inference, manifest: ai-inference-component-release.json, compose: ai-inference-compose.yml, dependencies: [] }
+    - { id: ai-training, manifest: ai-training-component-release.json, compose: ai-training-compose.yml, dependencies: [] }
+    - { id: ai-lab, manifest: ai-lab-component-release.json, compose: ai-lab-compose.yml, dependencies: [ai-inference, ai-training] }
 githubEnvironments:
   - staging
   - production
@@ -63,3 +31,80 @@ verify:
   fast: pnpm verify
   local: pnpm verify
   release: pnpm verify
+development:
+  schemaVersion: treeseed.development-runtime/v1
+  project: { id: ai, repository: treeseed-ai/ai }
+  defaults: { leaseSeconds: 14400, restoreOnFailure: true }
+  targets:
+    - id: ai-inference
+      kind: rebuild-restart
+      platforms: [linux-amd64]
+      runtimeRequirements: [docker-compose, nvidia-container-runtime]
+      sourceRoots: [packages/common, packages/inference-api, packages/inference-manager, containers/inference, containers/migrations]
+      ignoredPaths: [dist, node_modules]
+      operations:
+        plan: { command: node, args: [--import, tsx, scripts/development/component.ts, ai-inference, plan], environment: {}, timeoutSeconds: 120 }
+        build: { command: node, args: [--import, tsx, scripts/development/component.ts, ai-inference, build], environment: {}, timeoutSeconds: 7200 }
+        verify: { command: node, args: [--import, tsx, scripts/development/component.ts, ai-inference, verify], environment: {}, timeoutSeconds: 300 }
+        cleanup: { command: node, args: [--import, tsx, scripts/development/component.ts, ai-inference, cleanup], environment: {}, timeoutSeconds: 300 }
+      ready: { kind: marker, path: .treeseed/development/ai-inference.json, timeoutSeconds: 7200 }
+      outputs: [{ path: .treeseed/development/ai-inference.json, mediaType: application/vnd.treeai.development-build+json, digestAlgorithm: sha256 }]
+      endpoints: []
+      dependencies: []
+      statePolicy: preserved
+      migrationPolicy: deployment-owned
+      secretRefs: {}
+      shutdown: { graceSeconds: 120, activeWorkPolicy: block }
+      resources: { exclusive: [ai-gpu] }
+      logs: [.treeseed/development/ai-inference.log]
+      forbiddenOperations: [publish, production-tag]
+    - id: ai-training
+      kind: rebuild-restart
+      platforms: [linux-amd64]
+      runtimeRequirements: [docker-compose, nvidia-container-runtime]
+      sourceRoots: [packages/common, packages/training-api, packages/training-manager, containers/training, containers/migrations]
+      ignoredPaths: [dist, node_modules]
+      operations:
+        plan: { command: node, args: [--import, tsx, scripts/development/component.ts, ai-training, plan], environment: {}, timeoutSeconds: 120 }
+        build: { command: node, args: [--import, tsx, scripts/development/component.ts, ai-training, build], environment: {}, timeoutSeconds: 7200 }
+        verify: { command: node, args: [--import, tsx, scripts/development/component.ts, ai-training, verify], environment: {}, timeoutSeconds: 300 }
+        cleanup: { command: node, args: [--import, tsx, scripts/development/component.ts, ai-training, cleanup], environment: {}, timeoutSeconds: 300 }
+      ready: { kind: marker, path: .treeseed/development/ai-training.json, timeoutSeconds: 7200 }
+      outputs: [{ path: .treeseed/development/ai-training.json, mediaType: application/vnd.treeai.development-build+json, digestAlgorithm: sha256 }]
+      endpoints: []
+      dependencies: []
+      statePolicy: preserved
+      migrationPolicy: deployment-owned
+      secretRefs: {}
+      shutdown: { graceSeconds: 300, activeWorkPolicy: block }
+      resources: { exclusive: [ai-gpu] }
+      logs: [.treeseed/development/ai-training.log]
+      forbiddenOperations: [publish, production-tag]
+    - id: ai-lab
+      kind: rebuild-restart
+      platforms: [linux-amd64]
+      runtimeRequirements: [docker-compose]
+      sourceRoots: [packages/common, packages/lab, containers/lab]
+      ignoredPaths: [dist, node_modules]
+      operations:
+        plan: { command: node, args: [--import, tsx, scripts/development/component.ts, ai-lab, plan], environment: {}, timeoutSeconds: 120 }
+        build: { command: node, args: [--import, tsx, scripts/development/component.ts, ai-lab, build], environment: {}, timeoutSeconds: 7200 }
+        verify: { command: node, args: [--import, tsx, scripts/development/component.ts, ai-lab, verify], environment: {}, timeoutSeconds: 300 }
+        cleanup: { command: node, args: [--import, tsx, scripts/development/component.ts, ai-lab, cleanup], environment: {}, timeoutSeconds: 300 }
+      ready: { kind: marker, path: .treeseed/development/ai-lab.json, timeoutSeconds: 7200 }
+      outputs: [{ path: .treeseed/development/ai-lab.json, mediaType: application/vnd.treeai.development-build+json, digestAlgorithm: sha256 }]
+      endpoints: []
+      dependencies: [ai-inference, ai-training]
+      statePolicy: preserved
+      migrationPolicy: deployment-owned
+      secretRefs: {}
+      shutdown: { graceSeconds: 120, activeWorkPolicy: block }
+      resources: {}
+      logs: [.treeseed/development/ai-lab.log]
+      forbiddenOperations: [publish, production-tag]
+standards:
+  schemaVersion: 1
+  produced:
+    - { id: "@treeseed/treeai/openapi", family: openapi, version: "0.11.0", semanticRange: "0.11.0", source: packages/treeai-sdk/openapi, artifact: packages/treeai-sdk/openapi, verifier: scripts/sdk/generate-contracts.ts }
+    - { id: "@treeseed/treeai/operation-inventory", family: json-schema, version: "1.0.0", semanticRange: "^1.0.0", source: packages/treeai-sdk/operation-inventory.json, artifact: packages/treeai-sdk/operation-inventory.json, verifier: scripts/sdk/generate-contracts.ts }
+    - { id: "@treeseed/treeai/typescript-public-api", family: typescript, version: "0.11.0", semanticRange: "0.11.0", source: packages/treeai-sdk/src, artifact: packages/treeai-sdk, verifier: scripts/sdk/generate-contracts.ts }

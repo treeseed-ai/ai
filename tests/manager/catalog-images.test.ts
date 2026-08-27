@@ -7,7 +7,7 @@ describe('cataloged upstream runtime images',()=>{
   it('tracks every production Compose dependency by digest',()=>{
     const catalog=validateCatalog(JSON.parse(readFileSync('release/catalog.json','utf8')));
     expect(catalog.packageSet).toBe('all');
-    expect(catalog.runtimeImages.map(image=>image.id)).toEqual(expect.arrayContaining(['caddy','postgres','minio','minio-client','open-webui']));
+    expect(catalog.runtimeImages.map(image=>image.id)).toEqual(['caddy','postgres','open-webui']);
     for(const image of catalog.runtimeImages)expect(image.reference).toContain(`@${image.digest}`);
   });
   it('declares package and image delivery as independent dimensions',()=>{

@@ -118,6 +118,8 @@ jobs:
           TREEAI_IMAGE_MANIFEST: "${{ github.workspace }}/assets/image-manifest.json"
         run: |
           pnpm build:component-release
+          pnpm contracts:generate
+          TREEAI_CONTRACT_RELEASE="$TREEAI_RC_TAG" TREEAI_SOURCE_COMMIT='${{ github.sha }}' pnpm contracts:stage-release
           cp release-assets/component/* assets/
       - uses: actions/attest-build-provenance@v3
         with: { subject-path: "release-assets/component/*" }

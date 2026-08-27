@@ -1,6 +1,6 @@
 {
   "name": "@ai-platform/workspace",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "private": true,
   "license": "Apache-2.0",
   "repository": {
@@ -16,13 +16,16 @@
   "engines": { "node": ">=22" },
   "workspaces": ["packages/*"],
   "scripts": {
-    "build": "pnpm --filter @ai-platform/common build && pnpm --filter @ai-platform/manager build && pnpm --filter @ai-platform/cli build && pnpm --filter @ai-platform/host-runtime build && pnpm --filter @ai-platform/inference-api build && pnpm --filter @ai-platform/inference-manager build && pnpm --filter @ai-platform/training-api build && pnpm --filter @ai-platform/training-manager build && pnpm --filter @ai-platform/lab build",
+    "build": "pnpm --filter @ai-platform/common build && pnpm --filter @ai-platform/manager build && pnpm --filter @ai-platform/cli build && pnpm --filter @ai-platform/host-runtime build && pnpm --filter @ai-platform/inference-api build && pnpm --filter @ai-platform/inference-manager build && pnpm --filter @ai-platform/training-api build && pnpm --filter @ai-platform/training-manager build && pnpm --filter @ai-platform/lab build && pnpm --filter @treeseed/treeai build",
     "test": "vitest run",
     "check:file-architecture": "node --import tsx scripts/support/check-source-shape.ts",
     "check:release": "node --import tsx scripts/release/validate.ts",
     "build:component-release": "node --import tsx scripts/release/create-component-release.ts",
+    "contracts:generate": "node --import tsx scripts/sdk/generate-contracts.ts",
+    "contracts:check": "pnpm contracts:generate && git diff --exit-code -- packages/treeai-sdk/openapi packages/treeai-sdk/operation-inventory.json packages/treeai-sdk/src/generated/contract.ts",
+    "contracts:stage-release": "node --import tsx scripts/sdk/stage-release.ts",
     "build:deb": "pnpm build && node --import tsx scripts/package-deb.ts all",
-    "verify": "pnpm check:release && pnpm check:file-architecture && pnpm build && pnpm test"
+    "verify": "pnpm check:release && pnpm check:file-architecture && pnpm build && pnpm contracts:check && pnpm test"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.879.0",

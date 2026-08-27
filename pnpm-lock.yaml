@@ -150,6 +150,8 @@ importers:
         specifier: 8.10.0
         version: 8.10.0
 
+  packages/treeai-sdk: {}
+
 packages:
 
   '@aws-sdk/checksums@3.1000.28':
