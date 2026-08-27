@@ -25,7 +25,7 @@ describe('selective image build identities',()=>{
     expect(workflow).toContain('recover_run_id');
     expect(workflow).toContain('git diff --quiet "$recovery_sha" HEAD');
     expect(workflow).toContain('.name == "Publish every exact RC image and verify Docker Hub read-back" and .conclusion == "success"');
-    expect(workflow).toContain('.name == "Publish immutable prerelease" and .conclusion == "failure"');
+    expect(workflow).toContain('(.name == "Create exact managed component bundle" or .name == "Publish immutable prerelease") and .conclusion == "failure"');
     expect(workflow).toContain('checksum=$(mktemp)');
     expect(workflow).toContain('find . -maxdepth 1 -type f ! -name SHA256SUMS');
     expect(workflow).not.toContain('xargs sha256sum > SHA256SUMS');
