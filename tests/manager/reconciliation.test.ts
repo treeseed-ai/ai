@@ -16,6 +16,12 @@ describe('manager-owned platform reconciliation',()=>{
 		expect(inference).toContain('TREEAI_S3_CREDENTIAL_GENERATION: "${S3_CREDENTIAL_GENERATION:-compatibility-v1}"');
 		for(const product of['inference','training'])expect(readFileSync(`deploy/${product}/compose.yml`,'utf8')).toContain('TREEAI_S3_CREDENTIAL_GENERATION: "${S3_CREDENTIAL_GENERATION:-compatibility-v1}"');
 	});
+	it('gates reconciliation on every enabled product before committing a generation',()=>{
+		const platform=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8'),update=readFileSync('packages/manager/src/lifecycle/update.ts','utf8');
+		expect(platform).toContain('import { verifyLabReadiness, verifyProductReadiness }');
+		expect(platform).toContain('if(enabled.has(product))verifyProductReadiness(product,reconcileProduct)');expect(platform).toContain('if(enabled.has("lab"))verifyLabReadiness(lab)');
+		expect(update.indexOf('await reconcilePlatform()')).toBeLessThan(update.indexOf('setSetting("knownGoodGeneration"'));
+	});
   it('does not start standalone inference and training units',()=>{
     const converge=readFileSync('packages/manager/src/bin/converge.ts','utf8');
     const platform=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8');
