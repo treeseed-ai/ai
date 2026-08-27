@@ -32,7 +32,7 @@ describe('managed AI component releases', () => {
 		for (const [componentId, componentRoles] of expected) {
 			const release = componentReleaseSchema.parse(JSON.parse(readFileSync(resolve(output, `${componentId}-component-release.json`), 'utf8')));
 			const compose = readFileSync(resolve(output, `${componentId}-compose.yml`), 'utf8');
-			const document = YAML.parse(compose) as { services: Record<string, { image: string; ports?: unknown; networks?: string[] }> };
+			const document = YAML.parse(compose) as { services: Record<string, { image: string; ports?: unknown; networks?: string[]; volumes?: Array<string | { source?: string; target?: string }> }>; secrets?: Record<string, { file: string }> };
 			const acceptedImages = new Set(release.images.map(({ repository, digest }) => `${repository}@${digest}`));
 			expect(release.componentId).toBe(componentId);
 			expect(release.release).toBe('0.11.0~rc1-2');
@@ -41,6 +41,11 @@ describe('managed AI component releases', () => {
 			expect(compose).not.toMatch(/\bbuild\s*:/u);
 			expect(compose).not.toMatch(/^\s*ports\s*:/mu);
 			expect(compose).not.toMatch(/@[A-Z_]+_IMAGE@/u);
+			const requiredEnvironment = [...compose.matchAll(/\$\{([A-Z][A-Z0-9_]*):\?[^}]+\}/gu)].map((match) => match[1]);
+			const declaredEnvironment = new Set([...release.runtime.configuration.environment, ...release.runtime.configuration.secretEnvironment].map(({ name }) => name));
+			expect(requiredEnvironment.filter((name) => !declaredEnvironment.has(name!))).toEqual([]);
+			const declaredSecretFiles = new Set(release.runtime.configuration.secretFiles.map(({ path }) => path));
+			expect(Object.values(document.secrets ?? {}).map(({ file }) => file).filter((path) => !declaredSecretFiles.has(path))).toEqual([]);
 			for (const service of Object.values(document.services)) {
 				expect(acceptedImages.has(service.image), service.image).toBe(true);
 				expect(service.ports).toBeUndefined();
@@ -49,10 +54,13 @@ describe('managed AI component releases', () => {
 				expect(compose).not.toContain('ai-shared');
 				expect(compose).not.toMatch(/^volumes:/mu);
 				expect(compose).toContain('/ai-lab/data/open-webui:/app/backend/data');
+				expect(release.runtime.stateVolumes).toContainEqual({ id: 'workspace', volume: '/var/lib/treeseed/components/ai-lab/data/workspace', backup: 'required' });
+				expect(release.runtime.configuration.secretFiles).toHaveLength(9);
 			} else {
 				expect(compose).toContain('postgres@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73');
 				expect(compose).toContain(`/${componentId}/data/postgres`);
 				expect(release.runtime.stateVolumes).toContainEqual({ id: 'postgres', volume: `/var/lib/treeseed/components/${componentId}/data/postgres`, backup: 'required' });
+				if (componentId === 'ai-training') expect(document.services['training-api']?.volumes).toContainEqual({ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-training/data/training', target: '/artifacts' });
 			}
 		}
 	});
