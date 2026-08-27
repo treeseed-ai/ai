@@ -9,6 +9,9 @@
 - Do not merge with unresolved review findings or failing required checks. Verify the exact reviewed head commit before merge and the resulting `main` commit before release.
 - Release publication requires a merged, reviewed PR and an explicit manual dispatch from the protected `production` environment. Never publish from an unreviewed branch or replace that gate with a push-triggered workflow.
 - Keep GitHub credentials, signing keys, API keys, and other secret material outside repository files, issue bodies, pull-request text, command arguments, logs, and agent workspaces.
+- Reconcile issue state whenever a pull request merges and at every release checkpoint. Close fully resolved issues with a concise comment linking the merged PR and verification evidence; do not rely on default-branch closing keywords when the repository merges through `staging` first.
+- Keep partially resolved and umbrella issues open only with an updated comment that states the remaining acceptance work and current blocker. Do not close an issue merely because an attempted fix merged when live qualification still disproves the outcome.
+- Audit open issues against merged pull requests regularly. Close stale duplicates and completed implementation issues with traceable evidence, while preserving distinct follow-up work in a new or clearly scoped existing issue.
 
 ## Architecture
 
