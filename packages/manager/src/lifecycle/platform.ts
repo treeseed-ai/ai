@@ -10,7 +10,7 @@ import { paths } from "../core/paths.js";import { hashHermesPassword } from "./h
 import { ensurePlatformTls } from "./certificates/tls.js";import { activateManagerCertificate } from "./certificates/activation.js";import { imageVariables } from "../core/image-variables.js";
 import { summarizeComposeStatus, type ProductStatus } from "./status.js";
 import { activeProfile, qualificationStatus, runCampaign } from "./qualification/index.js";import { reconcileLabEdge } from "./lab/edge.js";import { migrationDiagnostics } from "./migrations/diagnostics.js";
-import { objectStoreAccessId, secretGeneration } from "./storage/identities.js";
+import { objectStoreAccessId, secretGeneration } from "./storage/identities.js";import { verifyLabReadiness, verifyProductReadiness } from "./readiness/products.js";
 const products = {
 	inference: {
 		compose: "/usr/lib/treeseed-ai/inference/compose.yml",
@@ -422,8 +422,7 @@ export async function reconcilePlatform() {
 	ensureLabConfiguration();
 	const configuration = validatePlatformConfiguration(JSON.parse(readFileSync(paths.configuration, "utf8"))),
 		certificate = ensurePlatformTls(configuration);
-	const mode = setting<string>("mode", "awake"),
-		enabled = enabledProducts();
+	const mode = setting<string>("mode", "awake"),enabled = enabledProducts();
 	if (!existsSync(paths.mode)) writeMode(mode);
 	if(configuration.state.objectStorage==="bundled")for(const product of["inference","training"]as const)if(enabled.has(product))reconcileObjectStore(product);
 	if (mode === "awake") {
@@ -450,6 +449,7 @@ export async function reconcilePlatform() {
 		throw error;
 	}
 	activateManagerCertificate(certificate, command);
+	for(const product of["inference","training"]as const)if(enabled.has(product))verifyProductReadiness(product,reconcileProduct);if(enabled.has("lab"))verifyLabReadiness(lab);
 	if (qualificationStatus().baselineRequired && mode === "awake" && runCampaign("baseline").state === "succeeded") ensureProductConfiguration();
 	const services = serviceStatus();
 	setSetting("components", services);
