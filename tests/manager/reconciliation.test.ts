@@ -88,7 +88,7 @@ describe('manager-owned platform reconciliation',()=>{
   });
 	it('gates training API readiness on its effective object-store identity',()=>{
 		const compose=readFileSync('deploy/training/compose.yml','utf8'),main=readFileSync('packages/training-api/src/main.ts','utf8');
-		expect(main).toContain('trainingArtifacts(config.artifacts)');expect(main).toContain('verifyArtifacts(objects)');expect(compose).toContain("fetch('http://127.0.0.1:4780/readyz')");
+		expect(main).toContain('trainingArtifacts(config.artifacts)');expect(main).toContain('verifyArtifacts(objects)');expect(compose).toContain("fetch('http://127.0.0.1:4780/readyz')");expect(compose).toMatch(/api:[\s\S]*healthcheck:[^\n]+start_period: 60s/u);
 	});
 	it('cross-qualifies inference credentials through the MinIO product client',()=>{const compose=readFileSync('deploy/inference/compose.yml','utf8'),artifacts=readFileSync('packages/inference-api/src/artifacts.ts','utf8');expect(compose).toContain('mc pipe product-check/$$S3_BUCKET/_health/product-credential-v1');expect(artifacts).toContain("stage('destination-credential-read'");expect(artifacts).toContain("stage('destination-write'");});
 	it('keeps evaluator liveness independent while separately gating its private dependencies',()=>{
