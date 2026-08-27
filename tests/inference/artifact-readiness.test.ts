@@ -3,10 +3,14 @@ import{tmpdir}from'node:os';
 import{join}from'node:path';
 import{afterEach,expect,it,vi}from'vitest';
 import type{ArtifactStore}from'../../packages/common/src/storage.ts';
-import{verifyArtifactDestination,verifyArtifactSource}from'../../packages/inference-api/src/artifacts.ts';
+import{artifactStoreOptions,verifyArtifactDestination,verifyArtifactSource}from'../../packages/inference-api/src/artifacts.ts';
 
 const prior=process.env.ARTIFACT_SOURCE_REGISTRY;
 afterEach(()=>{if(prior)process.env.ARTIFACT_SOURCE_REGISTRY=prior;else delete process.env.ARTIFACT_SOURCE_REGISTRY;});
+
+it('uses the MinIO-qualified checksum policy with explicit credentials',()=>{
+	expect(artifactStoreOptions('http://minio:9000','access','secret')).toMatchObject({endpoint:'http://minio:9000',forcePathStyle:true,requestChecksumCalculation:'WHEN_REQUIRED',responseChecksumValidation:'WHEN_REQUIRED',credentials:{accessKeyId:'access',secretAccessKey:'secret'}});
+});
 
 it('authenticates to the named training source during readiness',async()=>{
 	const root=mkdtempSync(join(tmpdir(),'treeai-artifact-source-')),path=join(root,'source.json'),send=vi.fn(async()=>({Contents:[]}));
