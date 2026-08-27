@@ -23,15 +23,29 @@ role must have a verified prior digest or publication fails. This prevents
 coordinated Debian version changes from rebuilding large unchanged images such
 as vLLM while keeping the exception explicit in the release record.
 
-Required environment secrets are `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`,
-`APT_GPG_PRIVATE_KEY`, and `APT_GPG_PASSPHRASE`. Before dispatch, commit the
-matching public archive key and fingerprint as described in `release/apt`.
-Jobs that consume Docker Hub or APT signing credentials run in `production`.
-The final secret-free Pages deployment runs separately in `github-pages`.
+Both protected GitHub environments need Docker Hub publication credentials:
+`staging` for release candidates and `production` for stable releases. Store
+`DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` in each environment; never move an
+RC job into `production` or loosen the environment's branch policy to reuse a
+secret. Deployment owns APT signing and host-package publication.
 
-Release candidates use the manually dispatched **Publish protected TreeAI release candidate** workflow from `staging`. Tags omit a `v` prefix and follow `0.9.0-rc1`; Debian versions use `0.9.0~rc1-1` so the final `0.9.0-1` sorts newer. APT signing material is held only in the protected `staging` environment and differs from the stable key. The workflow never builds or publishes development containers. It verifies the latest stable image manifest and signatures, reuses unchanged production digests, and records whether the candidate is `package-only` or `local-images-required`.
+Release candidates use the manually dispatched **Publish protected TreeAI
+component release candidate** workflow from `staging`. Tags omit a `v` prefix
+and follow `0.10.0-rc1`; component Debian versions use `0.10.0~rc1-1` so the
+final `0.10.0-1` sorts newer. The workflow publishes exact RC image tags,
+reusing unchanged signed digests, and emits an immutable component bundle for
+Deployment to ingest.
 
-For `local-images-required`, the catalog names the exact roles, build identities, and source revision. The development host must explicitly build them from that checkout with `treeai local-build`; the manager verifies the atomic receipt and current Docker image IDs before it permits package installation. This keeps repository execution outside the automatic privileged update path. Unchanged roles continue to use their production digests.
+The Deployment project verifies the component manifest and Compose checksum,
+then compiles the selected bundle into its signed development catalog. Hosts
+never build downloaded repository source. Unchanged roles retain their prior
+signed image digest and do not restart merely because a component release was
+published.
+
+TreeAI does not publish host APT suites. Deployment consumes the immutable
+component bundle and publishes the exact component package and catalog through
+its protected release workflow. Do not add a transitional TreeAI APT bridge or
+use a component repository to reconstruct Deployment-owned package indexes.
 
 After GitHub Pages publication, clients can install the archive with a
 dedicated keyring and deb822 source:

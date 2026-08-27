@@ -9,6 +9,9 @@
 - Do not merge with unresolved review findings or failing required checks. Verify the exact reviewed head commit before merge and the resulting `main` commit before release.
 - Release publication requires a merged, reviewed PR and an explicit manual dispatch from the protected `production` environment. Never publish from an unreviewed branch or replace that gate with a push-triggered workflow.
 - Keep GitHub credentials, signing keys, API keys, and other secret material outside repository files, issue bodies, pull-request text, command arguments, logs, and agent workspaces.
+- Reconcile issue state whenever a pull request merges and at every release checkpoint. Close fully resolved issues with a concise comment linking the merged PR and verification evidence; do not rely on default-branch closing keywords when the repository merges through `staging` first.
+- Keep partially resolved and umbrella issues open only with an updated comment that states the remaining acceptance work and current blocker. Do not close an issue merely because an attempted fix merged when live qualification still disproves the outcome.
+- Audit open issues against merged pull requests regularly. Close stale duplicates and completed implementation issues with traceable evidence, while preserving distinct follow-up work in a new or clearly scoped existing issue.
 
 ## Architecture
 
@@ -21,3 +24,19 @@
 - Keep handwritten source and tests below 500 lines and direct executable directories below ten files.
 - Do not add a push-triggered hosted deployment workflow.
 - Use plan for non-mutating Compose previews and apply for live reconciliation; never add dry-run behavior.
+- Do not create, retain, or dispatch legacy/transitional delivery paths after the replacement owner is available. TreeAI publishes immutable component releases; Deployment owns host APT repositories and lifecycle integration.
+- Reuse prior successful GPU qualification evidence until a relevant fingerprint, implementation, dataset contract, or final release gate changes. Do not repeat long training merely for reassurance.
+- For long external workflows, use infrequent bounded status snapshots. Do not stream repetitive watch output or spend active work cycles polling unchanged state.
+- Before an expensive build, scan, publication, or GPU run, identify the exact unresolved acceptance criterion it proves and use the smallest affected package/image/test scope.
+
+## Qualification evidence and GPU cost
+
+- Treat successful full-corpus GPU qualifications as reusable evidence. Preserve their immutable datasets, signed artifacts, machine profiles, image digests, configuration digests, results, and receipts so routine fixes can replay downstream import, evaluation, promotion, rollback, and agent canaries without retraining.
+- Do not rerun proven EDGAR, NASA, or equivalent long-running training solely to validate an unrelated API, packaging, updater, orchestration, evaluation, or presentation change. Run the smallest affected smoke test or canary instead.
+- Invalidate prior training evidence when a training-critical fingerprint changes, including the base-model revision, training dataset or split, Axolotl/Marker/CUDA image digest, objective, adapter topology or rank, tokenizer, sequence or image limits, optimizer profile, or relevant hardware/runtime identity.
+- Require one final end-to-end integration qualification before a release that claims the training loop. It may reuse previously proven immutable intermediate artifacts until the final training gate, but the final gate must exercise the real release candidate from ingestion through training, signing, import, evaluation, serving, and rollback.
+- Record why evidence was reused or invalidated in the issue and pull request. Never trade away signature verification, checksum verification, compatibility checks, health gates, or rollback validation to save GPU time.
+
+## Project library
+
+Use `trsd library show ai` and `status` before querying `treeseed-ai/ai-library`. Read root-level paths at an exact commit. Author only through governed library workspaces and reviews. Never recreate `src/content` or edit `.treeseed/data` directly.

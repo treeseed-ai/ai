@@ -14,9 +14,10 @@ def serve(routes, port=8080):
                 if not route: return self.respond(404, {"error": "not_found"})
                 self.respond(200, route(request))
             except ValueError as error: self.respond(400, {"error": str(error)})
-            except Exception as error: self.respond(500, {"error": str(error)})
+            except Exception as error: self.respond(getattr(error,"status_code",500), {"error": str(error)})
         def respond(self, status, body):
             value = json.dumps(body).encode()
-            self.send_response(status); self.send_header("content-type", "application/json"); self.send_header("content-length", str(len(value))); self.end_headers(); self.wfile.write(value)
+            try:self.send_response(status); self.send_header("content-type", "application/json"); self.send_header("content-length", str(len(value))); self.end_headers(); self.wfile.write(value)
+            except (BrokenPipeError,ConnectionResetError):pass
         def log_message(self, pattern, *args): print(json.dumps({"message": pattern % args}))
     ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()

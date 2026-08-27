@@ -6,7 +6,8 @@ export type WorkKind =
 	| "transition"
 	| "update-check"
 	| "update-plan"
-	| "reconcile";
+	| "reconcile"
+	| "qualification";
 export interface WorkRecord {
 	id: string;
 	kind: WorkKind;
@@ -83,6 +84,9 @@ export function getWork(id: string) {
 		| Record<string, unknown>
 		| undefined;
 	return row ? parse(row) : undefined;
+}
+export function unfinishedWork(kind: WorkKind) {
+	return (db().prepare("SELECT * FROM work WHERE kind=? AND state IN ('queued','running') ORDER BY created_at").all(kind) as Array<Record<string, unknown>>).map(parse);
 }
 export function finishWork(
 	id: string,

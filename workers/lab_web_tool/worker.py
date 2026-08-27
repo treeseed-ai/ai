@@ -112,7 +112,7 @@ def fetch(url: str, redirects: int = 0, body: bytes | None = None) -> tuple[str,
 	path = parsed.path or "/"
 	if parsed.query:
 		path += f"?{parsed.query}"
-	headers = {"Host": parsed.netloc, "User-Agent": "TreeAI-WebTool/0.9.0", "Accept": "text/html,text/plain,application/xhtml+xml"}
+	headers = {"Host": parsed.netloc, "User-Agent": "TreeAI-WebTool/0.10.0", "Accept": "text/html,text/plain,application/xhtml+xml"}
 	if body is not None:
 		headers.update({"Content-Type": "application/x-www-form-urlencoded", "Content-Length": str(len(body))})
 	connection.request("POST" if body is not None else "GET", path, body=body, headers=headers)

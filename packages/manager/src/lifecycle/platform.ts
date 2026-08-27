@@ -9,7 +9,8 @@ import { event, setSetting, setting } from "../core/store.js";
 import { paths } from "../core/paths.js";import { hashHermesPassword } from "./hermes/password.js";
 import { ensurePlatformTls } from "./certificates/tls.js";import { activateManagerCertificate } from "./certificates/activation.js";import { imageVariables } from "../core/image-variables.js";
 import { summarizeComposeStatus, type ProductStatus } from "./status.js";
-import { reconcileLabEdge } from "./lab/edge.js";import { migrationDiagnostics } from "./migrations/diagnostics.js";
+import { activeProfile, qualificationStatus, runCampaign } from "./qualification/index.js";import { reconcileLabEdge } from "./lab/edge.js";import { migrationDiagnostics } from "./migrations/diagnostics.js";
+import { objectStoreAccessIds, secretGeneration } from "./storage/identities.js";import { verifyLabReadiness, verifyProductReadiness } from "./readiness/products.js";
 const products = {
 	inference: {
 		compose: "/usr/lib/treeseed-ai/inference/compose.yml",
@@ -24,7 +25,7 @@ const products = {
 } as const,
 	bases = {
 		inference: ["postgres", "minio", "migrations", "evaluator", "manager", "api"],
-		training: ["postgres", "minio", "migrations", "artifact", "manager", "api"],
+		training: ["postgres", "minio", "migrations", "artifact", "manager"],
 } as const;
 function command(file: string, args: string[]) {
 	const result = spawnSync(file, args, { encoding: "utf8", timeout: 900_000 }); if (result.status !== 0) throw new Error(`${file} failed: ${(result.stderr || result.stdout).trim()}`);
@@ -90,23 +91,23 @@ export function ensureManagedRuntime() {
 const ensureRuntime = ensureManagedRuntime;
 function ensureNetwork() {
 	const inspect = spawnSync("docker", ["network", "inspect", "ai-shared", "--format", "{{.Driver}} {{.Scope}}"], { encoding: "utf8" });
-	if (inspect.status === 0) {
-		if (inspect.stdout.trim() !== "bridge local") throw new Error("Existing ai-shared network is incompatible.");
-		return;
-	}
+	if (inspect.status === 0) {if (inspect.stdout.trim() !== "bridge local") throw new Error("Existing ai-shared network is incompatible.");return;}
 	command("docker", ["network", "create", "--driver", "bridge", "--label", "org.treeseed-ai.manager=true", "ai-shared"]);
 }
 function imageValues(product: "inference" | "training") {
-	const config = JSON.parse(readFileSync(paths.configuration, "utf8")) as {
-			imageSource: string;
-		},
+	const config = JSON.parse(readFileSync(paths.configuration, "utf8")) as {imageSource: string},
 		catalog = readCatalog(),
 		local = localImageReadiness(catalog),
-		values: Record<string, string> = {};
+		values: Record<string, string> = {},
+		existing = envMap(products[product].environment);
 	for (const image of catalog.images) {
 		const variable = imageVariables[image.role],
 			owned = image.role.startsWith(`${product}-`) || (product === "training" && ["axolotl-worker", "marker-worker", "artifact-worker"].includes(image.role));
 		if (!variable || !owned) continue;
+		if (catalog.imagePolicy.mode === "package-only") {
+			if (!existing[variable]) throw new Error(`Package-only catalog cannot initialize missing ${variable}.`);
+			values[variable] = existing[variable]!;continue;
+		}
 		const localId = local.images.get(image.role);
 		if (catalog.imagePolicy.requiredLocalImages.some((item) => item.role === image.role) && !localId) throw new Error(`Required local image ${image.role} is not ready.`);
 		if (!localId && image.localBuildOnly) throw new Error(`Catalog image ${image.role} has no production fallback.`);
@@ -115,46 +116,43 @@ function imageValues(product: "inference" | "training") {
 	return values;
 }
 function image(role: string) {
-	const config = JSON.parse(readFileSync(paths.configuration, "utf8")) as {
-			imageSource: string;
-		},
+	const config = JSON.parse(readFileSync(paths.configuration, "utf8")) as {imageSource: string},
 		catalog = readCatalog(),
 		item = catalog.images.find((value) => value.role === role),
 		local = localImageReadiness(catalog),
 		localId = local.images.get(role);
 	if (!item) throw new Error(`Catalog image ${role} is missing.`);
+	if (catalog.imagePolicy.mode === "package-only") {
+		const variable = imageVariables[role], current = variable ? envMap("/etc/treeseed-ai/lab/environment")[variable] : undefined;
+		if (!current) throw new Error(`Package-only catalog cannot initialize missing ${variable ?? role}.`);return current;
+	}
 	if (catalog.imagePolicy.requiredLocalImages.some((value) => value.role === role) && !localId) throw new Error(`Required local image ${role} is not ready.`);
 	if (!localId && item.localBuildOnly) throw new Error(`Catalog image ${role} has no production fallback.`);
 	return localId ?? (config.imageSource === "local-build" && catalog.channel === "stable" ? `local/${role}:${catalog.release}` : `${item.repository}@${item.digest}`);
 }
-function runtimeImage(id: string) {
-	const item = readCatalog().runtimeImages.find((value) => value.id === id);
-	if (!item) throw new Error(`Catalog runtime image ${id} is missing.`);
-	return item.reference;
-}
+function runtimeImage(id: string) {const item = readCatalog().runtimeImages.find((value) => value.id === id);if (!item) throw new Error(`Catalog runtime image ${id} is missing.`);return item.reference;}
 function productGroup(product: "inference" | "training" | "lab") {
 	const group = `treeseed-ai-${product}`,
 		record = command("getent", ["group", group]),
 		gid = record.split(":")[2];
 	if (!gid || !/^\d+$/u.test(gid)) throw new Error(`Cannot resolve ${group}.`);
 	const runtime = `/run/treeseed-ai/${product}`;
-	mkdirSync(runtime, { recursive: true, mode: 0o770 });
-	chmodSync(runtime, 0o770);
+	mkdirSync(runtime, { recursive: true, mode: 0o775 });
+	chmodSync(runtime, 0o775);
 	command("chown", [`root:${group}`, runtime]);
 	return gid;
 }
 function secureLabSecret(path: string) { chmodSync(path, 0o640); command("chown", ["root:treeseed-ai-lab", path]); }
 function ensureSigningMaterial() {
 	const root = "/etc/treeseed-ai/manager/factory";
-	mkdirSync(root, { recursive: true, mode: 0o750 });
+	mkdirSync(root, { recursive: true, mode: 0o750 });chmodSync(root, 0o750);command("chown", ["root:treeseed-ai-manager", root]);
 	const privateKey = `${root}/artifact-signing-key.pem`,
 		publicKey = `${root}/artifact-signing-public.pem`;
-	if (!existsSync(privateKey)) {
-		command("openssl", ["genpkey", "-algorithm", "Ed25519", "-out", privateKey]);
-		command("openssl", ["pkey", "-in", privateKey, "-pubout", "-out", publicKey]);
-		chmodSync(privateKey, 0o600);
-		chmodSync(publicKey, 0o644);
-	}if(enabledProducts().has("training")){chmodSync(privateKey,0o640);chmodSync(publicKey,0o644);command("chown",["root:treeseed-ai-training",privateKey]);}
+	if (!existsSync(privateKey)){command("openssl", ["genpkey", "-algorithm", "Ed25519", "-out", privateKey]);chmodSync(privateKey, 0o600);}
+	const derivedPublicKey=`${command("openssl", ["pkey", "-in", privateKey, "-pubout"]).trim()}\n`;
+	atomic(publicKey,derivedPublicKey,0o644);
+	chmodSync(publicKey, 0o644);command("chown", ["root:treeseed-ai-manager", publicKey]);
+	if(enabledProducts().has("training")){chmodSync(privateKey,0o640);command("chown",["root:treeseed-ai-training",privateKey]);}
 	return { root, privateKey, publicKey };
 }
 function ensureServiceCredentials(root: string) {
@@ -187,15 +185,15 @@ function ensureProductConfiguration() {
 			state: { postgresql: string; objectStorage: string };
 		},
 		signing = ensureSigningMaterial(),
-		service = ensureServiceCredentials(signing.root);
+		service = ensureServiceCredentials(signing.root),
+		migrated = config.configurationId === "migrated-local-factory";
 	if (config.state.postgresql !== "bundled" || config.state.objectStorage !== "bundled") return;
 	const secretsPath = `${signing.root}/service-secrets.json`;
 	let stored: Record<string, string>;
 	if (existsSync(secretsPath)) stored = JSON.parse(readFileSync(secretsPath, "utf8"));
 	else {
 		const inference = envMap(products.inference.environment),
-			training = envMap(products.training.environment),
-			migrated = config.configurationId === "migrated-local-factory";
+			training = envMap(products.training.environment);
 		stored = {
 			inferenceDb: (migrated && inference.POSTGRES_PASSWORD) || secret(24),
 			trainingDb: (migrated && training.POSTGRES_PASSWORD) || secret(24),
@@ -207,18 +205,20 @@ function ensureProductConfiguration() {
 		};
 	}
 	stored.trainingImportS3??=secret();atomic(secretsPath, JSON.stringify(stored), 0o600);
+	const accessIds=objectStoreAccessIds(migrated,{inference:stored.inferenceS3!,training:stored.trainingS3!,trainingImport:stored.trainingImportS3});
 	const operator = JSON.parse(readFileSync("/etc/treeseed-ai/treeai/operator-record.json", "utf8")) as unknown,
+		profile = activeProfile(),
 		common = (product: "inference" | "training") => ({
 			COMPOSE_PROFILES: "state",
 			AI_API_KEYS: `'${JSON.stringify([operator, service[product]!.record,...product==='training'?[service.libraryIngest!.record]:[]])}'`,
 			DATABASE_URL: `postgresql://${product}:${stored[`${product}Db`]}@postgres:5432/${product}`,
 			POSTGRES_PASSWORD: stored[`${product}Db`]!,
-			S3_ENDPOINT: "http://minio:9000",
+			S3_ENDPOINT: `http://${product}-minio:9000`,
 			S3_BUCKET: `ai-${product}`,
-			S3_ACCESS_KEY: product,S3_SECRET_KEY: stored[`${product}S3`]!,
+			S3_ACCESS_KEY: accessIds[product],S3_SECRET_KEY: stored[`${product}S3`]!,S3_CREDENTIAL_GENERATION: secretGeneration(`${accessIds[product]}\0${stored[`${product}S3`]!}`),
 			MINIO_ROOT_USER: `${product}-root`,
 			MINIO_ROOT_PASSWORD: stored[`${product}Minio`]!,
-			...(product==="training"?{IMPORT_S3_ACCESS_KEY:"inference-import",IMPORT_S3_SECRET_KEY:stored.trainingImportS3}:{}),
+			...(product==="training"?{IMPORT_S3_ACCESS_KEY:accessIds.trainingImport,IMPORT_S3_SECRET_KEY:stored.trainingImportS3}:{}),
 		});
 	atomic(paths.apiKeys, `${JSON.stringify([operator, service.factory!.record], null, 2)}\n`, 0o640);
 	try {
@@ -234,7 +234,7 @@ function ensureProductConfiguration() {
 				RUNTIME_GID: productGroup("inference"),
 				SOURCE_MODEL: "Qwen/Qwen3.5-4B",
 				SOURCE_MODEL_REVISION: "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
-				MAX_MODEL_LENGTH: "16384",
+				MAX_MODEL_LENGTH: String(profile?.settings.maxModelLength ?? 16384), TREEAI_MULTIMODAL_LORA_ENABLED: String(profile?.settings.multimodalLoraEnabled === true),
 			},
 			"treeseed-ai-inference",
 		);
@@ -251,16 +251,17 @@ function ensureProductConfiguration() {
 			"treeseed-ai-training",
 		);
 	if (enabled.has("inference") && enabled.has("training")) {
-		mounted(`${signing.root}/artifact-import-token`, stored.artifactToken!);
+		const artifactImportToken=`${stored.artifactToken!}\n`;mounted(`${signing.root}/artifact-import-token`, artifactImportToken);
 		const source = {
 			sourceId: "training-local",
 			endpoint: "http://training-minio:9000",
 			bucket: "ai-training",
-			accessKeyId: "inference-import",
+			accessKeyId: accessIds.trainingImport,
 			secretAccessKey: stored.trainingImportS3,
 			trustedPublicKey: readFileSync(signing.publicKey, "utf8"),
 		};
-		mounted(`${signing.root}/training-local-source.json`, `${JSON.stringify(source, null, 2)}\n`);for(const path of[`${signing.root}/artifact-import-token`,`${signing.root}/training-local-source.json`]){chmodSync(path,0o640);command("chown",["root:treeseed-ai-inference",path]);}
+		const sourceValue=`${JSON.stringify(source, null, 2)}\n`;mounted(`${signing.root}/training-local-source.json`, sourceValue);for(const path of[`${signing.root}/artifact-import-token`,`${signing.root}/training-local-source.json`]){chmodSync(path,0o640);command("chown",["root:treeseed-ai-inference",path]);}
+		environment(products.inference.environment,{ARTIFACT_SOURCE_SECRET_GENERATION:secretGeneration(sourceValue),ARTIFACT_IMPORT_TOKEN_GENERATION:secretGeneration(artifactImportToken)},"treeseed-ai-inference");
 	}
 }
 function ensureLabConfiguration() {
@@ -314,7 +315,7 @@ function ensureLabConfiguration() {
 			INFERENCE_URL: "http://inference-api:4771",
 			BASE_MODEL: "Qwen/Qwen3.5-4B",
 			BASE_MODEL_REVISION: "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
-			HERMES_MODEL_CONTEXT_LENGTH: "16384",
+			HERMES_MODEL_CONTEXT_LENGTH: String(activeProfile()?.context.contextTokens ?? 16384),HERMES_OUTPUT_RESERVE: String(activeProfile()?.context.outputReserve ?? 2048),
 			LAB_CONTROLLER_IMAGE: image("lab-controller"),
 			LAB_PROXY_IMAGE: image("lab-experience-proxy"),
 			LAB_LIBRARY_BRIDGE_IMAGE:image('lab-library-bridge'),
@@ -376,9 +377,7 @@ function writeMode(mode: string, error?: string) {
 export function persistMode(mode: "awake" | "sleep") {
 	writeMode(mode);
 }
-function gateway(args: string[]) {
-	return command("docker", ["compose", "-p", "treeseed-ai-manager-gateway", "-f", "/usr/lib/treeseed-ai/manager/factory/compose.yml", ...args]);
-}
+function gateway(args: string[]) { return command("docker", ["compose", "-p", "treeseed-ai-manager-gateway", "-f", "/usr/lib/treeseed-ai/manager/factory/compose.yml", ...args]); }
 function warmInference() {
 	command("docker", ["compose", "-p", "treeseed-ai-inference", "--env-file", products.inference.environment, "-f", products.inference.compose, "-f", products.inference.overlay, "exec", "-T", "vllm", "python3", "-c", "import json,urllib.request; b=json.dumps({'model':'Qwen/Qwen3.5-4B','messages':[{'role':'user','content':'Reply ready.'}],'max_tokens':8}).encode(); r=urllib.request.Request('http://127.0.0.1:8000/v1/chat/completions',data=b,headers={'content-type':'application/json'}); urllib.request.urlopen(r,timeout=120).read()"]);
 }
@@ -423,14 +422,13 @@ export async function reconcilePlatform() {
 	ensureLabConfiguration();
 	const configuration = validatePlatformConfiguration(JSON.parse(readFileSync(paths.configuration, "utf8"))),
 		certificate = ensurePlatformTls(configuration);
-	const mode = setting<string>("mode", "awake"),
-		enabled = enabledProducts();
+	const mode = setting<string>("mode", "awake"),enabled = enabledProducts();
 	if (!existsSync(paths.mode)) writeMode(mode);
 	if(configuration.state.objectStorage==="bundled")for(const product of["inference","training"]as const)if(enabled.has(product))reconcileObjectStore(product);
 	if (mode === "awake") {
 		if (enabled.has("training")) {
 			compose("training", ["stop", "marker", "axolotl"]);
-			reconcileProduct("training", ["up", "-d", "--wait", "--wait-timeout", "600", ...bases.training]);
+			reconcileProduct("training", ["up", "-d", "--wait", "--wait-timeout", "600", ...bases.training]);reconcileProduct("training", ["up", "-d", "--no-deps", "api"]);
 		}
 		if (enabled.has("inference")) {
 			reconcileProduct("inference", ["up", "-d", "--wait", "--wait-timeout", "900", ...bases.inference, "vllm"]);
@@ -441,7 +439,7 @@ export async function reconcilePlatform() {
 			compose("inference", ["stop", "vllm"]);
 			reconcileProduct("inference", ["up", "-d", "--wait", "--wait-timeout", "600", ...bases.inference]);
 		}
-		if (enabled.has("training")) reconcileProduct("training", ["up", "-d", "--wait", "--wait-timeout", "900", ...bases.training, "marker", "axolotl"]);
+		if (enabled.has("training")){reconcileProduct("training", ["up", "-d", "--wait", "--wait-timeout", "900", ...bases.training, "marker", "axolotl"]);reconcileProduct("training", ["up", "-d", "--no-deps", "api"]);}
 	} else throw new Error(`Unsafe persisted mode ${mode}; manual recovery is required.`);
 	if (enabled.has("inference") || enabled.has("training")) gateway(["up", "-d", "--wait"]);
 	try {
@@ -451,23 +449,23 @@ export async function reconcilePlatform() {
 		throw error;
 	}
 	activateManagerCertificate(certificate, command);
+	for(const product of["inference","training"]as const)if(enabled.has(product))verifyProductReadiness(product,reconcileProduct);if(enabled.has("lab"))verifyLabReadiness(lab);
+	if (qualificationStatus().baselineRequired && mode === "awake" && runCampaign("baseline").state === "succeeded") ensureProductConfiguration();
 	const services = serviceStatus();
 	setSetting("components", services);
 	event("components.reconciled", { mode });
 	return { mode, services };
 }
-export async function transitionMode(target: unknown, drain: { inferenceSeconds: number; trainingSeconds: number }) {
-	if (target !== "awake" && target !== "sleep") throw new Error("Mode must be awake or sleep.");
+let transitionInFlight: { target: "awake" | "sleep"; promise: Promise<unknown> } | undefined;
+async function runModeTransition(target: "awake" | "sleep", drain: { inferenceSeconds: number; trainingSeconds: number }) {
 	const configuration=validatePlatformConfiguration(JSON.parse(readFileSync(paths.configuration,"utf8"))),current=setting<string>("mode","awake"),enabled=enabledProducts();
-	if (current === target) return { mode: target, changed: false };
-	writeMode(target === "awake" ? "transitioning_awake" : "transitioning_sleep");
-	let lifecycleChanged = false;
-	try {
+	if (current === target) {const reconciled=await reconcilePlatform();return { mode: target, changed: false, reconciled:true,services:reconciled.services };}const previous=current==="awake"||current==="sleep"?current:target==="sleep"?"awake":"sleep";writeMode(target === "awake" ? "transitioning_awake" : "transitioning_sleep");
+	let lifecycleChanged = false;try {
 		if (target === "sleep") {
 			if (enabled.has("inference") && !(await waitIdle("/run/treeseed-ai/inference/status.json", drain.inferenceSeconds))) {
-				writeMode(current);
+				writeMode(previous);
 				return {
-					mode: current,
+					mode: previous,
 					state: "postponed",
 					reason: "active_inference",
 				};
@@ -477,8 +475,8 @@ export async function transitionMode(target: unknown, drain: { inferenceSeconds:
 			if (enabled.has("training")) compose("training", ["up", "-d", "--wait", "--wait-timeout", "900", "marker", "axolotl"]);
 		} else {
 			if (enabled.has("training") && !(await waitIdle("/run/treeseed-ai/training/status.json", drain.trainingSeconds))) {
-				writeMode(current);
-				return { mode: current, state: "postponed", reason: "active_training" };
+				writeMode(previous);
+				return { mode: previous, state: "postponed", reason: "active_training" };
 			}
 			if (enabled.has("training")) compose("training", ["stop", "marker", "axolotl"]);
 			lifecycleChanged = enabled.has("training");
@@ -489,11 +487,13 @@ export async function transitionMode(target: unknown, drain: { inferenceSeconds:
 		}
 		if(configuration.state.objectStorage==="bundled")for(const product of["inference","training"]as const)if(enabled.has(product))reconcileObjectStore(product);
 		writeMode(target);
-		event("mode.changed", { from: current, to: target });
+		event("mode.changed", { from: previous, to: target });
 		return { mode: target, changed: true };
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		writeMode(lifecycleChanged ? "degraded" : current, message);
-		throw error;
+		const message = error instanceof Error ? error.message : String(error);writeMode(lifecycleChanged ? "degraded" : previous, message);throw error;
 	}
+}
+export function transitionMode(target: unknown, drain: { inferenceSeconds: number; trainingSeconds: number }): Promise<unknown> {
+	if (target !== "awake" && target !== "sleep") return Promise.reject(new Error("Mode must be awake or sleep."));if (transitionInFlight) {if (transitionInFlight.target !== target) return Promise.reject(new Error(`A transition to ${transitionInFlight.target} is already running.`));return transitionInFlight.promise;}
+	const promise=runModeTransition(target,drain).finally(()=>{if(transitionInFlight?.promise===promise)transitionInFlight=undefined;});transitionInFlight={target,promise};return promise;
 }

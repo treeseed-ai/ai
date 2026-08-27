@@ -42,7 +42,7 @@ export interface ArtifactObject {
 }
 
 export interface ArtifactManifest {
-	schemaVersion: 'ai.artifact/v1'|'ai.artifact/v2';
+	schemaVersion: 'ai.artifact/v1'|'ai.artifact/v2'|'ai.artifact/v3';
 	artifactId: string;
 	artifactType: 'lora-adapter' | 'dataset' | 'document-bundle' | 'checkpoint' | 'archive';
 	createdAt: string;

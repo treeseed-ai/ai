@@ -1,6 +1,6 @@
 {
   "name": "@ai-platform/workspace",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "private": true,
   "license": "Apache-2.0",
   "repository": {
@@ -20,6 +20,7 @@
     "test": "vitest run",
     "check:file-architecture": "node --import tsx scripts/support/check-source-shape.ts",
     "check:release": "node --import tsx scripts/release/validate.ts",
+    "build:component-release": "node --import tsx scripts/release/create-component-release.ts",
     "build:deb": "pnpm build && node --import tsx scripts/package-deb.ts all",
     "verify": "pnpm check:release && pnpm check:file-architecture && pnpm build && pnpm test"
   },
@@ -31,6 +32,7 @@
     "yaml": "^2.8.1"
   },
   "devDependencies": {
+    "@treeseed/sdk": "0.13.0-rc.32",
     "@types/node": "^24.6.0",
     "@types/pg": "^8.15.5",
     "esbuild": "^0.28.2",

@@ -1,11 +1,12 @@
-name: Publish protected TreeAI release candidate
+name: Publish protected TreeAI component release candidate
 
 on:
   workflow_dispatch:
     inputs:
-      rc: { description: "Positive release-candidate number, e.g. 1", required: true, type: string }
-      generation: { description: Monotonic numeric catalog generation, required: true, type: string }
-      package_only_bridge: { description: "Publish a one-time package-only manager capability bridge", required: false, default: false, type: boolean }
+      rc: { description: "Positive release-candidate number", required: true, type: string }
+      component_revision: { description: "Positive Compose/Debian component revision", required: false, default: "1", type: string }
+      recover_run_id: { description: "Optional failed publication run whose completed image outputs may be recovered", required: false, type: string }
+      recover_image_tag: { description: "Exact orphan RC image tag produced by the recovery run", required: false, type: string }
 
 permissions: { contents: read }
 
@@ -13,8 +14,8 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     environment: staging
-    timeout-minutes: 240
-    permissions: { contents: write, id-token: write }
+    timeout-minutes: 360
+    permissions: { contents: write, id-token: write, attestations: write }
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
@@ -22,120 +23,109 @@ jobs:
         run: |
           test '${{ github.ref }}' = 'refs/heads/staging'
           printf '%s' '${{ inputs.rc }}' | grep -Eq '^[1-9][0-9]*$'
-          printf '%s' '${{ inputs.generation }}' | grep -Eq '^[1-9][0-9]+$'
+          printf '%s' '${{ inputs.component_revision }}' | grep -Eq '^[1-9][0-9]*$'
           test "$(git rev-parse HEAD)" = '${{ github.sha }}'
           version=$(node -p "require('./release/manifest.json').version")
-          echo "TREEAI_RC_DEBIAN_VERSION=${version}~rc${{ inputs.rc }}-1" >> "$GITHUB_ENV"
           echo "TREEAI_RC_TAG=${version}-rc${{ inputs.rc }}" >> "$GITHUB_ENV"
       - uses: pnpm/action-setup@v4
         with: { version: 10.15.1 }
       - uses: actions/setup-node@v4
         with: { node-version: 24.19.0, cache: pnpm }
       - run: pnpm install --frozen-lockfile && pnpm verify
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with: { username: "${{ secrets.DOCKERHUB_USERNAME }}", password: "${{ secrets.DOCKERHUB_TOKEN }}" }
       - uses: sigstore/cosign-installer@v3.9.2
-      - name: Create immutable development source bundle
-        run: |
-          mkdir -p assets
-          git archive --format=tar --prefix=treeai-source/ HEAD | gzip -n > assets/treeai-source.tar.gz
-          digest=$(sha256sum assets/treeai-source.tar.gz | awk '{print $1}')
-          echo "TREEAI_SOURCE_ARCHIVE_SHA256=$digest" >> "$GITHUB_ENV"
-          echo "TREEAI_SOURCE_ARCHIVE_URL=https://github.com/treeseed-ai/ai/releases/download/$TREEAI_RC_TAG/treeai-source.tar.gz" >> "$GITHUB_ENV"
-      - name: Resolve production image identities and local build requirements
+      - name: Create exact source and image plan
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
-          mkdir -p prior plan assets
-          previous=$(gh release list --limit 100 --json tagName,isDraft,isPrerelease --jq '.[]|select(.isDraft==false and .isPrerelease==false)|.tagName' | head -1)
+          mkdir -p assets prior plan
+          git archive --format=tar --prefix=treeai-source/ HEAD | gzip -n > assets/treeai-source.tar.gz
+          gh release list --limit 100 --json tagName,isDraft,isPrerelease > prior/releases.json
+          previous=$(node --import tsx scripts/release/select-development-base.ts "$TREEAI_RC_TAG" prior/releases.json)
           test -n "$previous"
-          gh release download "$previous" --dir prior
-          catalog_deb=$(find prior -maxdepth 1 -type f -name 'treeseed-ai-release-catalog_*.deb' -print -quit)
-          test -n "$catalog_deb"
-          mkdir -p prior-catalog
-          dpkg-deb --extract "$catalog_deb" prior-catalog
-          cp prior-catalog/usr/share/treeseed-ai/release/catalog.json assets/prior-catalog.json
-          if test '${{ inputs.package_only_bridge }}' = true; then
-            expected=$(jq '.images | length' release/manifest.json)
-            selected=''
-            while read -r candidate; do
-              candidate_dir=$(mktemp -d)
-              if gh release download "$candidate" --pattern 'treeseed-ai-release-catalog_*.deb' --dir "$candidate_dir" >/dev/null 2>&1; then
-                candidate_deb=$(find "$candidate_dir" -maxdepth 1 -type f -name 'treeseed-ai-release-catalog_*.deb' -print -quit)
-                mkdir "$candidate_dir/catalog"
-                dpkg-deb --extract "$candidate_deb" "$candidate_dir/catalog"
-                candidate_catalog="$candidate_dir/catalog/usr/share/treeseed-ai/release/catalog.json"
-                if jq -e --argjson expected "$expected" '(.images | length) == $expected and .imagePolicy.mode == "local-images-required" and .imagePolicy.sourceBundle != null' "$candidate_catalog" >/dev/null; then
-                  cp "$candidate_catalog" assets/prior-catalog.json
-                  selected="$candidate"
-                  break
-                fi
-              fi
-            done < <(gh release list --limit 100 --json tagName,isDraft,isPrerelease --jq '.[] | select(.isDraft == false and .isPrerelease == true) | .tagName')
-            test -n "$selected"
-            echo "TREEAI_PACKAGE_ONLY_BASE=$selected" >> "$GITHUB_ENV"
-          fi
-          gpg --batch --import release/apt/treeseed-ai-archive-keyring.asc
-          gpg --batch --verify prior/SHA256SUMS.asc prior/SHA256SUMS
-          (cd prior && sha256sum -c SHA256SUMS)
-          for role in $(jq -r '.images|keys[]' prior/image-manifest.json); do
-            repository=$(jq -r --arg role "$role" '.images[$role].repository' prior/image-manifest.json)
-            digest=$(jq -r --arg role "$role" '.images[$role].digest' prior/image-manifest.json)
-            cosign verify --certificate-identity 'https://github.com/treeseed-ai/ai/.github/workflows/release.yml@refs/heads/main' --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' "$repository@$digest" >/dev/null
-          done
+          gh release download "$previous" --pattern image-manifest.json --pattern SHA256SUMS --dir prior
+          expected=$(awk '$2 == "image-manifest.json" || $2 == "./image-manifest.json" { print $1 }' prior/SHA256SUMS)
+          test -n "$expected"
+          actual=$(sha256sum prior/image-manifest.json | awk '{ print $1 }')
+          test "$actual" = "$expected"
           TREEAI_RELEASE_VERSION="$TREEAI_RC_TAG" TREEAI_DEVELOPMENT_BASE="$previous" node --import tsx scripts/release/plan-image-builds.ts plan/image-plan.json prior/image-manifest.json
+          recovery_run='${{ inputs.recover_run_id }}'
+          recovery_tag='${{ inputs.recover_image_tag }}'
+          if test -n "$recovery_run" || test -n "$recovery_tag"; then
+            printf '%s' "$recovery_run" | grep -Eq '^[1-9][0-9]*$'
+            expected_recovery="$(node -p "require('./release/manifest.json').version")-rc$((${{ inputs.rc }} - 1))"
+            test "$recovery_tag" = "$expected_recovery"
+            gh run view "$recovery_run" --json conclusion,event,headBranch,headSha,jobs > prior/recovery-run.json
+            jq -e '.conclusion == "failure" and .event == "workflow_dispatch" and .headBranch == "staging" and ([.jobs[].steps[] | select(.name == "Publish every exact RC image and verify Docker Hub read-back" and .conclusion == "success")] | length) == 1 and ([.jobs[].steps[] | select(.name == "Publish immutable prerelease" and .conclusion == "failure")] | length) == 1' prior/recovery-run.json >/dev/null
+            recovery_sha=$(jq -r .headSha prior/recovery-run.json)
+            printf '%s' "$recovery_sha" | grep -Eq '^[a-f0-9]{40}$'
+            git cat-file -e "$recovery_sha^{commit}"
+            jq --arg version "$recovery_tag" '.version=$version' prior/image-manifest.json > prior/recovered-image-manifest.json
+            while IFS= read -r role; do
+              mapfile -t inputs < <(jq -r --arg role "$role" '.images[$role].inputs[]' release/image-builds.json)
+              git diff --quiet "$recovery_sha" HEAD -- "${inputs[@]}"
+              repository=$(jq -r --arg role "$role" '.images[$role].repository' plan/image-plan.json)
+              identity=$(jq -r --arg role "$role" '.images[$role].buildIdentity' plan/image-plan.json)
+              action=$(jq -r --arg role "$role" '.images[$role].action' plan/image-plan.json)
+              digest=$(docker buildx imagetools inspect "$repository:$recovery_tag" | awk '/^Digest:/{print $2;exit}')
+              printf '%s' "$digest" | grep -Eq '^sha256:[a-f0-9]{64}$'
+              cosign verify "$repository@$digest" --certificate-identity-regexp '^https://github.com/treeseed-ai/ai/' --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' >/dev/null
+              if test "$action" = built; then
+                jq --arg role "$role" --arg digest "$digest" --arg tag "$recovery_tag" --arg identity "$identity" '.images[$role].digest=$digest | .images[$role].tag=$tag | .images[$role].buildIdentity=$identity | .images[$role].disposition="built" | .images[$role].firstBuiltVersion=$tag' prior/recovered-image-manifest.json > prior/recovered-image-manifest.json.new
+              else
+                test "$digest" = "$(jq -r --arg role "$role" '.images[$role].digest' prior/recovered-image-manifest.json)"
+                jq --arg role "$role" --arg identity "$identity" '.images[$role].buildIdentity=$identity | .images[$role].disposition="reused"' prior/recovered-image-manifest.json > prior/recovered-image-manifest.json.new
+              fi
+              mv prior/recovered-image-manifest.json.new prior/recovered-image-manifest.json
+            done < <(jq -r '.images | keys[]' plan/image-plan.json)
+            TREEAI_RELEASE_VERSION="$TREEAI_RC_TAG" TREEAI_DEVELOPMENT_BASE="$recovery_tag" node --import tsx scripts/release/plan-image-builds.ts plan/image-plan.json prior/recovered-image-manifest.json
+            cp prior/recovered-image-manifest.json prior/image-manifest.json
+          fi
           cp prior/image-manifest.json assets/image-manifest.json
           cp plan/image-plan.json assets/development-image-plan.json
-          jq '{status:"ready",policy:(if ([.images[].action]|any(.=="built")) then "local-images-required" else "package-only" end),requiredLocalRoles:[.images|to_entries[]|select(.value.action=="built")|.key],publishedDevelopmentImages:0}' plan/image-plan.json
-      - name: Build development Debian generation
+      - name: Publish every exact RC image and verify Docker Hub read-back
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential debhelper lintian nodejs
-          sed -i "1s/([^)]*)/($TREEAI_RC_DEBIAN_VERSION)/; 1s/) stable;/) development;/" debian/changelog
-          TREEAI_DEBIAN_VERSION="$TREEAI_RC_DEBIAN_VERSION" TREEAI_RELEASE_VERSION="$TREEAI_RC_TAG" TREEAI_RELEASE_CHANNEL=development TREEAI_RELEASE_GENERATION='${{ inputs.generation }}' TREEAI_IMAGE_MANIFEST="$PWD/assets/image-manifest.json" TREEAI_IMAGE_PLAN="$PWD/assets/development-image-plan.json" TREEAI_SOURCE_REVISION='${{ github.sha }}' TREEAI_SOURCE_ARCHIVE_URL="$TREEAI_SOURCE_ARCHIVE_URL" TREEAI_SOURCE_ARCHIVE_SHA256="$TREEAI_SOURCE_ARCHIVE_SHA256" TREEAI_FORCE_PACKAGE_ONLY='${{ inputs.package_only_bridge && '1' || '0' }}' TREEAI_CATALOG_PACKAGE_SET='${{ inputs.package_only_bridge && 'management' || 'all' }}' TREEAI_BASE_CATALOG='${{ inputs.package_only_bridge && format('{0}/assets/prior-catalog.json', github.workspace) || '' }}' dpkg-buildpackage -b -us -uc
-          find .. -maxdepth 1 -type f -name 'treeseed-ai*.deb' -exec cp {} assets/ \;
-          lintian --fail-on error assets/*.deb
-      - name: Sign and publish immutable prerelease
+          while IFS= read -r role; do
+            action=$(jq -r --arg role "$role" '.images[$role].action' plan/image-plan.json)
+            repository=$(jq -r --arg role "$role" '.images[$role].repository' plan/image-plan.json)
+            build_identity=$(jq -r --arg role "$role" '.images[$role].buildIdentity' plan/image-plan.json)
+            if test "$action" = built; then
+              dockerfile=$(jq -r --arg role "$role" '.images[$role].dockerfile' plan/image-plan.json)
+              build_args=$(jq -r --arg role "$role" '.images[$role].buildArgs' plan/image-plan.json)
+              arguments=()
+              if test -n "$build_args"; then arguments+=(--build-arg "$build_args"); fi
+              docker buildx build . --file "$dockerfile" --platform linux/amd64 --push --provenance mode=max --sbom=true --tag "$repository:$TREEAI_RC_TAG" "${arguments[@]}"
+              digest=$(docker buildx imagetools inspect "$repository:$TREEAI_RC_TAG" | awk '/^Digest:/{print $2;exit}')
+              printf '%s' "$digest" | grep -Eq '^sha256:[a-f0-9]{64}$'
+              cosign sign --yes "$repository@$digest"
+              readback=$(docker buildx imagetools inspect "$repository:$TREEAI_RC_TAG" | awk '/^Digest:/{print $2;exit}')
+              test "$readback" = "$digest"
+              jq --arg role "$role" --arg digest "$digest" --arg tag "$TREEAI_RC_TAG" --arg identity "$build_identity" '.version=$tag | .images[$role].digest=$digest | .images[$role].tag=$tag | .images[$role].buildIdentity=$identity | .images[$role].disposition="built" | .images[$role].firstBuiltVersion=$tag' assets/image-manifest.json > assets/image-manifest.json.new
+            else
+              digest=$(jq -r --arg role "$role" '.images[$role].digest' plan/image-plan.json)
+              docker buildx imagetools inspect "$repository@$digest" >/dev/null
+              cosign verify "$repository@$digest" --certificate-identity-regexp '^https://github.com/treeseed-ai/ai/' --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' >/dev/null
+              jq --arg role "$role" --arg tag "$TREEAI_RC_TAG" --arg identity "$build_identity" '.version=$tag | .images[$role].buildIdentity=$identity | .images[$role].disposition="reused"' assets/image-manifest.json > assets/image-manifest.json.new
+            fi
+            mv assets/image-manifest.json.new assets/image-manifest.json
+          done < <(jq -r '.images | keys[]' plan/image-plan.json)
+      - name: Create exact managed component bundle
         env:
-          GH_TOKEN: "${{ github.token }}"
-          APT_GPG_PRIVATE_KEY: "${{ secrets.APT_GPG_PRIVATE_KEY }}"
-          APT_GPG_PASSPHRASE: "${{ secrets.APT_GPG_PASSPHRASE }}"
+          TREEAI_COMPONENT_RELEASE: "${{ env.TREEAI_RC_TAG }}"
+          TREEAI_COMPONENT_REVISION: "${{ inputs.component_revision }}"
+          TREEAI_SOURCE_COMMIT: "${{ github.sha }}"
+          TREEAI_IMAGE_MANIFEST: "${{ github.workspace }}/assets/image-manifest.json"
         run: |
-          printf '%s' "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
-          export APT_RELEASE_FINGERPRINT="$(cat release/apt-development/RELEASE_KEY_FINGERPRINT)"
-          (cd assets && find . -maxdepth 1 -type f -printf '%f\n' | sort | xargs sha256sum > SHA256SUMS)
-          gpg --batch --yes --pinentry-mode loopback --passphrase "$APT_GPG_PASSPHRASE" --local-user "$APT_RELEASE_FINGERPRINT" --detach-sign --armor assets/SHA256SUMS
+          pnpm build:component-release
+          cp release-assets/component/* assets/
+      - uses: actions/attest-build-provenance@v3
+        with: { subject-path: "release-assets/component/*" }
+      - name: Publish immutable prerelease
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          checksum=$(mktemp)
+          (cd assets && find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\n' | sort | xargs sha256sum) > "$checksum"
+          mv "$checksum" assets/SHA256SUMS
           mapfile -t files < <(find assets -type f -print | sort)
-          if gh release view "$TREEAI_RC_TAG" >/dev/null 2>&1; then gh release upload "$TREEAI_RC_TAG" --clobber "${files[@]}"; else gh release create "$TREEAI_RC_TAG" "${files[@]}" --target '${{ github.sha }}' --prerelease --title "TreeAI $TREEAI_RC_TAG" --notes "Protected release candidate; catalog generation ${{ inputs.generation }}."; fi
-      - name: Build signed development APT suite
-        env:
-          GH_TOKEN: "${{ github.token }}"
-          APT_GPG_PRIVATE_KEY: "${{ secrets.APT_GPG_PRIVATE_KEY }}"
-          APT_GPG_PASSPHRASE: "${{ secrets.APT_GPG_PASSPHRASE }}"
-        run: |
-          mkdir -p all-development-debs development-debs pages/apt
-          gh release download "$TREEAI_RC_TAG" --pattern '*.deb' --dir all-development-debs
-          if test '${{ inputs.package_only_bridge }}' = true; then
-            for package in archive-keyring development-archive-keyring host-js-runtime manager release-catalog cli; do
-              cp all-development-debs/treeseed-ai-$package\_*.deb development-debs/
-            done
-          else
-            cp all-development-debs/*.deb development-debs/
-          fi
-          sh scripts/release/mirror-apt-suite.sh https://treeseed-ai.github.io/ai/apt stable pages/apt || true
-          sh scripts/release/mirror-apt-suite.sh https://treeseed-ai.github.io/ai/apt development pages/apt || true
-          export APT_RELEASE_FINGERPRINT="$(cat release/apt-development/RELEASE_KEY_FINGERPRINT)"
-          sh scripts/release/build-apt-repository.sh development-debs pages/apt "$TREEAI_RC_DEBIAN_VERSION" development
-      - uses: actions/upload-artifact@v4
-        with: { name: development-apt-pages-site, path: pages, if-no-files-found: error }
-
-  pages:
-    needs: publish
-    runs-on: ubuntu-latest
-    permissions: { contents: read, pages: write, id-token: write }
-    environment: { name: github-pages, url: "${{ steps.deploy.outputs.page_url }}" }
-    steps:
-      - uses: actions/download-artifact@v4
-        with: { name: development-apt-pages-site, path: pages }
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with: { path: pages }
-      - id: deploy
-        uses: actions/deploy-pages@v4
+          gh release create "$TREEAI_RC_TAG" "${files[@]}" --target '${{ github.sha }}' --prerelease --title "TreeAI $TREEAI_RC_TAG" --notes "Managed TreeSeed component release; host installation is owned by treeseed-ai/deployment."

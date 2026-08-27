@@ -17,12 +17,14 @@ services:
       AI_RUNTIME_STATUS: /runtime-status/status.json
       ARTIFACT_SOURCE_REGISTRY: /run/secrets/training-local-source
       ARTIFACT_IMPORT_TOKEN_FILE: /run/secrets/artifact-import-token
-      S3_ENDPOINT: http://minio:9000
+      S3_ENDPOINT: http://inference-minio:9000
       S3_REGION: "${S3_REGION:-us-east-1}"
       S3_ACCESS_KEY: "${S3_ACCESS_KEY:-inference}"
       S3_SECRET_KEY: "${S3_SECRET_KEY:-inference-development}"
       S3_BUCKET: "${S3_BUCKET:-ai-inference}"
-      TREEAI_SECRET_MOUNT_GENERATION: "2"
+      TREEAI_S3_CREDENTIAL_GENERATION: "${S3_CREDENTIAL_GENERATION:-compatibility-v1}"
+      ARTIFACT_SOURCE_SECRET_GENERATION: "${ARTIFACT_SOURCE_SECRET_GENERATION:-compatibility-v1}"
+      ARTIFACT_IMPORT_TOKEN_GENERATION: "${ARTIFACT_IMPORT_TOKEN_GENERATION:-compatibility-v1}"
   manager:
     group_add: ["${RUNTIME_GID:?RUNTIME_GID is required}"]
     depends_on: !override
@@ -30,13 +32,23 @@ services:
       evaluator: { condition: service_healthy }
     volumes: ["/var/lib/treeseed-ai/platform:/factory:ro"]
     secrets: [artifact-import-token]
-    environment: { AI_FACTORY_MODE_FILE: /factory/mode.json, ARTIFACT_IMPORT_URL: "http://api:4770/internal/artifacts/import", ARTIFACT_IMPORT_TOKEN_FILE: /run/secrets/artifact-import-token, TREEAI_SECRET_MOUNT_GENERATION: "2" }
+    environment: { AI_FACTORY_MODE_FILE: /factory/mode.json, ARTIFACT_IMPORT_URL: "http://api:4770/internal/artifacts/import", ARTIFACT_IMPORT_TOKEN_FILE: /run/secrets/artifact-import-token, EVALUATOR_URL: "http://evaluator:8080", ARTIFACT_IMPORT_TOKEN_GENERATION: "${ARTIFACT_IMPORT_TOKEN_GENERATION:-compatibility-v1}" }
+  evaluator:
+    depends_on:
+      minio: { condition: service_healthy }
+      vllm: { condition: service_healthy }
+    environment:
+      AWS_ENDPOINT_URL: http://inference-minio:9000
+      VLLM_URL: http://vllm:8000
+      NO_PROXY: 127.0.0.1,localhost,minio,inference-minio,vllm,inference-vllm
+      no_proxy: 127.0.0.1,localhost,minio,inference-minio,vllm,inference-vllm
   vllm:
     restart: "no"
-    command: ["--model","${SOURCE_MODEL:-Qwen/Qwen3.5-4B}","--revision","${SOURCE_MODEL_REVISION:-851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a}","--served-model-name","${SOURCE_MODEL:-Qwen/Qwen3.5-4B}","--max-model-len","${MAX_MODEL_LENGTH:-65536}","--max-num-seqs","2","--gpu-memory-utilization","${GPU_MEMORY_UTILIZATION:-0.85}","--enable-lora","--enable-auto-tool-choice","--tool-call-parser","qwen3_coder","--reasoning-parser","qwen3","--language-model-only"]
+    environment: { TREEAI_MULTIMODAL_LORA_ENABLED: "${TREEAI_MULTIMODAL_LORA_ENABLED:-false}", VLLM_ALLOW_RUNTIME_LORA_UPDATING: "True" }
+    command: ["--model","${SOURCE_MODEL:-Qwen/Qwen3.5-4B}","--revision","${SOURCE_MODEL_REVISION:-851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a}","--served-model-name","${SOURCE_MODEL:-Qwen/Qwen3.5-4B}","--max-model-len","${MAX_MODEL_LENGTH:-65536}","--max-num-seqs","2","--gpu-memory-utilization","${GPU_MEMORY_UTILIZATION:-0.85}","--enable-lora","--enable-auto-tool-choice","--tool-call-parser","qwen3_coder","--reasoning-parser","qwen3"]
   minio:
     networks:
-      default: {}
+      default: { aliases: [inference-minio] }
       ai-shared: { aliases: [inference-minio] }
 networks:
   ai-shared: { external: true, name: ai-shared }

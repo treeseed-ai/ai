@@ -200,7 +200,7 @@ function build(product: string) {
 		copyFileSync(resolve(root, "scripts/manager/update-helper.sh"), resolve(base, "usr/lib/treeseed-ai/manager/update-helper"));
 		chmodSync(resolve(base, "usr/lib/treeseed-ai/manager/update-helper"), 0o755);
 		for (const name of ["api.service", "supervisor.service", "reconcile.service", "update.service", "stable.timer", "development.timer", "update-helper.service", "update-helper.timer"]) copyFileSync(resolve(root, `systemd/treeseed-ai-manager-${name}`), resolve(base, `usr/lib/systemd/system/treeseed-ai-manager-${name}`));
-		descriptor(["platform", "update", "mode", "config", "recovery", "local-build"], base);
+		descriptor(["platform", "storage", "qualify", "update", "mode", "config", "recovery", "local-build"], base);
 		return finish(product, base);
 	}
 	descriptor(product === "host-runtime" ? ["host"] : [product], base);
@@ -221,6 +221,7 @@ function build(product: string) {
 		for (const file of ["compose.yml", "Caddyfile"]) copyFileSync(resolve(root, `deploy/lab/${file}`), resolve(base, `usr/lib/treeseed-ai/lab/${file}`));
 		cpSync(resolve(root, "deploy/lab/open-webui"), resolve(base, "usr/lib/treeseed-ai/lab/open-webui"), { recursive: true });
 		copyFileSync(resolve(root, "deploy/lab/lab.env.example"), resolve(base, "usr/share/treeseed-ai/lab/lab.env.example"));
+		copyFileSync(resolve(root, "release/qualification-corpora.json"), resolve(base, "usr/share/treeseed-ai/lab/qualification-corpora.json"));
 		copyFileSync(resolve(root, "systemd/treeseed-ai-lab.service"), resolve(base, "usr/lib/systemd/system/treeseed-ai-lab.service"));
 		return finish(product, base);
 	}

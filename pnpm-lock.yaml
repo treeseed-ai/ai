@@ -24,6 +24,9 @@ importers:
         specifier: ^2.8.1
         version: 2.9.0
     devDependencies:
+      '@treeseed/sdk':
+        specifier: 0.13.0-rc.32
+        version: 0.13.0-rc.32
       '@types/node':
         specifier: ^24.6.0
         version: 24.13.3
@@ -89,6 +92,9 @@ importers:
       pg:
         specifier: ^8.16.3
         version: 8.23.0
+      undici:
+        specifier: 8.10.0
+        version: 8.10.0
 
   packages/lab:
     dependencies:
@@ -506,6 +512,14 @@ packages:
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
+  '@treeseed/sdk@0.13.0-rc.32':
+    resolution: {integrity: sha512-ilZ5fp+1/fqzal5FDwNbZECqze/+Oe0Teg1udiJf2pVDqu0omsFM6rl0vbtr8LHEhq87295VtDksCLA0DXdJgQ==}
+    engines: {node: '>=22'}
+
+  '@treeseed/treedx@0.3.0-rc.4':
+    resolution: {integrity: sha512-ZBmY/C30kge84Ns/qzpa/h4XfLXtZMDiyfCJM8WTLHQBU2I5QYrhx2aI32mHk90jQib+SyWfwYMknIip8RHF8A==}
+    engines: {node: '>=22'}
+
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
 
@@ -902,6 +916,9 @@ packages:
     engines: {node: '>= 14.6'}
     hasBin: true
 
+  zod@3.25.76:
+    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
+
 snapshots:
 
   '@aws-sdk/checksums@3.1000.28':
@@ -1236,6 +1253,16 @@ snapshots:
       tslib: 2.8.1
 
   '@standard-schema/spec@1.1.0': {}
+
+  '@treeseed/sdk@0.13.0-rc.32':
+    dependencies:
+      '@treeseed/treedx': 0.3.0-rc.4
+      esbuild: 0.28.2
+      typescript: 5.9.3
+      yaml: 2.9.0
+      zod: 3.25.76
+
+  '@treeseed/treedx@0.3.0-rc.4': {}
 
   '@types/chai@5.2.3':
     dependencies:
@@ -1572,3 +1599,5 @@ snapshots:
   xtend@4.0.2: {}
 
   yaml@2.9.0: {}
+
+  zod@3.25.76: {}

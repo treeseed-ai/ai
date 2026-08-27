@@ -2,26 +2,37 @@ import{chmodSync,mkdtempSync,mkdirSync,readFileSync,symlinkSync,writeFileSync}fr
 import{tmpdir}from'node:os';
 import{join}from'node:path';
 import{describe,expect,it}from'vitest';
-import{computeBuildIdentity,type ImageBuild}from'../../scripts/release/plan-image-builds.js';
+import{computeBuildIdentity,reuseEligible,type ImageBuild}from'../../scripts/release/plan-image-builds.js';
 
 describe('selective image build identities',()=>{
-  it('rewrites the current changelog version for development publications',()=>{
+  it('reuses only an exact valid deterministic build identity',()=>{
+    expect(reuseEligible({previousValid:true,buildIdentityMatches:true})).toBe(true);
+    expect(reuseEligible({previousValid:true,buildIdentityMatches:false})).toBe(false);
+    expect(reuseEligible({previousValid:false,buildIdentityMatches:true})).toBe(false);
+  });
+
+  it('publishes exact RC images and a manager-owned component bundle',()=>{
     const workflow=readFileSync('.github/workflows/publish-development.yml','utf8');
-    expect(workflow).toContain('1s/([^)]*)/($TREEAI_RC_DEBIAN_VERSION)/');
-    expect(workflow).not.toContain('1s/(0.6.0-1)/');
     expect(workflow).toContain('TREEAI_RC_TAG=${version}-rc${{ inputs.rc }}');
-    expect(workflow).toContain('TREEAI_RC_DEBIAN_VERSION=${version}~rc${{ inputs.rc }}-1');
     expect(workflow).not.toContain('tag="dev-');
-    expect(workflow).not.toContain('docker/login-action');
-    expect(workflow).not.toContain('docker buildx build');
-    expect(workflow).not.toContain('cosign sign');
-    expect(workflow).toContain('publishedDevelopmentImages:0');
-    expect(workflow).toContain('TREEAI_IMAGE_PLAN');
+    expect(workflow).toContain('docker/login-action');
+    expect(workflow).toContain('docker buildx build');
+    expect(workflow).toContain('cosign sign');
+    expect(workflow).toContain('cosign verify');
+    expect(workflow).toContain('docker buildx imagetools inspect');
+    expect(workflow).not.toContain('docker buildx imagetools create --tag');
+    expect(workflow).toContain('.images[$role].disposition="reused"');
+    expect(workflow).toContain('recover_run_id');
+    expect(workflow).toContain('git diff --quiet "$recovery_sha" HEAD');
+    expect(workflow).toContain('.name == "Publish every exact RC image and verify Docker Hub read-back" and .conclusion == "success"');
+    expect(workflow).toContain('.name == "Publish immutable prerelease" and .conclusion == "failure"');
+    expect(workflow).toContain('checksum=$(mktemp)');
+    expect(workflow).toContain('find . -maxdepth 1 -type f ! -name SHA256SUMS');
+    expect(workflow).not.toContain('xargs sha256sum > SHA256SUMS');
+    expect(workflow).toContain('pnpm build:component-release');
     expect(workflow).toContain('TREEAI_DEVELOPMENT_BASE');
-    expect(workflow).not.toContain('validate-image-metadata.ts prior');
-    expect(workflow).toContain('(cd prior && sha256sum -c SHA256SUMS)');
-    expect(workflow).toContain('development-debs pages/apt');
-    expect(workflow).toContain('mirror-apt-suite.sh');
+    expect(workflow).not.toContain('dpkg-buildpackage');
+    expect(workflow).not.toContain('mirror-apt-suite.sh');
   });
 
   it('covers every coordinated role with explicit inputs',()=>{
@@ -32,6 +43,8 @@ describe('selective image build identities',()=>{
     for(const [role,build]of Object.entries(builds.images)){expect(build.inputs.length,role).toBeGreaterThan(0);expect(build.inputs).toContain(build.dockerfile);}
 		for(const role of['inference-api','inference-manager','training-api','training-manager','lab-controller','lab-experience-proxy'])expect(builds.images[role]?.inputs).not.toContain('packages');
 		for(const role of['inference-migrations','training-migrations'])expect(builds.images[role]?.inputs).toContain('containers/migrations/run.sh');
+		for(const role of['lab-controller','lab-experience-proxy','lab-library-bridge']){expect(builds.images[role]?.inputs).not.toContain('packages/lab');expect(builds.images[role]?.inputs).not.toContain('packages/lab/src/cli.ts');expect(builds.images[role]?.inputs).not.toContain('packages/lab/src/corpus.ts');}
+		expect(builds.images['lab-controller']?.inputs).toContain('packages/lab/src/controller.ts');expect(builds.images['lab-experience-proxy']?.inputs).toContain('packages/lab/src/proxy.ts');expect(builds.images['lab-library-bridge']?.inputs).toContain('packages/lab/src/library-bridge.ts');
   });
 
   it('changes for Dockerfiles, context, arguments, and platforms',()=>{

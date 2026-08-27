@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { connect } from "node:net";
 import { resolve } from "node:path";
 import { redactSensitiveText, transportFailure } from "@ai-platform/common";
+import { acquireQualification, corpusPlan } from "./corpus.js";
 
 const command = process.argv[2];
 const args = process.argv.slice(3);
@@ -55,7 +56,7 @@ function client() {
 function call(path: string, method = "GET",body?:unknown) {
 	const config = client();
 	const values = ["--silent", "--show-error", "--fail-with-body", "--cacert", config.ca, "-H", `Authorization: Bearer ${operator()}`, "-H", "content-type: application/json", "-X", method];
-	if (method === "POST") values.push("-H", `Idempotency-Key: treeai-${path}-${Date.now()}`);
+	if (method === "POST" || method === "PATCH") values.push("-H", `Idempotency-Key: treeai-${path}-${Date.now()}`);
 	if(body!==undefined)values.push('--data',JSON.stringify(body));
 	const target = `${config.endpoints.lab}${path}`;
 	values.push(target);
@@ -97,7 +98,7 @@ function urls() {
 		interfaces,
 	};
 }
-function verify(deep = false) {
+function verify(deep = false, multimodal = false) {
 	const controller = call("/v1/status"), settings = client(), webui = settings.interfaces?.openWebUi;
 	if (!webui) return { status: "warning", controller, openWebUi: "not-configured" };
 	const health = run("curl", ["--silent", "--show-error", "--fail", "--cacert", settings.ca, `${webui.browserUrl}/health`]);
@@ -108,7 +109,7 @@ function verify(deep = false) {
 		const probe = spawnSync("curl", ["--silent", "--fail", "--max-time", "1", `http://127.0.0.1:${port}/`]);
 		if (probe.status === 0) throw new Error(`Private Hermes port ${port} is unexpectedly reachable from the host.`);
 	}
-	return { status: "ready", controller, isolation: { hostPortsClosed: [4792, 8642] }, openWebUi: { url: webui.browserUrl, authentication: webui.authentication, health: health || "ok", models: providerModels }, hermes: call("/v1/hermes/status"), ...(deep ? { deep: call("/v1/hermes/verify", "POST") } : {}) };
+	return { status: "ready", controller, isolation: { hostPortsClosed: [4792, 8642] }, openWebUi: { url: webui.browserUrl, authentication: webui.authentication, health: health || "ok", models: providerModels }, hermes: call("/v1/hermes/status"), ...(deep ? { deep: call("/v1/hermes/verify", "POST", { multimodal }) } : {}) };
 }
 function imageReference(id: string) {
 	const catalog = JSON.parse(readFileSync("/usr/share/treeseed-ai/release/catalog.json", "utf8")) as { runtimeImages: Array<{ id: string; reference: string }> };
@@ -147,6 +148,29 @@ async function main() {
 		throw new Error("Usage: treeai lab hermes <status|tools|sessions|verify|diagnostics|rotate-password>");
 	}
 	if(command==='libraries')return output(call('/v1/libraries'));
+	if(command==='agents')return output(call('/v1/agents'));
+	if(command==='agent'){
+		const action=args.find(item=>!item.startsWith('--')),values=args.filter(item=>!item.startsWith('--')).slice(1),id=values[0];
+		if(!id)throw new Error('An agent profile ID is required.');
+		if(action==='show')return output(call(`/v1/agents/${encodeURIComponent(id)}`));
+		if(action==='enable'||action==='disable')return output(call(`/v1/agents/${encodeURIComponent(id)}/${action}`,'POST'));
+		if(action==='edit'){const name=option('--name'),description=option('--description'),icon=option('--icon'),body=Object.fromEntries(Object.entries({displayName:name,description,icon}).filter(([,value])=>value!==undefined));return output(call(`/v1/agents/${encodeURIComponent(id)}`,'PATCH',body));}
+		throw new Error('Usage: treeai lab agent <show|edit|enable|disable> <id>');
+	}
+	if(command==='routing'&&args.find(item=>!item.startsWith('--'))==='history')return output(call('/v1/routing-decisions'));
+	if(command==='corpus'){
+		const action=args.find(item=>!item.startsWith('--'));
+		if(action==='plan')return output(corpusPlan());
+		if(action==='acquire'){
+			if(!args.includes('--qualification'))throw new Error('Usage: treeai lab corpus acquire --qualification [--scope all|financial|multimodal]');
+			const scope=(option('--scope')??'all')as'all'|'financial'|'multimodal';
+			if(!['all','financial','multimodal'].includes(scope))throw new Error('--scope must be all, financial, or multimodal.');
+			const userAgent=process.env.SEC_USER_AGENT;
+			if(scope!=='multimodal'&&!userAgent)throw new Error('SEC_USER_AGENT must identify an organization and contact email.');
+			return output(await acquireQualification(client(),operator(),userAgent??'',scope));
+		}
+		throw new Error('Usage: treeai lab corpus <plan|acquire --qualification>');
+	}
 	if(command==='library'){
 		const action=args.find(item=>!item.startsWith('--')),values=args.filter(item=>!item.startsWith('--')).slice(1),id=values[0];
 		if(action==='runs')return output(id?call(`/v1/library-cycles/${encodeURIComponent(id)}`):call('/v1/library-cycles'));
@@ -175,7 +199,7 @@ async function main() {
 	}
 	if (command === "stop") { requireRoot("stop"); compose(["down"]); return output({ status: "ready" }); }
 	if (command === "status") return output(call("/v1/status"));
-	if (command === "verify") return output(verify(args.includes("--deep")));
+	if (command === "verify") { if (args.includes("--multimodal") && !args.includes("--deep")) throw new Error("--multimodal requires --deep."); return output(verify(args.includes("--deep"), args.includes("--multimodal"))); }
 	if (["enable", "pause", "resume"].includes(command ?? "")) return output(call(`/v1/loop/${command}`, "POST"));
 	if (command === "cycle-now") return output(call("/v1/loop/cycle-now", "POST"));
 	if (command === "watch") {
@@ -190,7 +214,7 @@ async function main() {
 		compose(["logs", "--follow", ...(service ? [service] : [])]);
 		return;
 	}
-	throw new Error("Usage: treeai lab <plan|configure|reset-webui|urls|open|hermes|libraries|library|build|start|stop|restart|status|verify|watch|logs|enable|pause|resume|cycle-now>");
+	throw new Error("Usage: treeai lab <plan|configure|reset-webui|urls|open|hermes|agents|agent|routing|corpus|libraries|library|build|start|stop|restart|status|verify|watch|logs|enable|pause|resume|cycle-now>");
 }
 
 main().catch((error) => {

@@ -1,8 +1,8 @@
 {
   "schemaVersion": "treeai.release/v2",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "debianRevision": "1",
-  "debianVersion": "0.9.0-1",
+  "debianVersion": "0.10.0-1",
   "sourceDateEpoch": 1787508520,
   "channel": "stable",
   "githubRepository": "treeseed-ai/ai",
@@ -15,7 +15,6 @@
     "training-api", "training-manager", "axolotl-worker", "marker-worker", "artifact-worker", "training-migrations",
     "lab-controller", "lab-experience-proxy", "lab-library-bridge", "hermes-agent", "lab-web-tool-proxy"
   ],
-  "changedImages": ["inference-api", "inference-manager", "inference-evaluator", "inference-migrations", "training-api", "training-manager", "axolotl-worker", "marker-worker", "artifact-worker", "training-migrations", "lab-controller", "lab-library-bridge"],
   "apt": {
     "baseUrl": "https://treeseed-ai.github.io/ai/apt",
     "suite": "stable",

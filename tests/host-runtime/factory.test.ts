@@ -117,5 +117,6 @@ describe('local factory contracts', () => {
     expect(coordinator).toContain('service:value.Service');
     expect(shared).toContain('prepareRuntimeDirectory');
     expect(shared).toContain("setProductEnvironment(product,'RUNTIME_GID',gid)");
+    expect(shared).toContain('chmodSync(path,0o775)');
   });
 });

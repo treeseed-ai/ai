@@ -7,7 +7,7 @@ export function config(): ClientConfig {
 	try { return JSON.parse(readFileSync(configPath, 'utf8')) as ClientConfig; }
 	catch {
 		const host = process.env.AI_FACTORY_HOST ?? hostname();
-		return { schemaVersion: 'treeai.config/v1', version: '0.9.0', imageSource: 'local-build', ca: process.env.AI_FACTORY_CA_CERT ?? '/etc/ssl/certs/treeseed-ai-factory-development-ca.pem', endpoints: { manager: `https://${host}:4790`, inference: `https://${host}:4770`, openai: `https://${host}:4771`, training: `https://${host}:4780`, lab: `https://${host}:4793` }, installedProducts: [] };
+		return { schemaVersion: 'treeai.config/v1', version: '0.10.0', imageSource: 'local-build', ca: process.env.AI_FACTORY_CA_CERT ?? '/etc/ssl/certs/treeseed-ai-factory-development-ca.pem', endpoints: { manager: `https://${host}:4790`, inference: `https://${host}:4770`, openai: `https://${host}:4771`, training: `https://${host}:4780`, lab: `https://${host}:4793` }, installedProducts: [] };
 	}
 }
 export function key() { const environment = process.env.TREEAI_OPERATOR_KEY_VALUE; return environment || readFileSync(keyPath, 'utf8').trim(); }

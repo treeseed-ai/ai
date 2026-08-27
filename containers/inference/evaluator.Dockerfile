@@ -5,6 +5,8 @@ RUN pip install --no-cache-dir --require-hashes -r /tmp/requirements.lock
 WORKDIR /app
 COPY workers/common ./common
 COPY workers/evaluator ./evaluator
+ENV SUITE_DIR=/app/evaluator/suites
+RUN python -c "import json,pathlib; value=json.loads(pathlib.Path('/app/evaluator/suites/default-v1.json').read_text()); assert value.get('schemaVersion') == 'ai.evaluation-suite/v1' and value.get('cases')"
 RUN useradd --system --uid 10001 worker && mkdir /state && chown worker /state
 USER worker
 CMD ["python","evaluator/worker.py"]

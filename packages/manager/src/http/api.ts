@@ -17,11 +17,13 @@ import {
 	events,
 	finishWork,
 	getWork,
+	unfinishedWork,
 	setting,
 } from "../core/store.js";
 import { updateStatus } from "../lifecycle/update.js";
 import { normalizeStoredComponents } from "../lifecycle/status.js";
-const VERSION = "0.9.0";
+import { campaign, campaigns, profiles, qualificationStatus } from "../lifecycle/qualification/index.js";
+const VERSION = "0.10.0";
 function keys(): ApiKeyRecord[] {
 	try {
 		return JSON.parse(readFileSync(paths.apiKeys, "utf8")) as ApiKeyRecord[];
@@ -47,6 +49,11 @@ function openapi() {
 			"/v1/status": { get: secured },
 			"/v1/components": { get: secured },
 			"/v1/diagnostics/hermes": { get: secured },
+			"/v1/qualification/profile": { get: secured },
+			"/v1/qualification/profiles": { get: secured },
+			"/v1/qualification/campaigns": { get: secured, post: secured },
+			"/v1/qualification/campaigns/{id}": { get: secured },
+			"/v1/qualification/campaigns/{id}/cancel": { post: secured },
 			"/v1/mode": { get: secured, post: secured },
 			"/v1/transitions/{id}": { get: secured },
 			"/v1/updates": { get: secured },
@@ -78,13 +85,14 @@ function components() {
 	return [...manager, ...normalizeStoredComponents(products)];
 }
 function queue(
-	kind: "transition" | "update-check" | "update-plan" | "reconcile",
+	kind: "transition" | "update-check" | "update-plan" | "reconcile" | "qualification",
 	operation: SupervisorOperation,
 	request: unknown,
 	idempotencyKey: string,
 ) {
 	const work = createWork(kind, idempotencyKey, request);
-	if (work.state === "queued")
+	if (work.state === "queued") {
+		finishWork(work.id, "running");
 		void callSupervisor({
 			operation,
 			parameters: request as Record<string, unknown>,
@@ -107,9 +115,17 @@ function queue(
 					error instanceof Error ? error.message : String(error),
 				),
 			);
-	return work;
+	}
+	return getWork(work.id)!;
 }
-function completedTransition(mode:string,idempotencyKey:string){const work=createWork('transition',idempotencyKey,{mode});return work.state==='queued'?finishWork(work.id,'succeeded',{mode,changed:false,reason:'already_in_mode'}):work;}
+export async function recoverInterruptedTransitions(supervisor: typeof callSupervisor = callSupervisor) {
+	const pending=unfinishedWork("transition"),work=pending.pop();for(const superseded of pending)finishWork(superseded.id,"failed",undefined,"Transition was superseded by newer desired state during restart recovery.");if(!work)return;
+	const mode=(work.request as {mode?:unknown})?.mode;
+	if (mode!=="awake"&&mode!=="sleep") { finishWork(work.id,"failed",undefined,"Persisted transition has an invalid target."); return; }
+	finishWork(work.id,"running");
+	try {const result=await supervisor({operation:"mode.set",parameters:{mode},idempotencyKey:work.idempotencyKey});finishWork(work.id,(result as {state?:string})?.state==="postponed"?"postponed":"succeeded",result);}
+	catch (error) { finishWork(work.id,"failed",undefined,error instanceof Error?error.message:String(error)); }
+}
 export function createManagerApp() {
 	const app = new Hono();
 	app.get("/healthz", (c) => c.json({ status: "ready", version: VERSION }));
@@ -143,6 +159,21 @@ export function createManagerApp() {
 			}),
 		),
 	);
+	app.get("/v1/qualification/profile", requireScope("platform:read"), (c) => c.json(qualificationStatus()));
+	app.get("/v1/qualification/profiles", requireScope("platform:read"), (c) => c.json({ items: profiles() }));
+	app.get("/v1/qualification/campaigns", requireScope("platform:read"), (c) => c.json({ items: campaigns() }));
+	app.get("/v1/qualification/campaigns/:id", requireScope("platform:read"), (c) => {
+		const id = c.req.param("id"), value = campaign(id);
+		if (value) return c.json(value);
+		const work = getWork(id);
+		if (work?.kind === "qualification") {
+			if (work.state === "succeeded" && work.result) return c.json(work.result);
+			return c.json(work);
+		}
+		return c.json({ error: { code: "not_found", message: "Qualification campaign not found." } }, 404);
+	});
+	app.post("/v1/qualification/campaigns", requireScope("platform:reconcile"), async (c) => { const body = await c.req.json().catch(() => ({})) as { preset?: string; idempotencyKey?: string }, key = body.idempotencyKey ?? c.req.header("idempotency-key"); if (!key || !["baseline", "balanced"].includes(body.preset ?? "")) return c.json({ error: { code: "invalid_request", message: "preset and idempotencyKey are required." } }, 400); return c.json(queue("qualification", body.preset === "baseline" ? "qualification.baseline" : "qualification.run", { preset: body.preset }, key), 202); });
+	app.post("/v1/qualification/campaigns/:id/cancel", requireScope("platform:reconcile"), async (c) => { const body = await c.req.json().catch(() => ({})) as { idempotencyKey?: string }, key = body.idempotencyKey ?? c.req.header("idempotency-key"); if (!key) return c.json({ error: { code: "idempotency_required", message: "An idempotency key is required." } }, 400); return c.json(await callSupervisor({ operation: "qualification.cancel", parameters: { id: c.req.param("id") }, idempotencyKey: key })); });
 	app.get("/v1/mode", requireScope("platform:read"), (c) =>
 		c.json({ mode: setting("mode", "awake") }),
 	);
@@ -161,7 +192,7 @@ export function createManagerApp() {
 				},
 				400,
 			);
-		const mode=String(body.mode),current=setting('mode','awake');return c.json(current===mode?completedTransition(mode,body.idempotencyKey):queue("transition", "mode.set", { mode }, body.idempotencyKey),202);
+		const mode=String(body.mode);return c.json(queue("transition", "mode.set", { mode }, body.idempotencyKey),202);
 	});
 	app.get("/v1/transitions/:id", requireScope("platform:read"), (c) => {
 		const work = getWork(c.req.param("id"));

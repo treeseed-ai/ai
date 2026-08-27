@@ -178,9 +178,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: { name: release-image-metadata, path: release-assets, if-no-files-found: error }
 
-  packages:
+  component:
     needs: [validate, publish-tags]
     runs-on: ubuntu-latest
+    permissions: { contents: read, id-token: write, attestations: write }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -190,99 +191,37 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 24.19.0, cache: pnpm }
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - name: Build policy-compliant Debian packages
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential debhelper lintian nodejs
-          TREEAI_IMAGE_MANIFEST="$PWD/release-assets/image-manifest.json" dpkg-buildpackage -b -us -uc
-          mkdir -p .artifacts
-          find .. -maxdepth 1 -type f -name 'treeseed-ai*.deb' -exec cp {} .artifacts/ \;
-          node --import tsx scripts/package-deb.ts configured config/platform.default.json
-          lintian --fail-on error .artifacts/*.deb
-      - name: Co-install package contract
-        run: |
-          root=$(mktemp -d)
-          for deb in .artifacts/*.deb; do dpkg-deb --extract "$deb" "$root"; done
-          test -x "$root/usr/bin/treeai"
-          test -x "$root/usr/lib/treeseed-ai/runtime/bin/node"
-          test -f "$root/usr/lib/systemd/system/treeseed-ai-manager-supervisor.service"
-          test ! -e "$root/usr/bin/ai-factory-dev"
-          test ! -e "$root/usr/bin/ai-factory-lab"
+      - name: Build exact managed component bundle
+        env:
+          TREEAI_COMPONENT_RELEASE: "${{ inputs.version }}"
+          TREEAI_COMPONENT_REVISION: "1"
+          TREEAI_SOURCE_COMMIT: "${{ needs.validate.outputs.sha }}"
+          TREEAI_IMAGE_MANIFEST: "${{ github.workspace }}/release-assets/image-manifest.json"
+        run: pnpm build:component-release
+      - uses: actions/attest-build-provenance@v3
+        with: { subject-path: "release-assets/component/*" }
       - uses: actions/upload-artifact@v4
         with:
-          name: debian-packages
-          path: .artifacts/*.deb
+          name: managed-component
+          path: release-assets/component/*
           if-no-files-found: error
-          include-hidden-files: true
 
   github-release:
-    needs: [validate, packages]
+    needs: [validate, component]
     runs-on: ubuntu-latest
     environment: production
     permissions: { contents: write }
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with: { version: 10.15.1 }
-      - uses: actions/setup-node@v4
-        with: { node-version: 24.19.0, cache: pnpm }
-      - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v4
-        with: { name: debian-packages, path: assets }
+        with: { name: managed-component, path: assets }
       - uses: actions/download-artifact@v4
         with: { name: release-image-metadata, path: assets }
-      - name: Import release signing key
-        env: { APT_GPG_PRIVATE_KEY: "${{ secrets.APT_GPG_PRIVATE_KEY }}" }
-        run: printf '%s' "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
-      - name: Sign checksums and publish release
-        env:
-          GH_TOKEN: "${{ github.token }}"
-          APT_GPG_PASSPHRASE: "${{ secrets.APT_GPG_PASSPHRASE }}"
-        run: |
-          export APT_RELEASE_FINGERPRINT="$(cat release/apt/RELEASE_KEY_FINGERPRINT)"
-          node --import tsx scripts/release/stage-release-assets.ts assets published-assets
-          cd published-assets
-          mapfile -t files < <(find . -maxdepth 1 -type f -printf '%f\n' | sort)
-          sha256sum "${files[@]}" > SHA256SUMS
-          gpg --batch --yes --pinentry-mode loopback --passphrase "$APT_GPG_PASSPHRASE" --local-user "$APT_RELEASE_FINGERPRINT" --detach-sign --armor SHA256SUMS
-          cd ..
-          gh release create "${{ inputs.version }}" $(find published-assets -type f -print | sort) --target '${{ needs.validate.outputs.sha }}' --title "TreeSeed AI ${{ inputs.version }}" --notes-file "docs/releases/${{ inputs.version }}.md"
-
-  apt-repository:
-    needs: github-release
-    runs-on: ubuntu-latest
-    environment: production
-    permissions: { contents: read }
-    steps:
-      - uses: actions/checkout@v4
-      - name: Download all released Debian packages
+      - name: Publish exact component and image evidence
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
-          mkdir -p debs pages/apt
-          gh release list --limit 100 --json tagName,isDraft,isPrerelease --jq '.[] | select(.isDraft == false and .isPrerelease == false) | .tagName' | while read tag; do gh release download "$tag" --pattern '*.deb' --dir debs --skip-existing; done
-      - name: Import signing key and build deterministic repository
-        env:
-          APT_GPG_PRIVATE_KEY: "${{ secrets.APT_GPG_PRIVATE_KEY }}"
-          APT_GPG_PASSPHRASE: "${{ secrets.APT_GPG_PASSPHRASE }}"
-        run: |
-          printf '%s' "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
-          export APT_RELEASE_FINGERPRINT="$(cat release/apt/RELEASE_KEY_FINGERPRINT)"
-          sh scripts/release/mirror-apt-suite.sh https://treeseed-ai.github.io/ai/apt development pages/apt || sh scripts/release/mirror-apt-suite.sh https://treeseed-ai.github.io/ai development pages/apt || true
-          sh scripts/release/build-apt-repository.sh debs pages/apt '${{ inputs.version }}'
-      - uses: actions/upload-artifact@v4
-        with: { name: apt-pages-site, path: pages, if-no-files-found: error }
-
-  apt-pages:
-    needs: apt-repository
-    runs-on: ubuntu-latest
-    permissions: { contents: read, pages: write, id-token: write }
-    environment: { name: github-pages, url: "${{ steps.deploy.outputs.page_url }}" }
-    steps:
-      - uses: actions/download-artifact@v4
-        with: { name: apt-pages-site, path: pages }
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with: { path: pages }
-      - id: deploy
-        uses: actions/deploy-pages@v4
+          cd assets
+          mapfile -t files < <(find . -maxdepth 2 -type f -printf '%P\n' | sort)
+          sha256sum "${files[@]}" > SHA256SUMS
+          cd ..
+          gh release create "${{ inputs.version }}" $(find assets -type f -print | sort) --target '${{ needs.validate.outputs.sha }}' --title "TreeAI ${{ inputs.version }}" --notes-file "docs/releases/${{ inputs.version }}.md"

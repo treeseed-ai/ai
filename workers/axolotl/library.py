@@ -1,21 +1,32 @@
-import hashlib,json,os,re
+import hashlib,json,mimetypes,os,re
 from pathlib import Path
-import boto3
 from transformers import AutoTokenizer
+from common.artifacts import ArtifactRepository
 
-def client():return boto3.client("s3",endpoint_url=os.environ["AWS_ENDPOINT_URL"],region_name=os.getenv("AWS_REGION","us-east-1"),aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"])
-def key(uri):
-    prefix=f"s3://{os.environ['S3_BUCKET']}/"
-    if not str(uri).startswith(prefix):raise ValueError("Dataset source is outside the training bucket")
-    return str(uri)[len(prefix):]
-def content(uri):return client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(uri))["Body"].read()
+REPOSITORY=ArtifactRepository.from_env()
+def key(uri):return REPOSITORY.key(uri)
+def content(uri):return REPOSITORY.bytes(uri)
+def bundle(uri):return json.loads(content(uri))
 def markdown(uri):
-    manifest=json.loads(content(uri));objects=manifest.get("objects",[])
+    manifest=bundle(uri);objects=manifest.get("objects",[])
     direct=next((item.get("uri") for item in objects if str(item.get("uri","")).endswith("document.md")),None)
     if direct:return content(direct).decode("utf-8")
-    prefix=key(uri).rsplit("/",1)[0];listed=client().list_objects_v2(Bucket=os.environ["S3_BUCKET"],Prefix=prefix+"/").get("Contents",[]);item=next((value["Key"] for value in listed if value["Key"].endswith(".md")),None)
+    prefix=key(uri).rsplit("/",1)[0];listed=REPOSITORY.list(prefix+"/");item=next((value["key"] for value in listed if value["key"].endswith(".md")),None)
     if not item:raise ValueError("Normalized document has no Markdown object")
-    return client().get_object(Bucket=os.environ["S3_BUCKET"],Key=item)["Body"].read().decode("utf-8")
+    return REPOSITORY.bytes(item).decode("utf-8")
+def visual_evidence(uri):
+    manifest=bundle(uri)
+    if manifest.get("schemaVersion")!="ai.document-bundle/v3":return[]
+    prefix=key(uri).rsplit("/",1)[0]
+    values=[]
+    for item in manifest.get("images",[]):
+        if not item.get("eligible") or not item.get("authoredContext"):continue
+        relative=str(item.get("imagePath","")).lstrip("/")
+        if not relative or ".." in Path(relative).parts:continue
+        data=REPOSITORY.bytes(f"{prefix}/{relative}")
+        if hashlib.sha256(data).hexdigest()!=item.get("imageSha256"):raise ValueError("Document image checksum does not match its bundle")
+        values.append({**item,"data":data,"extension":Path(relative).suffix.lower() or ".bin"})
+    return values
 def sections(text):
     values=[];heading="Document";buffer=[];fenced=False
     for line in text.splitlines():
@@ -37,11 +48,11 @@ def chunks(tokenizer,text,limit):
         current=tokenizer.decode(tokens,skip_special_tokens=False) if tokens else ""
     if current:result.append(current)
     return result
-def upload(path,key_name,mime):client().upload_file(str(path),os.environ["S3_BUCKET"],key_name,ExtraArgs={"ContentType":mime,"Metadata":{"sha256":hashlib.sha256(path.read_bytes()).hexdigest()}});return f"s3://{os.environ['S3_BUCKET']}/{key_name}"
+def upload(path,key_name,mime):return REPOSITORY.put_file(key_name,path,mime)["uri"]
 def prepare(job):
     value=job["input"];documents=value.get("documents",[]);mode=value.get("mode");sequence_len=int(value.get("sequenceLength",2048));model=value["baseModel"];revision=value["baseModelRevision"]
     if mode not in {"smoke","standard"} or not documents:raise ValueError("A smoke or standard snapshot with documents is required")
-    tokenizer=AutoTokenizer.from_pretrained(model,revision=revision,trust_remote_code=False);records=[];seen=set();document_tokens={}
+    tokenizer=AutoTokenizer.from_pretrained(model,revision=revision,trust_remote_code=False);records=[];visual=[];seen=set();document_tokens={}
     for directory in sorted(value.get("directories",[]),key=lambda item:(item.get("relativePath","").casefold(),item.get("name","").casefold())):
         children=sorted(set(directory.get("childTopics",[])));titles=sorted(set(directory.get("documentTitles",[])))
         outline=f"Library: {value['libraryName']}\nTopic path: {directory.get('relativePath') or 'Root'}\nSection: Library outline\n\nTopic: {directory['name']}\nParent topic: {directory.get('parentPath') or 'Root'}\n"
@@ -56,6 +67,8 @@ def prepare(job):
             for chunk in chunks(tokenizer,section,max(128,sequence_len-len(tokenizer.encode(header,add_special_tokens=False))-1)):
                 payload=header+chunk+str(tokenizer.eos_token or "");digest=hashlib.sha256(payload.encode()).hexdigest()
                 if digest not in seen:seen.add(digest);records.append({"text":payload,"documentRevisionId":document["revisionId"],"digest":digest})
+        for image in visual_evidence(document["manifestUri"]):
+            visual.append({"documentRevisionId":document["revisionId"],"filename":document["filename"],"topicPath":document.get("topicPath") or "Root","section":image.get("section") or "Document figure","page":image.get("page"),"context":image["authoredContext"],"sha256":image["imageSha256"],"mimeType":image["mimeType"],"extension":image["extension"],"data":image["data"]})
     total=sum(document_tokens.values());minimum=4096 if mode=="smoke" else 100000
     if total<minimum:raise ValueError(f"{mode} dataset requires at least {minimum} tokens; found {total}")
     if mode=="standard" and len(documents)<3:raise ValueError("Standard datasets require at least three documents")
@@ -65,14 +78,26 @@ def prepare(job):
         for document in sorted(documents,key=lambda item:item["sha256"],reverse=True):
             held.add(document["revisionId"]);accumulated+=document_tokens[document["revisionId"]]
             if accumulated>=target:break
-    target=Path(os.getenv("OUTPUT_DIR","/artifacts/training"))/job["jobId"];target.mkdir(parents=True,exist_ok=True);train=target/"train.jsonl";evaluation=target/"evaluation.jsonl"
+    target=Path(os.getenv("OUTPUT_DIR","/artifacts/training"))/job["jobId"];target.mkdir(parents=True,exist_ok=True);train=target/"train.jsonl";evaluation=target/"evaluation.jsonl";visual_train=target/"multimodal-train.jsonl";visual_evaluation=target/"multimodal-evaluation.jsonl"
     with train.open("w") as output:
         for item in records:
             if item["documentRevisionId"] not in held:output.write(json.dumps({"text":item["text"]},sort_keys=True)+"\n")
     with evaluation.open("w") as output:
         for item in records:
             if item["documentRevisionId"] in held:output.write(json.dumps({"text":item["text"]},sort_keys=True)+"\n")
+    visual_objects={}
+    with visual_train.open("w") as training_output,visual_evaluation.open("w") as evaluation_output:
+        for item in sorted(visual,key=lambda entry:(entry["documentRevisionId"],entry["sha256"],str(entry.get("page")))):
+            image_name=f"images/{item['sha256']}{item['extension']}";image_path=target/image_name;image_path.parent.mkdir(parents=True,exist_ok=True)
+            if not image_path.exists():image_path.write_bytes(item["data"])
+            visual_objects[image_name]=image_path
+            prompt=f"Library: {value['libraryName']}\nTopic path: {item['topicPath']}\nDocument: {item['filename']}\nSection: {item['section']}\nPage: {item.get('page') if item.get('page') is not None else 'unknown'}"
+            record={"messages":[{"role":"user","content":[{"type":"image","path":image_name},{"type":"text","text":prompt}]},{"role":"assistant","content":[{"type":"text","text":item["context"]}]}],"documentRevisionId":item["documentRevisionId"],"imageSha256":item["sha256"]}
+            (evaluation_output if item["documentRevisionId"] in held else training_output).write(json.dumps(record,sort_keys=True)+"\n")
     train_uri=upload(train,f"datasets/{job['jobId']}/train.jsonl","application/x-ndjson");evaluation_uri=upload(evaluation,f"datasets/{job['jobId']}/evaluation.jsonl","application/x-ndjson") if evaluation.stat().st_size else None
-    manifest={"schemaVersion":"ai.library-dataset/v1","snapshotId":value["snapshotId"],"mode":mode,"format":"completion-jsonl","objects":[{"uri":train_uri,"sha256":hashlib.sha256(train.read_bytes()).hexdigest(),"size":train.stat().st_size}],"evaluationObject":({"uri":evaluation_uri,"sha256":hashlib.sha256(evaluation.read_bytes()).hexdigest(),"size":evaluation.stat().st_size} if evaluation_uri else None),"tokenCount":total-sum(document_tokens[item] for item in held),"evaluationTokenCount":sum(document_tokens[item] for item in held),"sourceDocuments":[{"revisionId":item["revisionId"],"sha256":item["sha256"],"relativePath":item["relativePath"],"heldOut":item["revisionId"] in held} for item in documents],"provenance":{"tokenizer":model,"revision":revision,"sequenceLength":sequence_len}}
+    visual_train_uri=upload(visual_train,f"datasets/{job['jobId']}/multimodal-train.jsonl","application/x-ndjson") if visual_train.stat().st_size else None;visual_evaluation_uri=upload(visual_evaluation,f"datasets/{job['jobId']}/multimodal-evaluation.jsonl","application/x-ndjson") if visual_evaluation.stat().st_size else None
+    image_objects=[]
+    for name,path in sorted(visual_objects.items()):image_objects.append({"uri":upload(path,f"datasets/{job['jobId']}/{name}",mimetypes.guess_type(path.name)[0] or "application/octet-stream"),"relativePath":name,"sha256":hashlib.sha256(path.read_bytes()).hexdigest(),"size":path.stat().st_size})
+    manifest={"schemaVersion":"ai.library-dataset/v2","snapshotId":value["snapshotId"],"mode":mode,"formats":["completion-jsonl"]+(["openai-multimodal-messages"] if visual_train_uri or visual_evaluation_uri else []),"objects":[{"uri":train_uri,"sha256":hashlib.sha256(train.read_bytes()).hexdigest(),"size":train.stat().st_size}],"evaluationObject":({"uri":evaluation_uri,"sha256":hashlib.sha256(evaluation.read_bytes()).hexdigest(),"size":evaluation.stat().st_size} if evaluation_uri else None),"multimodal":{"trainObject":({"uri":visual_train_uri,"sha256":hashlib.sha256(visual_train.read_bytes()).hexdigest(),"size":visual_train.stat().st_size} if visual_train_uri else None),"evaluationObject":({"uri":visual_evaluation_uri,"sha256":hashlib.sha256(visual_evaluation.read_bytes()).hexdigest(),"size":visual_evaluation.stat().st_size} if visual_evaluation_uri else None),"imageObjects":image_objects,"trainingExamples":sum(1 for item in visual if item["documentRevisionId"] not in held),"evaluationExamples":sum(1 for item in visual if item["documentRevisionId"] in held)},"tokenCount":total-sum(document_tokens[item] for item in held),"evaluationTokenCount":sum(document_tokens[item] for item in held),"sourceDocuments":[{"revisionId":item["revisionId"],"sha256":item["sha256"],"relativePath":item["relativePath"],"heldOut":item["revisionId"] in held} for item in documents],"provenance":{"tokenizer":model,"revision":revision,"sequenceLength":sequence_len,"multimodal":{"oneImagePerExample":True,"sourceAuthoredOnly":True,"samplePacking":False}}}
     manifest_path=target/"manifest.json";manifest_path.write_text(json.dumps(manifest,sort_keys=True,separators=(",",":")));manifest_uri=upload(manifest_path,f"datasets/{job['jobId']}/manifest.json","application/json")
-    return{"resultManifest":manifest_uri,"trainUri":train_uri,"evaluationUri":evaluation_uri,"tokenCount":manifest["tokenCount"],"evaluationTokenCount":manifest["evaluationTokenCount"],"heldOutRevisionIds":sorted(held),"digest":hashlib.sha256(manifest_path.read_bytes()).hexdigest()}
+    return{"resultManifest":manifest_uri,"trainUri":train_uri,"evaluationUri":evaluation_uri,"multimodalTrainUri":visual_train_uri,"multimodalEvaluationUri":visual_evaluation_uri,"multimodalExamples":manifest["multimodal"]["trainingExamples"],"tokenCount":manifest["tokenCount"],"evaluationTokenCount":manifest["evaluationTokenCount"],"heldOutRevisionIds":sorted(held),"digest":hashlib.sha256(manifest_path.read_bytes()).hexdigest()}

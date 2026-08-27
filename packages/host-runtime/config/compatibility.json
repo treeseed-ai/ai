@@ -1,6 +1,6 @@
 {
   "schemaVersion": "ai.host-runtime-compatibility/v1",
-  "release": "0.9.0",
+  "release": "0.10.0",
   "architecture": "amd64",
   "supportedPlatforms": {
     "debian:12": { "codename": "bookworm", "dockerSuffix": "debian.12~bookworm" },

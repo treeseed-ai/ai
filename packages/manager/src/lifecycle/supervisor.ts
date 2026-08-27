@@ -38,6 +38,8 @@ import {
 } from "./lab-webui.js";
 import { rotateHermesPassword } from "./hermes/rotation.js";
 import { hermesDiagnostics } from "./hermes/diagnostics.js";
+import { activateProfile, cancelCampaign, rollbackProfile, runCampaign } from "./qualification/index.js";
+import{configureR2}from'./storage/index.js';
 function rootOnly() {
 	if (process.getuid?.() !== 0)
 		throw new Error("Manager supervisor must run as root.");
@@ -122,6 +124,8 @@ export async function execute(request: SupervisorRequest) {
 	switch (request.operation) {
 		case "auth.rotate":
 			return rotateOperatorCredential();
+		case "storage.r2.configure":
+			return configureR2();
 		case "update.check":
 			return checkForUpdate();
 		case "update.plan":
@@ -167,6 +171,17 @@ export async function execute(request: SupervisorRequest) {
 			return rotateHermesPassword();
 		case "lab.hermes.diagnostics":
 			return hermesDiagnostics();
+		case "qualification.baseline":
+			return runCampaign("baseline");
+		case "qualification.run":
+			if (parameters.preset !== "balanced") throw new Error("Only the balanced qualification preset is supported.");
+			return runCampaign("balanced");
+		case "qualification.cancel":
+			return cancelCampaign(String(parameters.id ?? ""));
+		case "qualification.activate":
+			return activateProfile(String(parameters.id ?? ""));
+		case "qualification.rollback":
+			return rollbackProfile();
 		case "mode.set": {
 			const config = validatePlatformConfiguration(
 				JSON.parse(readFileSync(paths.configuration, "utf8")),

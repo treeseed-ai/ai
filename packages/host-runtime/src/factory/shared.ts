@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync
 import { hostname, networkInterfaces } from 'node:os';
 import { join, resolve } from 'node:path';
 
-export const version = '0.9.0';
+export const version = '0.10.0';
 export const configRoot = '/etc/treeseed-ai/host-runtime/factory';
 export const stateRoot = '/var/lib/treeseed-ai/host-runtime/factory';
 export const publicCa = '/etc/ssl/certs/treeseed-ai-factory-development-ca.pem';
@@ -49,7 +49,7 @@ export function treeDigest(root: string) {
 }
 export function fileMode(path: string) { return statSync(path).mode & 0o777; }
 export function setProductEnvironment(product:Product,name:string,value:string){const path=`/etc/treeseed-ai/${product}/environment`,content=readFileSync(path,'utf8'),lines=content.split('\n').filter((line)=>line&&!line.startsWith(`${name}=`));lines.push(`${name}=${value}`);const next=`${lines.join('\n')}\n`;if(next===content)return;const temporary=`${path}.tmp-${process.pid}`;writeFileSync(temporary,next,{mode:0o640});renameSync(temporary,path);run('chown',[`root:treeseed-ai-${product}`,path]);}
-export function prepareRuntimeDirectory(product:Product,configureGroup=false){const group=`treeseed-ai-${product}`,record=run('getent',['group',group],'pipe'),gid=record.split(':')[2];if(!gid||!/^[0-9]+$/u.test(gid))throw new Error(`Cannot resolve runtime group ${group}.`);const path=`/run/treeseed-ai/${product}`;mkdirSync(path,{recursive:true,mode:0o770});chmodSync(path,0o770);run('chown',[`root:${group}`,path]);if(configureGroup)setProductEnvironment(product,'RUNTIME_GID',gid);return gid;}
+export function prepareRuntimeDirectory(product:Product,configureGroup=false){const group=`treeseed-ai-${product}`,record=run('getent',['group',group],'pipe'),gid=record.split(':')[2];if(!gid||!/^[0-9]+$/u.test(gid))throw new Error(`Cannot resolve runtime group ${group}.`);const path=`/run/treeseed-ai/${product}`;mkdirSync(path,{recursive:true,mode:0o775});chmodSync(path,0o775);run('chown',[`root:${group}`,path]);if(configureGroup)setProductEnvironment(product,'RUNTIME_GID',gid);return gid;}
 export function productCompose(product: Product, args: string[], stdio: 'pipe' | 'inherit' = 'inherit') {
   const base = `/usr/lib/treeseed-ai/${product}`;
   return run('docker', ['compose','--env-file',`/etc/treeseed-ai/${product}/environment`,'-f',`${base}/compose.yml`,'-f',`${base}/factory.override.yml`,...args],stdio);

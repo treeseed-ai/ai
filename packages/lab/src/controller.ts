@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, renameSync } from "node:fs";
 import { appendEvent, atomic, lines, readJson, required, sanitize, stateRoot } from "./shared.js";
 import { finalizeEvidence, sourceForSession } from "./evidence.js";
 import {LibraryCycles} from './library-cycles.js';
+import {AgentProfiles} from './agents/index.js';
 
 type ControllerOptions = { fetch?: typeof fetch; now?: () => number };
 const sessionPattern = /^[A-Za-z0-9._-]{1,128}$/u;
@@ -64,6 +65,8 @@ export function createLabController(options: ControllerOptions = {}) {
 	const webToolUrl = process.env.WEB_TOOL_URL ?? "http://web-tool-proxy:8090";
 	const keys = parseBootstrapKeys(process.env.AI_LAB_API_KEYS ?? "");
 	const libraryCycles=new LibraryCycles(requestFetch);
+	const agentProfiles=new AgentProfiles();
+	async function syncAgents(){try{const response=await requestFetch(`${process.env.INFERENCE_CONTROL_URL??"http://inference-api:4770"}/v1/library-deployments`,{headers:{authorization:`Bearer ${required("AI_FACTORY_INFERENCE_KEY")}`}}),value=await response.json()as{items?:Array<{libraryId:string;librarySlug:string;candidateId:string}>};if(response.ok)for(const item of value.items??[])agentProfiles.promote(item.libraryId,item.librarySlug,item.candidateId,[`promotion:${item.candidateId}`]);}catch{/* retain last durable profile set */}return agentProfiles.list();}
 	async function hermes(path: string, method = "GET") {
 		const response = await requestFetch(`${hermesUrl}${path}`, { method, headers: { authorization: `Bearer ${required("HERMES_API_KEY")}`, "content-type": "application/json" } });
 		const value = await response.json().catch(() => ({}));
@@ -88,10 +91,10 @@ export function createLabController(options: ControllerOptions = {}) {
 		appendEvent("trajectory.finalized", { id: trajectory.id, hermesSessionId: id });
 		return trajectory;
 	}
-	async function deepVerify() {
+	async function deepVerify(multimodal = false) {
 		const artifactName = `treeai-hermes-deep-check-${crypto.randomUUID()}.txt`, artifactContent = `TREEAI_HERMES_READY_${crypto.randomUUID()}`,
-			webArtifactName = `treeai-hermes-web-check-${crypto.randomUUID()}.md`;
-		async function completion(model: string, stream: boolean, content: string) {
+			webArtifactName = `treeai-hermes-web-check-${crypto.randomUUID()}.md`, qualificationImage = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAT0lEQVR42u3PQQkAAAgEsItiNKMazQi+hcEKLNXzWgQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQELgt2zgEtldSC/gAAAABJRU5ErkJggg==";
+		async function completion(model: string, stream: boolean, content: unknown) {
 			const response = await requestFetch(`${experienceUrl}/v1/chat/completions`, { method: "POST", headers: { authorization: "Bearer lab-hermes", "content-type": "application/json", "x-ai-client": "hermes" }, body: JSON.stringify({ model, stream, messages: [{ role: "user", content }], temperature: 0 }) });
 			const raw = await response.text();
 			if (!response.ok || !raw) throw new Error(`${model} ${stream ? "streaming" : "non-streaming"} verification failed`);
@@ -114,7 +117,13 @@ export function createLabController(options: ControllerOptions = {}) {
 		const webTrajectory = await finalize(webAgent.sessionId), webObservations = lines(`${stateRoot}/artifact-observations.jsonl`), webCorrelated = webObservations.find((item) => webTrajectory.artifactObservationIds.includes(String(item.id)) && item.relativePath === webArtifactName);
 		if (!webCorrelated) throw new Error("Hermes web verification did not produce the expected correlated workspace artifact");
 		if (!hasSuccessfulWebEvidence(webTrajectory.events)) throw new Error("Hermes web verification did not retain successful search and extraction evidence");
-		return { status: "ready", direct: true, streaming: true, hermes: true, web: true, trajectoryId: trajectory.id, webTrajectoryId: webTrajectory.id, artifacts: [...trajectory.artifactObservationIds, ...webTrajectory.artifactObservationIds] };
+		if (multimodal) {
+			const content = [{ type: "image_url", image_url: { url: `data:image/png;base64,${qualificationImage}` } }, { type: "text", text: "Inspect this image and reply IMAGE_READY." }];
+			await completion("local-model", false, content);
+			const multimodalAgent = await completion("hermes-agent", false, content);
+			if (!multimodalAgent.sessionId) throw new Error("Hermes multimodal verification did not return a session identifier");
+		}
+		return { status: "ready", direct: true, streaming: true, hermes: true, web: true, multimodalDirect: multimodal || undefined, multimodalHermes: multimodal || undefined, trajectoryId: trajectory.id, webTrajectoryId: webTrajectory.id, artifacts: [...trajectory.artifactObservationIds, ...webTrajectory.artifactObservationIds] };
 	}
 	async function idempotent(context: Context, action: string, operation: () => Promise<unknown>) {
 		const key = context.req.header("idempotency-key");
@@ -128,6 +137,14 @@ export function createLabController(options: ControllerOptions = {}) {
 		{ method: "GET", path: "/healthz", summary: "Liveness" }, { method: "GET", path: "/readyz", summary: "Readiness" },
 		{ method: "GET", path: "/v1/status", summary: "Lab state", scope: "lab:read" },
 		{ method: "GET", path: "/v1/provider/models", summary: "Sanitized provider model discovery", scope: "lab:read" },
+		{ method: "GET", path: "/v1/agents", summary: "Agent profiles", scope: "lab:read" },
+		{ method: "POST", path: "/v1/agents", summary: "Create agent profile", scope: "lab:write" },
+		{ method: "GET", path: "/v1/agents/:id", summary: "Agent profile", scope: "lab:read" },
+		{ method: "PATCH", path: "/v1/agents/:id", summary: "Edit agent profile", scope: "lab:write" },
+		{ method: "POST", path: "/v1/agents/:id/enable", summary: "Enable agent profile", scope: "lab:write" },
+		{ method: "POST", path: "/v1/agents/:id/disable", summary: "Disable agent profile", scope: "lab:write" },
+		{ method: "GET", path: "/v1/agents/:id/evaluations", summary: "Agent evaluation evidence", scope: "lab:read" },
+		{ method: "GET", path: "/v1/routing-decisions", summary: "Agent routing decisions", scope: "lab:read" },
 		{ method: "GET", path: "/v1/hermes/status", summary: "Hermes status", scope: "lab:hermes:read" },
 		{ method: "GET", path: "/v1/hermes/capabilities", summary: "Hermes capabilities", scope: "lab:hermes:read" },
 		{ method: "GET", path: "/v1/hermes/tools", summary: "Hermes tools", scope: "lab:hermes:read" },
@@ -154,12 +171,19 @@ export function createLabController(options: ControllerOptions = {}) {
 	];
 	const app = new Hono();
 	app.get("/healthz", (context) => context.json({ ok: true })); app.get("/readyz", async (context) => { try { await hermes("/health"); return context.json({ ok: true }); } catch { return context.json({ ok: false, reason: "hermes-unavailable" }, 503); } });
-	app.get("/openapi.json", (context) => context.json(openApiDocument({ title: "AI Experience Lab API", version: "0.9.0", routes })));
+	app.get("/openapi.json", (context) => context.json(openApiDocument({ title: "AI Experience Lab API", version: "0.10.0", routes })));
 	app.get("/docs", (context) => context.html('<!doctype html><title>TreeAI Lab API</title><script id="api-reference" data-url="/openapi.json"></script><script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>'));
 	app.onError((error, context) => context.json({ error: { code: "agent_unavailable", message: "Hermes Agent is unavailable." } }, 503));
 	app.use("/v1/*", apiKeyAuthorization(async (id) => keys.find((key) => key.id === id) ?? null));
 	app.get("/v1/status", requireScope("lab:read"), (context) => context.json({ enabled: false, paused: true, phase: "training-pipelines-not-configured", trajectories: lines(`${stateRoot}/trajectories.jsonl`).length }));
 	app.get("/v1/provider/models", requireScope("lab:read"), async (context) => context.json(await providerModels()));
+	app.get("/v1/agents", requireScope("lab:read"), async (context) => context.json({items:await syncAgents()}));
+	app.post("/v1/agents",requireScope("lab:write"),async context=>{const key=context.req.header("idempotency-key");if(!key)return context.json({error:{code:"idempotency_required",message:"An idempotency key is required."}},400);try{return context.json(agentProfiles.upsert(await context.req.json() as never,"draft"),202);}catch(error){return context.json({error:{code:"invalid_agent_profile",message:error instanceof Error?error.message:String(error)}},422);}});
+	app.get("/v1/agents/:id",requireScope("lab:read"),context=>{const value=agentProfiles.get(context.req.param("id"));return value?context.json(value):context.json({error:{code:"not_found",message:"Agent profile not found."}},404);});
+	app.patch("/v1/agents/:id",requireScope("lab:write"),async context=>{try{return context.json(agentProfiles.update(context.req.param("id"),await context.req.json() as never));}catch(error){return context.json({error:{code:"invalid_agent_profile",message:error instanceof Error?error.message:String(error)}},422);}});
+	for(const status of["enable","disable"]as const)app.post(`/v1/agents/:id/${status}`,requireScope("lab:write"),context=>{if(!context.req.header("idempotency-key"))return context.json({error:{code:"idempotency_required",message:"An idempotency key is required."}},400);try{return context.json(agentProfiles.status(context.req.param("id"),status==="enable"?"enabled":"disabled"),202);}catch(error){return context.json({error:{code:"agent_state_rejected",message:error instanceof Error?error.message:String(error)}},409);}});
+	app.get("/v1/agents/:id/evaluations",requireScope("lab:read"),context=>{const value=agentProfiles.get(context.req.param("id"));return value?context.json({items:value.evaluations}):context.json({error:{code:"not_found",message:"Agent profile not found."}},404);});
+	app.get("/v1/routing-decisions",requireScope("lab:read"),context=>context.json({items:agentProfiles.routing()}));
 	app.get("/v1/hermes/status", requireScope("lab:hermes:read"), async (context) => context.json(await hermes("/health/detailed")));
 	app.get("/v1/hermes/capabilities", requireScope("lab:hermes:read"), async (context) => context.json(await hermes("/v1/capabilities")));
 	app.get("/v1/hermes/tools", requireScope("lab:hermes:read"), async (context) => context.json(await hermes("/v1/toolsets")));
@@ -169,7 +193,7 @@ export function createLabController(options: ControllerOptions = {}) {
 		try { return await idempotent(context, `finalize:${context.req.param("id")}`, () => finalize(context.req.param("id"))); } catch { return context.json({ error: { code: "finalization_failed", message: "Hermes evidence could not be finalized." } }, 422); }
 	});
 	app.post("/v1/hermes/verify", requireScope("lab:experience:write"), async (context) => {
-		try { return await idempotent(context, "hermes-verify", deepVerify); }
+		try { const body = await context.req.json().catch(() => ({})) as { multimodal?: boolean }; return await idempotent(context, "hermes-verify", () => deepVerify(body.multimodal === true)); }
 		catch (error) {
 			appendEvent("hermes.deep-verification-failed", { message: sanitize(error instanceof Error ? error.message : String(error)) });
 			return context.json({ error: { code: "deep_verification_failed", message: "Hermes completed an unhealthy deep verification step." } }, 422);

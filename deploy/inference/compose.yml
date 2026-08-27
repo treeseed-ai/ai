@@ -5,6 +5,7 @@ x-s3-environment: &s3-environment
   AWS_ACCESS_KEY_ID: "${S3_ACCESS_KEY:-}"
   AWS_SECRET_ACCESS_KEY: "${S3_SECRET_KEY:-}"
   S3_BUCKET: "${S3_BUCKET:-ai-inference}"
+  TREEAI_S3_CREDENTIAL_GENERATION: "${S3_CREDENTIAL_GENERATION:-compatibility-v1}"
 services:
   migrations:
     image: ${INFERENCE_MIGRATIONS_IMAGE:?INFERENCE_MIGRATIONS_IMAGE is required}
@@ -25,6 +26,7 @@ services:
       PUBLIC_MODEL: "${PUBLIC_MODEL:-local-model}"
       SOURCE_MODEL: "${SOURCE_MODEL:-Qwen/Qwen3.5-4B}"
       SOURCE_MODEL_REVISION: "${SOURCE_MODEL_REVISION:-851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a}"
+      TREEAI_MULTIMODAL_LORA_ENABLED: "${TREEAI_MULTIMODAL_LORA_ENABLED:-false}"
     ports: ["${CONTROL_BIND:-127.0.0.1}:4770:4770", "${INFERENCE_BIND:-0.0.0.0}:4771:4771"]
   manager:
     image: ${INFERENCE_MANAGER_IMAGE:?INFERENCE_MANAGER_IMAGE is required}
@@ -38,16 +40,16 @@ services:
     restart: unless-stopped
     environment: { <<: *s3-environment, VLLM_URL: "http://vllm:8000" }
     volumes: ["inference-state:/state"]
-    healthcheck: { test: ["CMD","python","-c","import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/healthz')"], interval: 10s, timeout: 3s, retries: 10 }
+    healthcheck: { test: ["CMD","python","-c","import urllib.request;urllib.request.build_opener(urllib.request.ProxyHandler({})).open('http://127.0.0.1:8080/healthz',timeout=3)"], interval: 10s, timeout: 5s, retries: 10 }
   vllm:
     image: ${INFERENCE_VLLM_IMAGE:?INFERENCE_VLLM_IMAGE is required}
     build: { context: ../.., dockerfile: containers/inference/vllm.Dockerfile }
     restart: unless-stopped
     ipc: host
     volumes: ["${MODEL_CACHE:-inference-models}:/models", "inference-state:/state:ro"]
-    environment: { HF_HOME: /models }
+    environment: { HF_HOME: /models, TREEAI_MULTIMODAL_LORA_ENABLED: "${TREEAI_MULTIMODAL_LORA_ENABLED:-false}", VLLM_ALLOW_RUNTIME_LORA_UPDATING: "True" }
     deploy: { resources: { reservations: { devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }] } } }
-    command: ["--model","${SOURCE_MODEL:-Qwen/Qwen3.5-4B}","--revision","${SOURCE_MODEL_REVISION:-851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a}","--served-model-name","${SOURCE_MODEL:-Qwen/Qwen3.5-4B}","--max-model-len","${MAX_MODEL_LENGTH:-16384}","--enable-lora","--enable-auto-tool-choice","--tool-call-parser","qwen3_coder","--reasoning-parser","qwen3","--language-model-only"]
+    command: ["--model","${SOURCE_MODEL:-Qwen/Qwen3.5-4B}","--revision","${SOURCE_MODEL_REVISION:-851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a}","--served-model-name","${SOURCE_MODEL:-Qwen/Qwen3.5-4B}","--max-model-len","${MAX_MODEL_LENGTH:-16384}","--enable-lora","--enable-auto-tool-choice","--tool-call-parser","qwen3_coder","--reasoning-parser","qwen3"]
     healthcheck: { test: ["CMD","curl","-fsS","http://127.0.0.1:8000/health"], interval: 10s, timeout: 5s, retries: 30, start_period: 180s }
   postgres:
     image: postgres:17.11-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
@@ -67,7 +69,7 @@ services:
     profiles: [state]
     depends_on: { minio: { condition: service_healthy } }
     entrypoint: ["/bin/sh", "-c"]
-    command: ["mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD && mc mb --ignore-existing local/$$S3_BUCKET && printf '{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"s3:*\"],\"Resource\":[\"arn:aws:s3:::%s\",\"arn:aws:s3:::%s/*\"]}]}' $$S3_BUCKET $$S3_BUCKET > /tmp/product-policy.json && mc admin user add local $$S3_ACCESS_KEY $$S3_SECRET_KEY && (mc admin policy info local product-policy >/dev/null 2>&1 || mc admin policy create local product-policy /tmp/product-policy.json) && mc admin policy attach local product-policy --user $$S3_ACCESS_KEY && mc alias set product-check http://minio:9000 $$S3_ACCESS_KEY $$S3_SECRET_KEY && attempt=0 && while ! mc ls product-check/$$S3_BUCKET >/dev/null 2>&1; do attempt=$$((attempt + 1)); [ \"$$attempt\" -lt 30 ] || exit 1; sleep 1; done"]
+    command: ["mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD && mc mb --ignore-existing local/$$S3_BUCKET && printf '{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"s3:*\"],\"Resource\":[\"arn:aws:s3:::%s\",\"arn:aws:s3:::%s/*\"]}]}' $$S3_BUCKET $$S3_BUCKET > /tmp/product-policy.json && mc admin user add local $$S3_ACCESS_KEY $$S3_SECRET_KEY && (mc admin policy info local product-policy >/dev/null 2>&1 || mc admin policy create local product-policy /tmp/product-policy.json) && mc admin policy attach local product-policy --user $$S3_ACCESS_KEY && mc alias set product-check http://minio:9000 $$S3_ACCESS_KEY $$S3_SECRET_KEY && attempt=0 && while ! mc ls product-check/$$S3_BUCKET >/dev/null 2>&1; do attempt=$$((attempt + 1)); [ \"$$attempt\" -lt 30 ] || exit 1; sleep 1; done && printf treeai-product-credential-v1 | mc pipe product-check/$$S3_BUCKET/_health/product-credential-v1"]
     environment: { MINIO_ROOT_USER: "${MINIO_ROOT_USER:-inference-root}", MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-inference-root-development}", S3_ACCESS_KEY: "${S3_ACCESS_KEY:-inference}", S3_SECRET_KEY: "${S3_SECRET_KEY:-inference-development}", S3_BUCKET: "${S3_BUCKET:-ai-inference}" }
     restart: "no"
 volumes: { inference-state: {}, inference-models: {}, inference-postgres: {}, inference-objects: {} }
