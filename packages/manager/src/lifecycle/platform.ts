@@ -10,7 +10,7 @@ import { paths } from "../core/paths.js";import { hashHermesPassword } from "./h
 import { ensurePlatformTls } from "./certificates/tls.js";import { activateManagerCertificate } from "./certificates/activation.js";import { imageVariables } from "../core/image-variables.js";
 import { summarizeComposeStatus, type ProductStatus } from "./status.js";
 import { activeProfile, qualificationStatus, runCampaign } from "./qualification/index.js";import { reconcileLabEdge } from "./lab/edge.js";import { migrationDiagnostics } from "./migrations/diagnostics.js";
-import { objectStoreAccessId, secretGeneration } from "./storage/identities.js";import { verifyLabReadiness, verifyProductReadiness } from "./readiness/products.js";
+import { objectStoreAccessIds, secretGeneration } from "./storage/identities.js";import { verifyLabReadiness, verifyProductReadiness } from "./readiness/products.js";
 const products = {
 	inference: {
 		compose: "/usr/lib/treeseed-ai/inference/compose.yml",
@@ -185,15 +185,15 @@ function ensureProductConfiguration() {
 			state: { postgresql: string; objectStorage: string };
 		},
 		signing = ensureSigningMaterial(),
-		service = ensureServiceCredentials(signing.root);
+		service = ensureServiceCredentials(signing.root),
+		migrated = config.configurationId === "migrated-local-factory";
 	if (config.state.postgresql !== "bundled" || config.state.objectStorage !== "bundled") return;
 	const secretsPath = `${signing.root}/service-secrets.json`;
 	let stored: Record<string, string>;
 	if (existsSync(secretsPath)) stored = JSON.parse(readFileSync(secretsPath, "utf8"));
 	else {
 		const inference = envMap(products.inference.environment),
-			training = envMap(products.training.environment),
-			migrated = config.configurationId === "migrated-local-factory";
+			training = envMap(products.training.environment);
 		stored = {
 			inferenceDb: (migrated && inference.POSTGRES_PASSWORD) || secret(24),
 			trainingDb: (migrated && training.POSTGRES_PASSWORD) || secret(24),
@@ -205,7 +205,7 @@ function ensureProductConfiguration() {
 		};
 	}
 	stored.trainingImportS3??=secret();atomic(secretsPath, JSON.stringify(stored), 0o600);
-	const accessIds={inference:objectStoreAccessId("inference",stored.inferenceS3!),training:objectStoreAccessId("training",stored.trainingS3!),trainingImport:objectStoreAccessId("trainingImport",stored.trainingImportS3)};
+	const accessIds=objectStoreAccessIds(migrated,{inference:stored.inferenceS3!,training:stored.trainingS3!,trainingImport:stored.trainingImportS3});
 	const operator = JSON.parse(readFileSync("/etc/treeseed-ai/treeai/operator-record.json", "utf8")) as unknown,
 		profile = activeProfile(),
 		common = (product: "inference" | "training") => ({
