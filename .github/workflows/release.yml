@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version: { description: Exact release version, required: true, type: string }
+      candidate: { description: Exact verified release candidate to promote, required: true, type: string }
 
 permissions: { contents: read }
 
@@ -59,27 +60,36 @@ jobs:
         name: Resolve verified prior image digests
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
-          mkdir -p previous-download previous-assets/sboms previous-assets/vulnerabilities release-plan
+          mkdir -p candidate-download stable-download previous-assets/sboms previous-assets/vulnerabilities release-plan
+          test '${{ inputs.candidate }}' != '${{ inputs.version }}'
+          printf '%s' '${{ inputs.candidate }}' | grep -Eq '^${{ inputs.version }}-rc[1-9][0-9]*$'
+          gh release download '${{ inputs.candidate }}' --dir candidate-download
+          (cd candidate-download && sha256sum -c SHA256SUMS)
+          candidate_commit=$(jq -r .source.commit candidate-download/component-release.json)
+          printf '%s' "$candidate_commit" | grep -Eq '^[a-f0-9]{40}$'
+          git cat-file -e "$candidate_commit^{commit}"
+          test "$(git rev-parse "$candidate_commit^{tree}")" = "$(git rev-parse HEAD^{tree})"
           previous=$(gh release list --limit 100 --json tagName,isDraft,isPrerelease --jq '.[]|select(.isDraft==false and .isPrerelease==false)|.tagName' | grep -vFx "${{ inputs.version }}" | head -1 || true)
           if test -n "$previous"; then
-            gh release download "$previous" --dir previous-download
+            gh release download "$previous" --dir stable-download
             gpg --batch --import release/apt/treeseed-ai-archive-keyring.asc
-            gpg --batch --verify previous-download/SHA256SUMS.asc previous-download/SHA256SUMS
-            (cd previous-download && sha256sum -c SHA256SUMS)
-            cp previous-download/image-manifest.json previous-assets/image-manifest.json
+            gpg --batch --verify stable-download/SHA256SUMS.asc stable-download/SHA256SUMS
+            (cd stable-download && sha256sum -c SHA256SUMS)
           fi
-          node --import tsx scripts/release/plan-image-builds.ts release-plan/image-plan.json previous-assets/image-manifest.json
+          TREEAI_PROMOTE_REUSED=1 node --import tsx scripts/release/plan-image-builds.ts release-plan/image-plan.json candidate-download/image-manifest.json
           jq -c '{include:[.images[]]}' release-plan/image-plan.json | sed 's/^/matrix=/' >> "$GITHUB_OUTPUT"
           for role in $(jq -r '.images[]|select(.action=="reused")|.role' release-plan/image-plan.json); do
             digest=$(jq -r --arg role "$role" '.images[$role].digest' release-plan/image-plan.json)
-            tag=$(jq -r --arg role "$role" '.images[$role].tag' release-plan/image-plan.json)
-            cp "previous-download/$role.json" "previous-assets/vulnerabilities/$role.json"
-            cp "previous-download/$role.spdx.json" "previous-assets/sboms/$role.spdx.json"
-            actual=$(docker buildx imagetools inspect "treeseed/$role:$tag" | awk '/^Digest:/{print $2;exit}')
+            candidate_tag=$(jq -r --arg role "$role" '.images[$role].tag' candidate-download/image-manifest.json)
+            actual=$(docker buildx imagetools inspect "treeseed/$role:$candidate_tag" | awk '/^Digest:/{print $2;exit}')
             test "$actual" = "$digest" || { echo "Prior tag moved for $role" >&2; exit 1; }
-            cosign verify --certificate-identity-regexp '^https://github.com/treeseed-ai/ai/.github/workflows/release.yml@refs/heads/main$' --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' "treeseed/$role@$digest" >/dev/null
+            cosign verify --certificate-identity-regexp '^https://github.com/treeseed-ai/ai/.github/workflows/(publish-development|release)\.yml@refs/heads/(staging|main)$' --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' "treeseed/$role@$digest" >/dev/null
+            if test -f stable-download/image-manifest.json && test "$digest" = "$(jq -r --arg role "$role" '.images[$role].digest // empty' stable-download/image-manifest.json)"; then
+              cp "stable-download/$role.json" "previous-assets/vulnerabilities/$role.json"
+              cp "stable-download/$role.spdx.json" "previous-assets/sboms/$role.spdx.json"
+            fi
           done
-          node --import tsx scripts/release/check-vulnerabilities.ts previous-assets/vulnerabilities
+          if compgen -G 'previous-assets/vulnerabilities/*.json' >/dev/null; then node --import tsx scripts/release/check-vulnerabilities.ts previous-assets/vulnerabilities; fi
       - uses: actions/upload-artifact@v4
         with:
           name: image-reuse-plan
@@ -155,6 +165,10 @@ jobs:
             action=$(jq -r --arg role "$role" '.images[$role].action' release-plan/image-plan.json)
             if test "$action" = built; then
               docker run --rm -v "$PWD/release-assets/vulnerabilities:/reports" -v "$PWD/.trivy-cache:/root/.cache/trivy" aquasec/trivy:0.74.0 image --scanners vuln --skip-version-check --exit-code 0 --severity CRITICAL --format json --output "/reports/$role.json" "treeseed/$role@$digest"
+              syft "treeseed/$role@$digest" -o spdx-json="release-assets/sboms/$role.spdx.json"
+            elif test ! -f "previous-assets/vulnerabilities/$role.json"; then
+              docker run --rm -v "$PWD/release-assets/vulnerabilities:/reports" -v "$PWD/.trivy-cache:/root/.cache/trivy" aquasec/trivy:0.74.0 image --scanners vuln --skip-version-check --exit-code 0 --severity CRITICAL --format json --output "/reports/$role.json" "treeseed/$role@$digest"
+              syft "treeseed/$role@$digest" -o spdx-json="release-assets/sboms/$role.spdx.json"
             else
               cp "previous-assets/vulnerabilities/$role.json" "release-assets/vulnerabilities/$role.json"
               cp "previous-assets/sboms/$role.spdx.json" "release-assets/sboms/$role.spdx.json"
@@ -165,12 +179,11 @@ jobs:
             role=$(basename "$file" .digest)
             digest=$(cat "$file")
             action=$(jq -r --arg role "$role" '.images[$role].action' release-plan/image-plan.json)
+            docker buildx imagetools create -t "treeseed/$role:${{ inputs.version }}" "treeseed/$role@$digest"
             if test "$action" = built; then
-              docker buildx imagetools create -t "treeseed/$role:${{ inputs.version }}" "treeseed/$role@$digest"
               cosign sign --yes "treeseed/$role@$digest"
-              syft "treeseed/$role@$digest" -o spdx-json="release-assets/sboms/$role.spdx.json"
             else
-              cosign verify --certificate-identity-regexp '^https://github.com/treeseed-ai/ai/.github/workflows/release.yml@refs/heads/main$' --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' "treeseed/$role@$digest" >/dev/null
+              cosign verify --certificate-identity-regexp '^https://github.com/treeseed-ai/ai/.github/workflows/(publish-development|release)\.yml@refs/heads/(staging|main)$' --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' "treeseed/$role@$digest" >/dev/null
             fi
           done
       - run: node --import tsx scripts/release/collect-image-manifest.ts digests release-assets/image-manifest.json release-plan/image-plan.json
