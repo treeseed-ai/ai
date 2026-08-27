@@ -1,6 +1,7 @@
 import{createHash,randomUUID}from'node:crypto';
 import{chmodSync,existsSync,mkdirSync,readFileSync,renameSync,rmSync,symlinkSync,writeFileSync}from'node:fs';
 import{dirname,join}from'node:path';
+import{createInterface}from'node:readline/promises';
 import{R2ArtifactRepository}from'@ai-platform/common';
 import{event}from'../../core/store.js';
 
@@ -8,8 +9,31 @@ export const r2InputPath=process.env.TREEAI_R2_INPUT??'/run/treeseed-ai/manager/
 export const storageRoot=process.env.TREEAI_STORAGE_ROOT??'/etc/treeseed-ai/storage';
 const names=['TREEAI_R2_ENDPOINT','TREEAI_R2_TRAINING_BUCKET','TREEAI_R2_INFERENCE_BUCKET','TREEAI_R2_TRAINING_ACCESS_KEY_ID','TREEAI_R2_TRAINING_SECRET_ACCESS_KEY','TREEAI_R2_INFERENCE_ACCESS_KEY_ID','TREEAI_R2_INFERENCE_SECRET_ACCESS_KEY','TREEAI_R2_IMPORT_ACCESS_KEY_ID','TREEAI_R2_IMPORT_SECRET_ACCESS_KEY']as const;
 type Input=Record<(typeof names)[number],string>;
+type Ask=(label:string,secret:boolean)=>Promise<string>;
+const prompts:Record<(typeof names)[number],{label:string;secret:boolean}>={
+	TREEAI_R2_ENDPOINT:{label:'R2 endpoint (https://<account-id>.r2.cloudflarestorage.com)',secret:false},
+	TREEAI_R2_TRAINING_BUCKET:{label:'Training bucket',secret:false},
+	TREEAI_R2_INFERENCE_BUCKET:{label:'Inference bucket',secret:false},
+	TREEAI_R2_TRAINING_ACCESS_KEY_ID:{label:'Training access key ID',secret:false},
+	TREEAI_R2_TRAINING_SECRET_ACCESS_KEY:{label:'Training secret access key',secret:true},
+	TREEAI_R2_INFERENCE_ACCESS_KEY_ID:{label:'Inference access key ID',secret:false},
+	TREEAI_R2_INFERENCE_SECRET_ACCESS_KEY:{label:'Inference secret access key',secret:true},
+	TREEAI_R2_IMPORT_ACCESS_KEY_ID:{label:'Import access key ID',secret:false},
+	TREEAI_R2_IMPORT_SECRET_ACCESS_KEY:{label:'Import secret access key',secret:true},
+};
 function validate(input:Partial<Input>):Input{for(const name of names)if(!input[name]?.trim())throw new Error(`Missing required environment variable ${name}.`);const value=input as Input,url=new URL(value.TREEAI_R2_ENDPOINT);if(url.protocol!=='https:'||url.username||url.password||url.pathname!=='/'||url.search||url.hash)throw new Error('TREEAI_R2_ENDPOINT must be an HTTPS origin.');for(const name of['TREEAI_R2_TRAINING_BUCKET','TREEAI_R2_INFERENCE_BUCKET']as const)if(!/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/u.test(value[name]))throw new Error(`${name} is not a valid R2 bucket name.`);if(value.TREEAI_R2_TRAINING_BUCKET===value.TREEAI_R2_INFERENCE_BUCKET)throw new Error('Training and inference must use separate R2 buckets.');return Object.fromEntries(names.map(name=>[name,value[name].trim()]))as Input;}
 function atomic(path:string,value:string,mode=0o600){mkdirSync(dirname(path),{recursive:true,mode:0o700});const temporary=`${path}.${randomUUID()}.new`;writeFileSync(temporary,value,{mode,flag:'wx'});renameSync(temporary,path);}
+async function hiddenQuestion(label:string){
+	if(!process.stdin.isTTY||!process.stderr.isTTY||typeof process.stdin.setRawMode!=='function')throw new Error('Missing R2 configuration values require an interactive terminal or the TREEAI_R2_* environment variables.');
+	process.stderr.write(`${label}: `);const input=process.stdin,wasRaw=input.isRaw;input.setRawMode(true);input.resume();
+	return new Promise<string>((resolve,reject)=>{let value='';const finish=(error?:Error)=>{input.off('data',data);input.setRawMode(Boolean(wasRaw));process.stderr.write('\n');if(error)reject(error);else resolve(value);};const data=(chunk:Buffer)=>{for(const byte of chunk){if(byte===3){finish(new Error('R2 configuration cancelled.'));return;}if(byte===10||byte===13){finish();return;}if(byte===8||byte===127){value=value.slice(0,-1);continue;}value+=String.fromCharCode(byte);}};input.on('data',data);});
+}
+async function terminalQuestion(label:string,secret:boolean){
+	if(secret)return hiddenQuestion(label);
+	if(!process.stdin.isTTY||!process.stderr.isTTY)throw new Error('Missing R2 configuration values require an interactive terminal or the TREEAI_R2_* environment variables.');
+	const reader=createInterface({input:process.stdin,output:process.stderr,terminal:true});try{return await reader.question(`${label}: `);}finally{reader.close();}
+}
+export async function collectR2Environment(env:NodeJS.ProcessEnv|Partial<Input>=process.env,ask:Ask=terminalQuestion){const input:Partial<Input>={};for(const name of names){let value=env[name]?.trim();while(!value)value=(await ask(prompts[name].label,prompts[name].secret)).trim();input[name]=value;}return validate(input);}
 export function stageR2Environment(env=process.env){if(process.getuid?.()!==0)throw new Error('treeai storage configure r2 must run as root.');const input=validate(Object.fromEntries(names.map(name=>[name,env[name]]))as Partial<Input>);atomic(r2InputPath,JSON.stringify(input));return{staged:true};}
 export function discardR2Input(){rmSync(r2InputPath,{force:true});}
 function repository(storeId:string,bucket:string,endpoint:string,accessKeyId:string,secretAccessKey:string){return new R2ArtifactRepository(storeId,bucket,{endpoint,credentials:{accessKeyId,secretAccessKey}});}
