@@ -2,7 +2,7 @@ import csv,fcntl,hashlib,json,os,re,shutil,signal,subprocess,threading,time
 from collections import deque
 from contextlib import contextmanager
 from pathlib import Path
-import boto3
+from common.artifacts import ArtifactRepository
 
 BASE_MODEL="Qwen/Qwen3.5-4B"
 BASE_REVISION="851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a"
@@ -93,11 +93,7 @@ def run_evaluation(config_path,timeout,job_id=None):
 def fixed_steps(config,steps,save_steps):
     config.pop("num_epochs",None);config.update({"max_steps":steps,"save_steps":save_steps});return config
 
-def client():return boto3.client("s3",endpoint_url=os.environ["AWS_ENDPOINT_URL"],region_name=os.getenv("AWS_REGION","us-east-1"),aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"])
-def key(uri):
-    prefix=f"s3://{os.environ['S3_BUCKET']}/"
-    if not str(uri).startswith(prefix):raise ValueError("Library dataset is outside the training bucket")
-    return str(uri)[len(prefix):]
+REPOSITORY=ArtifactRepository.from_env()
 def fixed_config(value,dataset,target):
     sequence=int(value["sequenceLength"])
     if sequence not in {1024,2048,3072,4096}:raise ValueError("Training sequence length is not qualified")
@@ -132,7 +128,7 @@ def train(job):
     with job_guard(root):
         if result.exists():
             existing=json.loads(result.read_text());return{"resultManifest":f"file://{result}","configurationDigest":existing["configDigest"],"evaluations":existing.get("evaluations",[])}
-        dataset=root/"train.jsonl";dataset.write_bytes(client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(value["trainUri"]))["Body"].read())
+        dataset=root/"train.jsonl";dataset.write_bytes(REPOSITORY.bytes(value["trainUri"]))
         target=root/"adapter";config=fixed_config(value,dataset,target)
         if value["mode"]=="smoke":fixed_steps(config,16,8)
         config_path=root/"axolotl.json";config_path.write_text(json.dumps(config,sort_keys=True,separators=(",",":")))
@@ -141,13 +137,13 @@ def train(job):
         evaluations=[]
         if value["mode"]=="standard":
             if not value.get("evaluationUri"):raise ValueError("Standard library training requires an immutable held-out corpus")
-            evaluation=root/"evaluation.jsonl";evaluation.write_bytes(client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(value["evaluationUri"]))["Body"].read());evaluations.append(evaluate_pair(config,evaluation,root,job["jobId"]))
+            evaluation=root/"evaluation.jsonl";evaluation.write_bytes(REPOSITORY.bytes(value["evaluationUri"]));evaluations.append(evaluate_pair(config,evaluation,root,job["jobId"]))
         payload={"schemaVersion":"ai.library-training-result/v1","baseModel":BASE_MODEL,"baseModelRevision":BASE_REVISION,"adapterPath":str(target),"config":str(config_path),"configDigest":hashlib.sha256(config_path.read_bytes()).hexdigest(),"mode":value["mode"],"libraryId":value["libraryId"],"librarySlug":value["librarySlug"],"snapshotId":value["snapshotId"],"datasetManifest":value["datasetManifest"],"targetModules":[TARGETS],"rank":16,"alpha":32,"evaluations":evaluations}
         result.write_text(json.dumps(payload,sort_keys=True,separators=(",",":")));return{"resultManifest":f"file://{result}","configurationDigest":payload["configDigest"],"evaluations":evaluations}
 def qualify(job):
     value=job["input"];identity=subprocess.check_output(["nvidia-smi","--query-gpu=uuid,driver_version","--format=csv,noheader"],text=True).strip();fingerprint=hashlib.sha256(f"{identity}|{os.getenv('TREEAI_IMAGE_ID','unknown')}|{BASE_REVISION}|r16|mb1|ga8|q{QUALIFICATION_STEPS}|{ALLOCATOR_POLICY}".encode()).hexdigest();root=Path(os.getenv("OUTPUT_DIR","/artifacts/training"))/f"qualification-{fingerprint}";root.mkdir(parents=True,exist_ok=True);dataset=root/"train.jsonl"
     with job_guard(root):
-        if not dataset.exists():dataset.write_bytes(client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(value["trainUri"]))["Body"].read())
+        if not dataset.exists():dataset.write_bytes(REPOSITORY.bytes(value["trainUri"]))
         failures=[]
         for sequence in QUALIFICATION_SEQUENCES:
             target=root/f"seq-{sequence}";shutil.rmtree(target,ignore_errors=True);config=fixed_steps(fixed_config({"sequenceLength":sequence},dataset,target),QUALIFICATION_STEPS,QUALIFICATION_STEPS);config_path=root/f"seq-{sequence}.json";config_path.write_text(json.dumps(config,sort_keys=True,separators=(",",":")))

@@ -5,5 +5,5 @@
   "type": "module",
   "bin": { "ai-training-api": "./dist/main.js" },
   "scripts": { "build": "tsc -p tsconfig.json", "start": "node dist/main.js", "test": "vitest run ../../tests/training" },
-  "dependencies": { "@ai-platform/common": "workspace:*", "@hono/node-server": "^1.19.9", "hono": "^4.11.4", "minio": "8.0.7", "pg": "^8.16.3" }
+  "dependencies": { "@ai-platform/common": "workspace:*", "@hono/node-server": "^1.19.9", "hono": "^4.11.4", "pg": "^8.16.3" }
 }

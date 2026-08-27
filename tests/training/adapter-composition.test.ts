@@ -34,13 +34,10 @@ sys.modules['cryptography']=types.ModuleType('cryptography');sys.modules['crypto
 sys.path.insert(0,__import__('pathlib').Path(${modulePath}).parent.as_posix())
 spec=importlib.util.spec_from_file_location('composition',${modulePath});module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 objects={'adapters/parent/adapter_model.safetensors':b'canonical','adapters/parent/adapter_config.json':b'{"r":16}','adapters/parent/checkpoint-25/adapter_model.safetensors':b'checkpoint'}
-class Body:
- def __init__(self,value):self.value=value
- def read(self):return self.value
-class Client:
- def get_object(self,**value):return {'Body':Body(objects[value['Key']])}
+class Repository:
+ def bytes(self,uri):return objects[uri.split('s3://bucket/',1)[1]]
 manifest={'artifactId':'parent','objects':[{'uri':'s3://bucket/'+key,'size':len(value),'sha256':hashlib.sha256(value).hexdigest()} for key,value in objects.items()]}
-model,config=module.canonical_peft_objects(manifest,Client(),'bucket');print(json.dumps({'model':model.decode(),'config':config}))`);
+model,config=module.canonical_peft_objects(manifest,Repository());print(json.dumps({'model':model.decode(),'config':config}))`);
 		expect(result).toEqual({model:'canonical',config:{r:16}});
 	});
 

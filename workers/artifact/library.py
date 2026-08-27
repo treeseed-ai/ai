@@ -1,18 +1,14 @@
 import hashlib, json, os, re, unicodedata, zipfile
 from pathlib import Path
-import boto3
+from common.artifacts import ArtifactRepository
 
 TEXT_EXTENSIONS={".md":"text/markdown",".txt":"text/plain",".json":"application/json",".jsonl":"application/x-ndjson",".xml":"application/xml",".yaml":"application/yaml",".yml":"application/yaml",".toml":"application/toml",".ini":"text/plain",".sql":"application/sql",".py":"text/x-python",".js":"text/javascript",".ts":"text/typescript",".tsx":"text/typescript",".jsx":"text/javascript",".java":"text/x-java",".go":"text/x-go",".rs":"text/x-rust",".c":"text/x-c",".h":"text/x-c",".cpp":"text/x-c++",".hpp":"text/x-c++",".cs":"text/x-csharp",".rb":"text/x-ruby",".php":"text/x-php",".sh":"application/x-sh"}
 MARKER_TYPES={"application/pdf","application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/vnd.openxmlformats-officedocument.presentationml.presentation","text/html"}
 SECRET=re.compile(r"(?im)(-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|ak_[a-z0-9-]+_[a-z0-9_-]{16,}|(?:api[_-]?key|password|secret|access[_-]?token)\s*[:=]\s*[^\s]{12,})")
-def client(): return boto3.client("s3",endpoint_url=os.environ["AWS_ENDPOINT_URL"],region_name=os.getenv("AWS_REGION","us-east-1"),aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"])
-def key(uri):
-    prefix=f"s3://{os.environ['S3_BUCKET']}/"
-    if not str(uri).startswith(prefix): raise ValueError("Library object is outside the training bucket")
-    return str(uri)[len(prefix):]
-def bytes_for(uri): return client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(uri))["Body"].read()
+REPOSITORY=ArtifactRepository.from_env()
+def bytes_for(uri): return REPOSITORY.bytes(uri)
 def upload_bytes(value,name,mime):
-    digest=hashlib.sha256(value).hexdigest();object_key=f"normalized/{digest}/{name}";client().put_object(Bucket=os.environ["S3_BUCKET"],Key=object_key,Body=value,ContentType=mime,Metadata={"sha256":digest});return{"uri":f"s3://{os.environ['S3_BUCKET']}/{object_key}","size":len(value),"sha256":digest}
+    digest=hashlib.sha256(value).hexdigest();return REPOSITORY.put_bytes(f"normalized/{digest}/{name}",value,mime)
 def detect(data,filename):
     extension=Path(filename).suffix.lower()
     if data.startswith(b"%PDF-"): return "application/pdf","marker"

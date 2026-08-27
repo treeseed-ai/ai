@@ -1,10 +1,10 @@
 import hashlib,json,mimetypes,os,re,shutil,tempfile,threading
 from pathlib import Path
-import boto3
 from sys import path
 from urllib.parse import unquote
 path.insert(0,"/app")
 from common.server import serve
+from common.artifacts import ArtifactRepository
 
 OUTPUT=Path(os.getenv("OUTPUT_DIR","/artifacts/documents"));OUTPUT.mkdir(parents=True,exist_ok=True)
 SECRET=re.compile(r"(?im)(-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|ak_[a-z0-9-]+_[a-z0-9_-]{16,}|(?:api[_-]?key|password|secret|access[_-]?token)\s*[:=]\s*[^\s]{12,})")
@@ -95,20 +95,15 @@ def authored_image_evidence(structured_root,target):
         current=deduplicated.get(item["imageSha256"])
         if current is None or (item["eligible"],len(item["authoredContext"]))>(current["eligible"],len(current["authoredContext"])):deduplicated[item["imageSha256"]]=item
     return blocks,list(deduplicated.values())
-def client():return boto3.client("s3",endpoint_url=os.environ["AWS_ENDPOINT_URL"],region_name=os.getenv("AWS_REGION","us-east-1"),aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"])
-def object_key(uri):
-    prefix=f"s3://{os.environ['S3_BUCKET']}/"
-    if not str(uri).startswith(prefix):raise ValueError("Document is outside the training bucket")
-    return str(uri)[len(prefix):]
+REPOSITORY=ArtifactRepository.from_env()
 def upload_bundle(target,job_id):
-    s3=client();bucket=os.environ["S3_BUCKET"]
     for item in target.rglob("*"):
-        if item.is_file():s3.upload_file(str(item),bucket,f"documents/{job_id}/{item.relative_to(target)}")
-    return f"s3://{bucket}/documents/{job_id}/manifest.json"
+        if item.is_file():REPOSITORY.put_file(f"documents/{job_id}/{item.relative_to(target)}",item,mimetypes.guess_type(item.name)[0] or "application/octet-stream")
+    return REPOSITORY.uri(f"documents/{job_id}/manifest.json")
 def process(job):
     value=job["input"];job_id=str(job["jobId"]);uri=value.get("objectUri");filename=Path(str(value.get("filename","document"))).name
     if not uri or filename!=value.get("filename"):raise ValueError("A safe document identity and object URI are required")
-    data=client().get_object(Bucket=os.environ["S3_BUCKET"],Key=object_key(uri))["Body"].read()
+    data=REPOSITORY.bytes(uri)
     if hashlib.sha256(data).hexdigest()!=value.get("sha256"):raise ValueError("Source object checksum does not match")
     target=OUTPUT/job["jobId"];target.mkdir(exist_ok=True)
     if (target/"manifest.json").exists():

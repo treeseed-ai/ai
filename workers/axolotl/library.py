@@ -1,22 +1,19 @@
 import hashlib,json,mimetypes,os,re
 from pathlib import Path
-import boto3
 from transformers import AutoTokenizer
+from common.artifacts import ArtifactRepository
 
-def client():return boto3.client("s3",endpoint_url=os.environ["AWS_ENDPOINT_URL"],region_name=os.getenv("AWS_REGION","us-east-1"),aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"])
-def key(uri):
-    prefix=f"s3://{os.environ['S3_BUCKET']}/"
-    if not str(uri).startswith(prefix):raise ValueError("Dataset source is outside the training bucket")
-    return str(uri)[len(prefix):]
-def content(uri):return client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(uri))["Body"].read()
+REPOSITORY=ArtifactRepository.from_env()
+def key(uri):return REPOSITORY.key(uri)
+def content(uri):return REPOSITORY.bytes(uri)
 def bundle(uri):return json.loads(content(uri))
 def markdown(uri):
     manifest=bundle(uri);objects=manifest.get("objects",[])
     direct=next((item.get("uri") for item in objects if str(item.get("uri","")).endswith("document.md")),None)
     if direct:return content(direct).decode("utf-8")
-    prefix=key(uri).rsplit("/",1)[0];listed=client().list_objects_v2(Bucket=os.environ["S3_BUCKET"],Prefix=prefix+"/").get("Contents",[]);item=next((value["Key"] for value in listed if value["Key"].endswith(".md")),None)
+    prefix=key(uri).rsplit("/",1)[0];listed=REPOSITORY.list(prefix+"/");item=next((value["key"] for value in listed if value["key"].endswith(".md")),None)
     if not item:raise ValueError("Normalized document has no Markdown object")
-    return client().get_object(Bucket=os.environ["S3_BUCKET"],Key=item)["Body"].read().decode("utf-8")
+    return REPOSITORY.bytes(item).decode("utf-8")
 def visual_evidence(uri):
     manifest=bundle(uri)
     if manifest.get("schemaVersion")!="ai.document-bundle/v3":return[]
@@ -26,7 +23,7 @@ def visual_evidence(uri):
         if not item.get("eligible") or not item.get("authoredContext"):continue
         relative=str(item.get("imagePath","")).lstrip("/")
         if not relative or ".." in Path(relative).parts:continue
-        data=client().get_object(Bucket=os.environ["S3_BUCKET"],Key=f"{prefix}/{relative}")["Body"].read()
+        data=REPOSITORY.bytes(f"{prefix}/{relative}")
         if hashlib.sha256(data).hexdigest()!=item.get("imageSha256"):raise ValueError("Document image checksum does not match its bundle")
         values.append({**item,"data":data,"extension":Path(relative).suffix.lower() or ".bin"})
     return values
@@ -51,7 +48,7 @@ def chunks(tokenizer,text,limit):
         current=tokenizer.decode(tokens,skip_special_tokens=False) if tokens else ""
     if current:result.append(current)
     return result
-def upload(path,key_name,mime):client().upload_file(str(path),os.environ["S3_BUCKET"],key_name,ExtraArgs={"ContentType":mime,"Metadata":{"sha256":hashlib.sha256(path.read_bytes()).hexdigest()}});return f"s3://{os.environ['S3_BUCKET']}/{key_name}"
+def upload(path,key_name,mime):return REPOSITORY.put_file(key_name,path,mime)["uri"]
 def prepare(job):
     value=job["input"];documents=value.get("documents",[]);mode=value.get("mode");sequence_len=int(value.get("sequenceLength",2048));model=value["baseModel"];revision=value["baseModelRevision"]
     if mode not in {"smoke","standard"} or not documents:raise ValueError("A smoke or standard snapshot with documents is required")

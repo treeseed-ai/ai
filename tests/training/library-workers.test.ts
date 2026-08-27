@@ -4,10 +4,12 @@ import {join} from 'node:path';
 import {describe,expect,it} from 'vitest';
 
 function python(source:string){
-	return JSON.parse(execFileSync('python3',['-c',source],{cwd:process.cwd(),encoding:'utf8'}));
+	const preamble=`import os,tempfile\nos.environ.setdefault('ARTIFACT_BACKEND','filesystem')\nos.environ.setdefault('ARTIFACT_ROOT',tempfile.mkdtemp(prefix='treeai-test-artifacts-'))\nos.environ.setdefault('ARTIFACT_STORE_ID','training')\nos.environ.setdefault('ARTIFACT_LEGACY_BUCKETS','ai-training,training')\n`;
+	return JSON.parse(execFileSync('python3',['-c',preamble+source],{cwd:process.cwd(),encoding:'utf8',env:{...process.env,PYTHONPATH:join(process.cwd(),'workers')}}));
 }
 
 describe('library document workers',()=>{
+	it('uses the shared artifact repository instead of direct S3 calls',()=>{for(const file of['workers/marker/worker.py','workers/axolotl/library.py','workers/axolotl/library_train.py','workers/axolotl/multimodal_train.py','workers/artifact/library.py','workers/artifact/worker.py','workers/artifact/composition.py']){const source=readFileSync(file,'utf8');expect(source,file).not.toMatch(/\b(?:get_object|put_object|upload_file|list_objects_v2|S3_BUCKET|AWS_ENDPOINT_URL)\b/u);}});
 	it('keeps bounded Axolotl operations on one transport-unlimited cancellable request',()=>{const source=readFileSync('packages/training-manager/src/main.ts','utf8'),manifest=readFileSync('packages/training-manager/package.json','utf8');expect(source).toContain('new Agent({headersTimeout:0,bodyTimeout:0})');expect(source).toContain('dispatcher:axolotlWorkerDispatcher');expect(source).toContain("await cancelAxolotl(axolotl,job.id)");expect(manifest).toContain('"undici": "8.10.0"');});
 	it('admits one Axolotl subprocess per job and terminates its process group',()=>{const source=readFileSync('workers/axolotl/library_train.py','utf8'),server=readFileSync('workers/common/server.py','utf8');expect(source).toContain('fcntl.LOCK_EX|fcntl.LOCK_NB');expect(source).toContain('start_new_session=True');expect(source).toContain('os.killpg(process.pid,signal.SIGTERM)');expect(source).toContain('_PROCESSES[job_id]=process');expect(server).toContain('getattr(error,"status_code",500)');});
 	it('reports only bounded structured Axolotl progress',()=>{const modulePath=JSON.stringify(join(process.cwd(),'workers/axolotl/library_train.py')),result=python(`import importlib.util,json,sys,types\nsys.modules['boto3']=types.SimpleNamespace(client=lambda *a,**k:None)\ns=importlib.util.spec_from_file_location('library_train',${modulePath});m=importlib.util.module_from_spec(s);s.loader.exec_module(m)\nprint(json.dumps({'tqdm':m.progress_from_output(' 38%|### | 9/24 [01:00<02:00]'),'plain':m.progress_from_output('step 7 / 8'),'invalid':m.progress_from_output('100%|### | 9/8 secret')}))`);expect(result).toEqual({tqdm:{progress:.375,currentStep:9,totalSteps:24,percent:38},plain:null,invalid:null});const source=readFileSync('workers/axolotl/library_train.py','utf8'),worker=readFileSync('workers/axolotl/worker.py','utf8'),manager=readFileSync('packages/training-manager/src/main.ts','utf8');expect(source).toContain('len(_STATUS_ORDER)>=128');expect(worker).toContain('"/status":lambda request:execution_status');expect(manager).toContain("axolotlCallWithProgress(axolotl,'train-library-multimodal'");expect(manager).not.toContain('status.diagnostic');});
@@ -42,20 +44,15 @@ describe('library document workers',()=>{
 	it('falls through an unsafe sustained sequence probe and fingerprints the allocator policy',()=>{
 		const modulePath=JSON.stringify(join(process.cwd(),'workers/axolotl/library_train.py'));
 		const result=python(`import importlib.util,json,os,pathlib,sys,tempfile,types
-class Body:
- def read(self):return b'{"text":"qualification sample"}\\n'
-class S3:
- def get_object(self,**kwargs):return {'Body':Body()}
-sys.modules['boto3']=types.SimpleNamespace(client=lambda *a,**k:S3())
 s=importlib.util.spec_from_file_location('library_train',${modulePath});m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
 with tempfile.TemporaryDirectory() as root:
- os.environ.update({'OUTPUT_DIR':root,'S3_BUCKET':'training','AWS_ENDPOINT_URL':'http://s3','AWS_ACCESS_KEY_ID':'id','AWS_SECRET_ACCESS_KEY':'secret','TREEAI_IMAGE_ID':'image'})
+ os.environ.update({'OUTPUT_DIR':root,'TREEAI_IMAGE_ID':'image'});m.REPOSITORY.put_bytes('datasets/train.jsonl',b'{"text":"qualification sample"}\\n')
  m.subprocess.check_output=lambda *a,**k:'GPU-test, 595.84'
  trials=[]
  def run(path,timeout,*_):
   config=json.loads(pathlib.Path(path).read_text());trials.append({'sequence':config['sequence_len'],'steps':config['max_steps']});return types.SimpleNamespace(returncode=1 if config['sequence_len']==4096 else 0,stdout='CUDA out of memory')
  m.run_axolotl=run
- value=m.qualify({'jobId':'qualification-test','input':{'trainUri':'s3://training/datasets/train.jsonl'}})
+ value=m.qualify({'jobId':'qualification-test','input':{'trainUri':'artifact://training/datasets/train.jsonl'}})
  print(json.dumps({'value':value,'trials':trials,'steps':m.QUALIFICATION_STEPS,'policy':m.ALLOCATOR_POLICY}))`);
 		expect(result.value).toMatchObject({resultManifest:'profile://3072',sequenceLength:3072,diagnostics:{failed:[{sequenceLength:4096,exitCode:1}]}});
 		expect(result.trials).toEqual([{sequence:4096,steps:8},{sequence:3072,steps:8}]);expect(result.steps).toBe(8);expect(result.policy).toBe('expandable_segments:True');
@@ -94,17 +91,6 @@ cancelled=m.cancel_axolotl('job-1');print(json.dumps({'cancelled':cancelled,'ter
 	it('normalizes stored text and produces a completion-pretraining dataset',()=>{
 		const artifact=JSON.stringify(join(process.cwd(),'workers/artifact/library.py')),dataset=JSON.stringify(join(process.cwd(),'workers/axolotl/library.py'));
 		const result=python(`import hashlib,importlib.util,json,os,pathlib,sys,tempfile,types
-os.environ.update({'AWS_ENDPOINT_URL':'http://s3','AWS_ACCESS_KEY_ID':'id','AWS_SECRET_ACCESS_KEY':'secret','S3_BUCKET':'training'})
-objects={}
-class Body:
- def __init__(self,value):self.value=value
- def read(self):return self.value
-class S3:
- def get_object(self,Bucket,Key):return {'Body':Body(objects[Key])}
- def put_object(self,Bucket,Key,Body,**kwargs):objects[Key]=Body if isinstance(Body,bytes) else Body.read()
- def upload_file(self,path,bucket,key,**kwargs):objects[key]=pathlib.Path(path).read_bytes()
- def list_objects_v2(self,Bucket,Prefix):return {'Contents':[{'Key':key} for key in objects if key.startswith(Prefix)]}
-s3=S3();sys.modules['boto3']=types.SimpleNamespace(client=lambda *a,**k:s3)
 class T:
  eos_token='<eos>'
  def encode(self,value,add_special_tokens=False):return value.split()
@@ -113,12 +99,12 @@ sys.modules['transformers']=types.SimpleNamespace(AutoTokenizer=types.SimpleName
 def load(name,path):
  spec=importlib.util.spec_from_file_location(name,path);module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module
 a=load('artifact_library',${artifact});d=load('dataset_library',${dataset})
-text=('# HTTP Caching\\r\\n'+('Caches preserve protocol semantics and validators across requests. '*1200)).encode();digest=hashlib.sha256(text).hexdigest();objects[f'library-source/{digest}']=text
-normalized=a.classify({'input':{'objectUri':f's3://training/library-source/{digest}','sha256':digest,'filename':'http.md','declaredMimeType':'text/markdown'}})
+text=('# HTTP Caching\\r\\n'+('Caches preserve protocol semantics and validators across requests. '*1200)).encode();digest=hashlib.sha256(text).hexdigest();a.REPOSITORY.put_bytes(f'library-source/{digest}',text)
+normalized=a.classify({'input':{'objectUri':f'artifact://training/library-source/{digest}','sha256':digest,'filename':'http.md','declaredMimeType':'text/markdown'}})
 with tempfile.TemporaryDirectory() as target:
  os.environ['OUTPUT_DIR']=target
  prepared=d.prepare({'jobId':'dataset-1','input':{'snapshotId':'snapshot-1','mode':'smoke','libraryName':'Networking','baseModel':'Qwen/Qwen3.5-4B','baseModelRevision':'revision','sequenceLength':1024,'directories':[],'documents':[{'revisionId':'revision-1','sha256':digest,'filename':'http.md','relativePath':'Protocols/http.md','topicPath':'Protocols','manifestUri':normalized['resultManifest']}]}})
- train=objects['datasets/dataset-1/train.jsonl'].decode();manifest=json.loads(objects['datasets/dataset-1/manifest.json'])
+ train=d.REPOSITORY.bytes('datasets/dataset-1/train.jsonl').decode();manifest=json.loads(d.REPOSITORY.bytes('datasets/dataset-1/manifest.json'))
  print(json.dumps({'normalized':normalized,'prepared':prepared,'manifest':manifest,'train':train[:250]}))`);
 		expect(result.normalized).toMatchObject({state:'ready',processor:'direct',detectedMimeType:'text/markdown'});
 		expect(result.prepared.tokenCount).toBeGreaterThanOrEqual(4096);
@@ -128,29 +114,22 @@ with tempfile.TemporaryDirectory() as target:
 	it('turns a stored PDF into a Marker document bundle without host paths',()=>{
 		const marker=JSON.stringify(join(process.cwd(),'workers/marker/worker.py'));
 		const result=python(`import hashlib,importlib.util,json,os,pathlib,sys,tempfile,types
-os.environ.update({'AWS_ENDPOINT_URL':'http://s3','AWS_ACCESS_KEY_ID':'id','AWS_SECRET_ACCESS_KEY':'secret','S3_BUCKET':'training'})
-objects={}
-class Body:
- def __init__(self,value):self.value=value
- def read(self):return self.value
-class S3:
- def get_object(self,Bucket,Key):return {'Body':Body(objects[Key])}
- def upload_file(self,path,bucket,key):objects[key]=pathlib.Path(path).read_bytes()
-s3=S3();sys.modules['boto3']=types.SimpleNamespace(client=lambda *a,**k:s3);sys.modules['common']=types.ModuleType('common');sys.modules['common.server']=types.SimpleNamespace(serve=lambda routes:None)
-pdf=b'%PDF-1.7\\nqualification';digest=hashlib.sha256(pdf).hexdigest();objects[f'library-source/{digest}']=pdf
+sys.modules['common.server']=types.SimpleNamespace(serve=lambda routes:None)
+pdf=b'%PDF-1.7\\nqualification';digest=hashlib.sha256(pdf).hexdigest()
 with tempfile.TemporaryDirectory() as target:
  os.environ['OUTPUT_DIR']=target
  spec=importlib.util.spec_from_file_location('marker_worker',${marker});module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+ module.REPOSITORY.put_bytes(f'library-source/{digest}',pdf)
  calls=[]
  def convert(source,markdown,structured,job_id):
   calls.append(job_id);markdown.mkdir(parents=True,exist_ok=True);structured.mkdir(parents=True,exist_ok=True)
   (markdown/'document.md').write_text('# PDF Knowledge\\nParsed protocol relationships.')
   (structured/'document.json').write_text(json.dumps({'type':'Page','page':1,'children':[{'type':'SectionHeader','text':'Protocol diagram'},{'type':'Text','text':'Authored explanation of the protocol relationship.'}]}))
  module.convert_document=convert
- value=module.process({'jobId':'marker-1','input':{'objectUri':f's3://training/library-source/{digest}','sha256':digest,'filename':'protocol.pdf','declaredMimeType':'application/pdf','detectedMimeType':'application/pdf'}})
- manifest=json.loads(objects['documents/marker-1/manifest.json'])
- print(json.dumps({'value':value,'manifest':manifest,'keys':sorted(objects),'calls':calls}))`);
-		expect(result.value).toMatchObject({state:'ready',resultManifest:'s3://training/documents/marker-1/manifest.json'});
+ value=module.process({'jobId':'marker-1','input':{'objectUri':f'artifact://training/library-source/{digest}','sha256':digest,'filename':'protocol.pdf','declaredMimeType':'application/pdf','detectedMimeType':'application/pdf'}})
+ manifest=json.loads(module.REPOSITORY.bytes('documents/marker-1/manifest.json'));keys=[item['key'] for item in module.REPOSITORY.list()]
+ print(json.dumps({'value':value,'manifest':manifest,'keys':sorted(keys),'calls':calls}))`);
+		expect(result.value).toMatchObject({state:'ready',resultManifest:'artifact://training/documents/marker-1/manifest.json'});
 		expect(result.calls).toEqual(['marker-1']);
 		expect(result.manifest).toMatchObject({schemaVersion:'ai.document-bundle/v3',source:{filename:'protocol.pdf',detectedMimeType:'application/pdf'},provenance:{processor:'marker',mode:'balanced',outputs:['markdown','json']}});
 		expect(result.keys).toContain('documents/marker-1/markdown/document.md');
