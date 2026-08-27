@@ -90,6 +90,7 @@ describe('manager-owned platform reconciliation',()=>{
 		const compose=readFileSync('deploy/training/compose.yml','utf8'),main=readFileSync('packages/training-api/src/main.ts','utf8');
 		expect(main).toContain('ListObjectsV2Command');expect(main).toContain('MaxKeys:1');expect(main).toContain("requestChecksumCalculation:'WHEN_REQUIRED'");expect(main).toContain("responseChecksumValidation:'WHEN_REQUIRED'");expect(main).toContain('readiness.send');expect(compose).toContain("fetch('http://127.0.0.1:4780/readyz')");
 	});
+	it('cross-qualifies inference credentials through the MinIO product client',()=>{const compose=readFileSync('deploy/inference/compose.yml','utf8'),artifacts=readFileSync('packages/inference-api/src/artifacts.ts','utf8');expect(compose).toContain('mc pipe product-check/$$S3_BUCKET/_health/product-credential-v1');expect(artifacts).toContain("stage('destination-credential-read'");expect(artifacts).toContain("stage('destination-write'");});
 	it('keeps evaluator liveness independent while separately gating its private dependencies',()=>{
 		const compose=readFileSync('deploy/inference/compose.yml','utf8'),overlay=readFileSync('deploy/inference/factory.override.yml','utf8');
 		expect(overlay).toMatch(/evaluator:[\s\S]*depends_on:\n\s+minio: \{ condition: service_healthy \}\n\s+vllm: \{ condition: service_healthy \}/u);
