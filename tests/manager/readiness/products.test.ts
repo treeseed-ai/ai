@@ -17,6 +17,11 @@ describe("post-reconciliation product readiness", () => {
 		);
 	});
 
+	it("waits through a bounded API restart window",()=>{
+		const run=vi.fn().mockImplementationOnce(()=>{throw new Error("container is restarting");}).mockImplementationOnce(()=>"");const pause=vi.fn();
+		expect(verifyProductReadiness("training",run,{attempts:2,pause})).toBe("");expect(run).toHaveBeenCalledTimes(2);expect(pause).toHaveBeenCalledOnce();
+	});
+
 	it("probes the lab controller and propagates a failed health gate", () => {
 		const error = new Error("503 object store credential rejected");
 		expect(() => verifyLabReadiness(() => {
