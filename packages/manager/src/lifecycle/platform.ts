@@ -25,7 +25,7 @@ const products = {
 } as const,
 	bases = {
 		inference: ["postgres", "minio", "migrations", "evaluator", "manager", "api"],
-		training: ["postgres", "minio", "migrations", "artifact", "manager", "api"],
+		training: ["postgres", "minio", "migrations", "artifact", "manager"],
 } as const;
 function command(file: string, args: string[]) {
 	const result = spawnSync(file, args, { encoding: "utf8", timeout: 900_000 }); if (result.status !== 0) throw new Error(`${file} failed: ${(result.stderr || result.stdout).trim()}`);
@@ -428,7 +428,7 @@ export async function reconcilePlatform() {
 	if (mode === "awake") {
 		if (enabled.has("training")) {
 			compose("training", ["stop", "marker", "axolotl"]);
-			reconcileProduct("training", ["up", "-d", "--wait", "--wait-timeout", "600", ...bases.training]);
+			reconcileProduct("training", ["up", "-d", "--wait", "--wait-timeout", "600", ...bases.training]);reconcileProduct("training", ["up", "-d", "--no-deps", "api"]);
 		}
 		if (enabled.has("inference")) {
 			reconcileProduct("inference", ["up", "-d", "--wait", "--wait-timeout", "900", ...bases.inference, "vllm"]);
@@ -439,7 +439,7 @@ export async function reconcilePlatform() {
 			compose("inference", ["stop", "vllm"]);
 			reconcileProduct("inference", ["up", "-d", "--wait", "--wait-timeout", "600", ...bases.inference]);
 		}
-		if (enabled.has("training")) reconcileProduct("training", ["up", "-d", "--wait", "--wait-timeout", "900", ...bases.training, "marker", "axolotl"]);
+		if (enabled.has("training")){reconcileProduct("training", ["up", "-d", "--wait", "--wait-timeout", "900", ...bases.training, "marker", "axolotl"]);reconcileProduct("training", ["up", "-d", "--no-deps", "api"]);}
 	} else throw new Error(`Unsafe persisted mode ${mode}; manual recovery is required.`);
 	if (enabled.has("inference") || enabled.has("training")) gateway(["up", "-d", "--wait"]);
 	try {
