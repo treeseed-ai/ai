@@ -22,10 +22,15 @@ describe("post-reconciliation product readiness", () => {
 		expect(verifyProductReadiness("training",run,{attempts:2,pause})).toBe("");expect(run).toHaveBeenCalledTimes(2);expect(pause).toHaveBeenCalledOnce();
 	});
 
-	it("probes the lab controller and propagates a failed health gate", () => {
+	it("waits through a bounded lab controller restart window", () => {
+		const run=vi.fn().mockImplementationOnce(()=>{throw new Error("fetch failed");}).mockImplementationOnce(()=>"");const pause=vi.fn();
+		expect(verifyLabReadiness(run,{attempts:2,pause})).toBe("");expect(run).toHaveBeenCalledTimes(2);expect(pause).toHaveBeenCalledOnce();
+	});
+
+	it("propagates an exhausted lab health gate", () => {
 		const error = new Error("503 object store credential rejected");
 		expect(() => verifyLabReadiness(() => {
 			throw error;
-		})).toThrow(error);
+		},{attempts:1})).toThrow(error);
 	});
 });

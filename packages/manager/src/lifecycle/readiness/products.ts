@@ -15,14 +15,12 @@ export function verifyProductReadiness(
 	]);}catch(error){if(attempt===attempts)throw error;pause();}
 }
 
-export function verifyLabReadiness(run: (args: string[]) => string) {
-	run([
-		"exec",
-		"-T",
-		"controller",
-		"node",
-		"-e",
-		probe,
-		"http://127.0.0.1:8080/readyz",
-	]);
+export function verifyLabReadiness(
+	run: (args: string[]) => string,
+	options: { attempts?: number; pause?: () => void } = {},
+) {
+	const attempts=options.attempts??20,pause=options.pause??(()=>Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,3_000)),args=[
+		"exec","-T","controller","node","-e",probe,"http://127.0.0.1:8080/readyz",
+	];
+	for(let attempt=1;attempt<=attempts;attempt++)try{return run(args);}catch(error){if(attempt===attempts)throw error;pause();}
 }
