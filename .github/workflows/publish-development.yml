@@ -57,7 +57,7 @@ jobs:
             expected_recovery="$(node -p "require('./release/manifest.json').version")-rc$((${{ inputs.rc }} - 1))"
             test "$recovery_tag" = "$expected_recovery"
             gh run view "$recovery_run" --json conclusion,event,headBranch,headSha,jobs > prior/recovery-run.json
-            jq -e '.conclusion == "failure" and .event == "workflow_dispatch" and .headBranch == "staging" and ([.jobs[].steps[] | select(.name == "Publish every exact RC image and verify Docker Hub read-back" and .conclusion == "success")] | length) == 1 and ([.jobs[].steps[] | select(.name == "Publish immutable prerelease" and .conclusion == "failure")] | length) == 1' prior/recovery-run.json >/dev/null
+            jq -e '.conclusion == "failure" and .event == "workflow_dispatch" and .headBranch == "staging" and ([.jobs[].steps[] | select(.name == "Publish every exact RC image and verify Docker Hub read-back" and .conclusion == "success")] | length) == 1 and ([.jobs[].steps[] | select((.name == "Create exact managed component bundle" or .name == "Publish immutable prerelease") and .conclusion == "failure")] | length) == 1' prior/recovery-run.json >/dev/null
             recovery_sha=$(jq -r .headSha prior/recovery-run.json)
             printf '%s' "$recovery_sha" | grep -Eq '^[a-f0-9]{40}$'
             git cat-file -e "$recovery_sha^{commit}"
