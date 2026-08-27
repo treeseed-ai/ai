@@ -4,3 +4,5 @@ onlyBuiltDependencies:
   - esbuild
 allowBuilds:
   esbuild: true
+minimumReleaseAgeExclude:
+  - '@treeseed/sdk@0.13.0-rc.49'

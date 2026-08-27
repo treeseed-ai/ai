@@ -24,8 +24,9 @@ mkdirSync(output, { recursive: true });
 const definitions = {
 	'ai-inference': {
 		roles: ['inference-api', 'inference-manager', 'inference-vllm', 'inference-evaluator', 'inference-migrations'],
-		services: ['inference-migrations', 'inference-vllm', 'inference-evaluator', 'inference-manager', 'inference-api'],
+		services: ['inference-postgres', 'inference-migrations', 'inference-vllm', 'inference-evaluator', 'inference-manager', 'inference-api'],
 		states: [
+			{ id: 'postgres', volume: '/var/lib/treeseed/components/ai-inference/data/postgres', backup: 'required' },
 			{ id: 'inference', volume: '/var/lib/treeseed/components/ai-inference/data/inference', backup: 'required' },
 			{ id: 'models', volume: '/var/lib/treeseed/components/ai-inference/data/models', backup: 'optional' },
 		],
@@ -33,8 +34,9 @@ const definitions = {
 	},
 	'ai-training': {
 		roles: ['training-api', 'training-manager', 'axolotl-worker', 'marker-worker', 'artifact-worker', 'training-migrations'],
-		services: ['training-migrations', 'training-marker', 'training-axolotl', 'training-artifact', 'training-manager', 'training-api'],
+		services: ['training-postgres', 'training-migrations', 'training-marker', 'training-axolotl', 'training-artifact', 'training-manager', 'training-api'],
 		states: [
+			{ id: 'postgres', volume: '/var/lib/treeseed/components/ai-training/data/postgres', backup: 'required' },
 			{ id: 'training', volume: '/var/lib/treeseed/components/ai-training/data/training', backup: 'required' },
 			{ id: 'archive', volume: '/var/lib/treeseed/components/ai-training/data/archive', backup: 'required' },
 			{ id: 'models', volume: '/var/lib/treeseed/components/ai-training/data/models', backup: 'optional' },
@@ -63,10 +65,10 @@ function exactImage(role: string) {
 	return `${image.repository}@${image.digest}`;
 }
 
-function openWebUi(): Image {
+function runtimeImage(id: string): Image {
 	const catalog = JSON.parse(readFileSync(resolve('release/catalog.json'), 'utf8')) as { runtimeImages: RuntimeImage[] };
-	const selected = catalog.runtimeImages.find(({ id }) => id === 'open-webui');
-	if (!selected || !selected.reference.endsWith(`@${selected.digest}`) || !/^sha256:[a-f0-9]{64}$/u.test(selected.digest)) throw new Error('The Open WebUI runtime image is not pinned.');
+	const selected = catalog.runtimeImages.find((image) => image.id === id);
+	if (!selected || !selected.reference.endsWith(`@${selected.digest}`) || !/^sha256:[a-f0-9]{64}$/u.test(selected.digest)) throw new Error(`The ${id} runtime image is not pinned.`);
 	return { repository: selected.reference.slice(0, selected.reference.indexOf('@')).replace(/:[^/:]+$/u, ''), digest: selected.digest };
 }
 
@@ -75,6 +77,8 @@ function baseCompose(componentId: 'ai-inference' | 'ai-training') {
 	let source = readFileSync(resolve('deploy/component/compose.template.yml'), 'utf8')
 		.replaceAll('/etc/treeseed/components/ai/environment', `/etc/treeseed/components/${componentId}/environment`)
 		.replaceAll('/ai/data/', `/${componentId}/data/`);
+	const postgres = runtimeImage('postgres');
+	source = source.replaceAll('@POSTGRES_IMAGE@', `${postgres.repository}@${postgres.digest}`);
 	for (const role of definitions[componentId].roles) source = source.replaceAll(`@${role.replaceAll('-', '_').toUpperCase()}_IMAGE@`, exactImage(role));
 	const parsed = YAML.parse(source) as Record<string, any>;
 	parsed.name = `treeseed-${componentId}`;
@@ -93,7 +97,7 @@ function labCompose() {
 	parsed.name = 'treeseed-ai-lab';
 	delete parsed.services.gateway;
 	for (const [service, role] of Object.entries(roleByService)) parsed.services[service].image = exactImage(role);
-	const webui = openWebUi();
+	const webui = runtimeImage('open-webui');
 	parsed.services['open-webui'].image = `${webui.repository}@${webui.digest}`;
 	const dataRoot = '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-lab/data';
 	const replaceVolume = (service: string, target: string, source: string, suffix = '') => {
@@ -119,6 +123,7 @@ function labCompose() {
 
 function serviceContracts(componentId: keyof typeof definitions) {
 	if (componentId === 'ai-inference') return [
+		{ id: 'inference-postgres', composeService: 'inference-postgres', endpoints: [] },
 		{ id: 'inference-migrations', composeService: 'inference-migrations', endpoints: [] }, { id: 'inference-vllm', composeService: 'inference-vllm', endpoints: [] },
 		{ id: 'inference-evaluator', composeService: 'inference-evaluator', endpoints: [] }, { id: 'inference-manager', composeService: 'inference-manager', endpoints: [] },
 		{ id: 'inference-api', composeService: 'inference-api', endpoints: [
@@ -127,6 +132,7 @@ function serviceContracts(componentId: keyof typeof definitions) {
 		] },
 	];
 	if (componentId === 'ai-training') return [
+		{ id: 'training-postgres', composeService: 'training-postgres', endpoints: [] },
 		{ id: 'training-migrations', composeService: 'training-migrations', endpoints: [] }, { id: 'training-marker', composeService: 'training-marker', endpoints: [] },
 		{ id: 'training-axolotl', composeService: 'training-axolotl', endpoints: [] }, { id: 'training-artifact', composeService: 'training-artifact', endpoints: [] },
 		{ id: 'training-manager', composeService: 'training-manager', endpoints: [] },
@@ -159,10 +165,19 @@ for (const componentId of Object.keys(definitions) as Array<keyof typeof definit
 		const image = manifest.images[role]!;
 		return { role, repository: image.repository, digest: image.digest, platforms: ['linux/amd64'], consumers: [componentId] };
 	});
-	// Upstream runtime images remain pinned in Compose. The current portable
-	// component schema admits project-owned Docker Hub repositories only.
-	const componentImages = localImages;
-	const tagUrl = ({ repository }: { repository: string }) => repository.startsWith('treeseed/') ? `https://hub.docker.com/r/${repository}/tags?name=${encodeURIComponent(release)}` : `https://${repository}`;
+	const upstream = componentId === 'ai-lab'
+		? [{ role: 'open-webui', ...runtimeImage('open-webui'), platforms: ['linux/amd64'], consumers: [componentId] }]
+		: [{ role: 'postgres', ...runtimeImage('postgres'), platforms: ['linux/amd64'], consumers: [componentId] }];
+	const componentImages = [...localImages, ...upstream];
+	const tagUrl = ({ repository }: { repository: string }) => {
+		if (repository.startsWith('treeseed/')) return `https://hub.docker.com/r/${repository}/tags?name=${encodeURIComponent(release)}`;
+		if (!repository.includes('/')) return `https://hub.docker.com/_/${repository}/tags`;
+		if (repository.startsWith('ghcr.io/')) {
+			const path = repository.slice('ghcr.io/'.length), segments = path.split('/');
+			return `https://github.com/${segments.slice(0, -1).join('/')}/pkgs/container/${segments.at(-1)}`;
+		}
+		return `https://${repository}`;
+	};
 	const bundle = componentReleaseSchema.parse({
 		schemaVersion: 'treeseed.component-release/v1', componentId, release: debianRelease, applicationVersion: release, revision, track,
 		source: { repository: 'treeseed-ai/ai', commit: sourceCommit },

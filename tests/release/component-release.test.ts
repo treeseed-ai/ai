@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { componentReleaseSchema } from '@treeseed/sdk/deployment';
+import YAML from 'yaml';
 
 const roles = [
 	'inference-api', 'inference-manager', 'inference-vllm', 'inference-evaluator', 'inference-migrations',
@@ -24,24 +25,34 @@ describe('managed AI component releases', () => {
 			cwd: process.cwd(), env: { ...process.env, TREEAI_COMPONENT_RELEASE: '0.11.0-rc1', TREEAI_COMPONENT_REVISION: '2', TREEAI_SOURCE_COMMIT: 'a'.repeat(40), TREEAI_IMAGE_MANIFEST: manifest, TREEAI_COMPONENT_OUTPUT: output },
 		});
 		const expected = new Map([
-			['ai-inference', ['inference-api', 'inference-manager', 'inference-vllm', 'inference-evaluator', 'inference-migrations']],
-			['ai-training', ['training-api', 'training-manager', 'axolotl-worker', 'marker-worker', 'artifact-worker', 'training-migrations']],
-			['ai-lab', ['lab-controller', 'lab-experience-proxy', 'lab-library-bridge', 'hermes-agent', 'lab-web-tool-proxy']],
+			['ai-inference', ['inference-api', 'inference-manager', 'inference-vllm', 'inference-evaluator', 'inference-migrations', 'postgres']],
+			['ai-training', ['training-api', 'training-manager', 'axolotl-worker', 'marker-worker', 'artifact-worker', 'training-migrations', 'postgres']],
+			['ai-lab', ['lab-controller', 'lab-experience-proxy', 'lab-library-bridge', 'hermes-agent', 'lab-web-tool-proxy', 'open-webui']],
 		]);
 		for (const [componentId, componentRoles] of expected) {
 			const release = componentReleaseSchema.parse(JSON.parse(readFileSync(resolve(output, `${componentId}-component-release.json`), 'utf8')));
 			const compose = readFileSync(resolve(output, `${componentId}-compose.yml`), 'utf8');
+			const document = YAML.parse(compose) as { services: Record<string, { image: string; ports?: unknown; networks?: string[] }> };
+			const acceptedImages = new Set(release.images.map(({ repository, digest }) => `${repository}@${digest}`));
 			expect(release.componentId).toBe(componentId);
 			expect(release.release).toBe('0.11.0~rc1-2');
 			expect(release.images.map(({ role }) => role).sort()).toEqual([...componentRoles].sort());
 			expect(release.runtime.compose.files[0]?.digest).toBe(`sha256:${createHash('sha256').update(compose).digest('hex')}`);
 			expect(compose).not.toMatch(/\bbuild\s*:/u);
 			expect(compose).not.toMatch(/^\s*ports\s*:/mu);
-			 expect(compose).not.toMatch(/@[A-Z_]+_IMAGE@/u);
+			expect(compose).not.toMatch(/@[A-Z_]+_IMAGE@/u);
+			for (const service of Object.values(document.services)) {
+				expect(acceptedImages.has(service.image), service.image).toBe(true);
+				expect(service.ports).toBeUndefined();
+			}
 			if (componentId === 'ai-lab') {
 				expect(compose).not.toContain('ai-shared');
 				expect(compose).not.toMatch(/^volumes:/mu);
 				expect(compose).toContain('/ai-lab/data/open-webui:/app/backend/data');
+			} else {
+				expect(compose).toContain('postgres@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73');
+				expect(compose).toContain(`/${componentId}/data/postgres`);
+				expect(release.runtime.stateVolumes).toContainEqual({ id: 'postgres', volume: `/var/lib/treeseed/components/${componentId}/data/postgres`, backup: 'required' });
 			}
 		}
 	});
