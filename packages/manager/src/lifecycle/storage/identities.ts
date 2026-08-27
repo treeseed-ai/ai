@@ -23,3 +23,7 @@ export function objectStoreAccessId(
 		.slice(0, 12);
 	return `${prefixes[purpose]}-${generation}`;
 }
+
+export function objectStoreAccessIds(migrated:boolean,secrets:{inference:string;training:string;trainingImport:string}) {
+	return {inference:migrated?"inference":objectStoreAccessId("inference",secrets.inference),training:migrated?"training":objectStoreAccessId("training",secrets.training),trainingImport:objectStoreAccessId("trainingImport",secrets.trainingImport)};
+}

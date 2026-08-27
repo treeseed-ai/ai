@@ -1,6 +1,6 @@
 import{readFileSync}from'node:fs';
 import{describe,expect,it}from'vitest';
-import{objectStoreAccessId}from'../../packages/manager/src/lifecycle/storage/identities.js';
+import{objectStoreAccessId,objectStoreAccessIds}from'../../packages/manager/src/lifecycle/storage/identities.js';
 
 describe('manager-owned platform reconciliation',()=>{
 	it('derives artifact trust from the persisted signing identity on every convergence',()=>{const platform=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8');expect(platform).toContain('const derivedPublicKey=');expect(platform).toContain('command("openssl", ["pkey", "-in", privateKey, "-pubout"])');expect(platform).toContain('atomic(publicKey,derivedPublicKey,0o644)');expect(platform).not.toContain('"-pubout", "-out", publicKey');});
@@ -9,6 +9,14 @@ describe('manager-owned platform reconciliation',()=>{
 		expect(training).toBe(objectStoreAccessId('training',secret));expect(training).toMatch(/^trn-[a-f0-9]{12}$/u);expect(training).not.toContain(secret);expect(training.length).toBeLessThanOrEqual(20);
 		expect(new Set([objectStoreAccessId('inference',secret),training,objectStoreAccessId('trainingImport',secret)]).size).toBe(3);
 		expect(()=>objectStoreAccessId('training','')).toThrow('credential material is missing');
+	});
+	it('preserves the product identities owned by the migrated local factory',()=>{
+		const platform=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8');
+		expect(platform).toContain('migrated = config.configurationId === "migrated-local-factory"');
+		expect(platform).toContain('objectStoreAccessIds(migrated');
+		const ids=objectStoreAccessIds(true,{inference:'i',training:'t',trainingImport:'x'});
+		expect(ids.inference).toBe('inference');expect(ids.training).toBe('training');expect(ids.trainingImport).toMatch(/^xfer-/u);
+		expect(objectStoreAccessIds(false,{inference:'i',training:'t',trainingImport:'x'}).inference).toMatch(/^inf-/u);
 	});
 	it('binds product clients to a non-secret object-store credential generation',()=>{
 		const platform=readFileSync('packages/manager/src/lifecycle/platform.ts','utf8'),inference=readFileSync('deploy/inference/factory.override.yml','utf8');
