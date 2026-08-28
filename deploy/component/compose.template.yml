@@ -41,7 +41,7 @@ services:
     networks: [inference-private]
   inference-vllm:
     image: "@INFERENCE_VLLM_IMAGE@"
-    <<: [*product-environment, *security]
+    <<: *security
     restart: unless-stopped
     ipc: host
     volumes:
@@ -67,7 +67,7 @@ services:
       timeout: 5s
       retries: 30
       start_period: 180s
-    networks: [inference-private]
+    networks: [inference-private, inference-model-egress]
   inference-evaluator:
     image: "@INFERENCE_EVALUATOR_IMAGE@"
     <<: [*product-environment, *security]
@@ -164,8 +164,12 @@ services:
     networks: [training-private]
   training-marker:
     image: "@MARKER_WORKER_IMAGE@"
-    <<: [*product-environment, *security]
+    <<: *security
     restart: unless-stopped
+    environment:
+      HF_HOME: /models
+      ARTIFACT_BACKEND: "${ARTIFACT_BACKEND:-filesystem}"
+      ARTIFACT_ROOT: "${ARTIFACT_ROOT:-/artifacts}"
     volumes:
       - type: bind
         source: ${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai/data/training
@@ -182,11 +186,15 @@ services:
       interval: 10s
       timeout: 3s
       retries: 20
-    networks: [training-private]
+    networks: [training-private, training-model-egress]
   training-axolotl:
     image: "@AXOLOTL_WORKER_IMAGE@"
-    <<: [*product-environment, *security]
+    <<: *security
     restart: unless-stopped
+    environment:
+      HF_HOME: /models
+      ARTIFACT_BACKEND: "${ARTIFACT_BACKEND:-filesystem}"
+      ARTIFACT_ROOT: "${ARTIFACT_ROOT:-/artifacts}"
     volumes:
       - type: bind
         source: ${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai/data/training
@@ -199,7 +207,7 @@ services:
         reservations:
           devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }]
     healthcheck: *worker-health
-    networks: [training-private]
+    networks: [training-private, training-model-egress]
   training-artifact:
     image: "@ARTIFACT_WORKER_IMAGE@"
     <<: [*product-environment, *security]
@@ -269,7 +277,9 @@ volumes:
   gpu-admission: {}
 networks:
   inference-private: { internal: true }
+  inference-model-egress: {}
   training-private: { internal: true }
+  training-model-egress: {}
   platform:
     name: treeseed-platform
     external: true
