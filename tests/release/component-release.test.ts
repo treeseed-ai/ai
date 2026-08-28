@@ -10,7 +10,7 @@ import YAML from 'yaml';
 const roles = [
 	'inference-api', 'inference-manager', 'inference-vllm', 'inference-evaluator', 'inference-migrations',
 	'training-api', 'training-manager', 'axolotl-worker', 'marker-worker', 'artifact-worker', 'training-migrations',
-	'lab-controller', 'lab-experience-proxy', 'lab-library-bridge', 'hermes-agent', 'lab-web-tool-proxy',
+	'lab-controller', 'lab-experience-proxy', 'lab-library-bridge', 'lab-open-webui', 'hermes-agent', 'lab-web-tool-proxy',
 ];
 
 describe('managed AI component releases', () => {
@@ -27,7 +27,7 @@ describe('managed AI component releases', () => {
 		const expected = new Map([
 			['ai-inference', ['inference-api', 'inference-manager', 'inference-vllm', 'inference-evaluator', 'inference-migrations', 'postgres']],
 			['ai-training', ['training-api', 'training-manager', 'axolotl-worker', 'marker-worker', 'artifact-worker', 'training-migrations', 'postgres']],
-			['ai-lab', ['lab-controller', 'lab-experience-proxy', 'lab-library-bridge', 'hermes-agent', 'lab-web-tool-proxy', 'open-webui']],
+			['ai-lab', ['lab-controller', 'lab-experience-proxy', 'lab-library-bridge', 'lab-open-webui', 'hermes-agent', 'lab-web-tool-proxy']],
 		]);
 		for (const [componentId, componentRoles] of expected) {
 			const release = componentReleaseSchema.parse(JSON.parse(readFileSync(resolve(output, `${componentId}-component-release.json`), 'utf8')));
@@ -54,6 +54,7 @@ describe('managed AI component releases', () => {
 				expect(compose).not.toContain('ai-shared');
 				expect(compose).not.toMatch(/^volumes:/mu);
 				expect(compose).toContain('/ai-lab/data/open-webui:/app/backend/data');
+				expect(compose).not.toContain('/usr/lib/treeseed-ai');
 				expect(release.runtime.stateVolumes).toContainEqual({ id: 'workspace', volume: '/var/lib/treeseed/components/ai-lab/data/workspace', backup: 'required' });
 				expect(release.runtime.configuration.secretFiles).toHaveLength(9);
 			} else {

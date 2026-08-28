@@ -77,7 +77,7 @@ services:
       timeout: 3s
       retries: 20
   open-webui:
-    image: ${OPEN_WEBUI_IMAGE:?OPEN_WEBUI_IMAGE is required}
+    image: ${LAB_OPEN_WEBUI_IMAGE:?LAB_OPEN_WEBUI_IMAGE is required}
     restart: unless-stopped
     depends_on: { experience-proxy: { condition: service_healthy } }
     environment:
@@ -97,7 +97,6 @@ services:
       WEBUI_SESSION_COOKIE_SECURE: "true"
     volumes:
       - open-webui-data:/app/backend/data
-      - /usr/lib/treeseed-ai/lab/open-webui:/opt/treeai/actions:ro
     networks: [lab-private]
     healthcheck:
       test: ["CMD","python","-c","import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=3).read()"]
@@ -105,6 +104,15 @@ services:
       timeout: 5s
       retries: 30
       start_period: 20s
+  open-webui-action-init:
+    image: ${LAB_OPEN_WEBUI_IMAGE:?LAB_OPEN_WEBUI_IMAGE is required}
+    restart: "no"
+    depends_on:
+      open-webui: { condition: service_healthy }
+    entrypoint: ["python", "/opt/treeai/actions/install_treeai_action.py"]
+    environment:
+      OPEN_WEBUI_ORIGIN: http://open-webui:8080
+    networks: [lab-private]
   web-tool-proxy:
     image: ${LAB_WEB_TOOL_IMAGE:?LAB_WEB_TOOL_IMAGE is required}
     restart: unless-stopped

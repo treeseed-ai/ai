@@ -70,8 +70,8 @@ const definitions = {
 		migrations: [{ id: 'training-database', order: 0, backupRequired: true }], dependencies: [], order: 51,
 	},
 	'ai-lab': {
-		roles: ['lab-controller', 'lab-experience-proxy', 'lab-library-bridge', 'hermes-agent', 'lab-web-tool-proxy'],
-		services: ['experience-proxy', 'controller', 'library-bridge', 'open-webui', 'web-tool-proxy', 'hermes-agent', 'hermes-dashboard'],
+		roles: ['lab-controller', 'lab-experience-proxy', 'lab-library-bridge', 'lab-open-webui', 'hermes-agent', 'lab-web-tool-proxy'],
+		services: ['experience-proxy', 'controller', 'library-bridge', 'open-webui', 'open-webui-action-init', 'web-tool-proxy', 'hermes-agent', 'hermes-dashboard'],
 		states: [
 			{ id: 'state', volume: '/var/lib/treeseed/components/ai-lab/data/state', backup: 'required' },
 			{ id: 'hermes', volume: '/var/lib/treeseed/components/ai-lab/data/hermes', backup: 'required' },
@@ -139,13 +139,12 @@ function labCompose() {
 	const parsed = YAML.parse(readFileSync(resolve('deploy/lab/compose.yml'), 'utf8')) as Record<string, any>;
 	const roleByService: Record<string, string> = {
 		'experience-proxy': 'lab-experience-proxy', controller: 'lab-controller', 'library-bridge': 'lab-library-bridge',
+		'open-webui': 'lab-open-webui', 'open-webui-action-init': 'lab-open-webui',
 		'web-tool-proxy': 'lab-web-tool-proxy', 'hermes-agent': 'hermes-agent', 'hermes-dashboard': 'hermes-agent',
 	};
 	parsed.name = 'treeseed-ai-lab';
 	delete parsed.services.gateway;
 	for (const [service, role] of Object.entries(roleByService)) parsed.services[service].image = exactImage(role);
-	const webui = runtimeImage('open-webui');
-	parsed.services['open-webui'].image = `${webui.repository}@${webui.digest}`;
 	const dataRoot = '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-lab/data';
 	const replaceVolume = (service: string, target: string, source: string, suffix = '') => {
 		parsed.services[service].volumes = (parsed.services[service].volumes ?? []).map((volume: string) =>
@@ -216,7 +215,7 @@ for (const componentId of Object.keys(definitions) as Array<keyof typeof definit
 		return { role, repository: image.repository, digest: image.digest, platforms: ['linux/amd64'], consumers: [componentId] };
 	});
 	const upstream = componentId === 'ai-lab'
-		? [{ role: 'open-webui', ...runtimeImage('open-webui'), platforms: ['linux/amd64'], consumers: [componentId] }]
+		? []
 		: [{ role: 'postgres', ...runtimeImage('postgres'), platforms: ['linux/amd64'], consumers: [componentId] }];
 	const componentImages = [...localImages, ...upstream];
 	const tagUrl = ({ repository }: { repository: string }) => {
