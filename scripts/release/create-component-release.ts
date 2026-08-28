@@ -87,6 +87,12 @@ const definitions = {
 		configuration: {
 				environment: [
 				{ name: 'BASE_MODEL_REVISION', required: true, default: '851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a' },
+				{ name: 'OPEN_WEBUI_AUTH', required: false, default: 'false' },
+				{ name: 'OPEN_WEBUI_ENABLE_SIGNUP', required: false, default: 'false' },
+				{ name: 'OPEN_WEBUI_ENABLE_LOGIN_FORM', required: false, default: 'false' },
+				{ name: 'OPEN_WEBUI_BYPASS_MODEL_ACCESS_CONTROL', required: false, default: 'true' },
+				{ name: 'OPEN_WEBUI_URL', required: false, default: 'https://chat.ai.treeseed.localhost' },
+				{ name: 'OPEN_WEBUI_CORS_ALLOW_ORIGIN', required: false, default: 'https://chat.ai.treeseed.localhost' },
 				{ name: 'RUNTIME_GID', required: true, source: 'manager' },
 				{ name: 'TREESEED_AI_MODE_URL', required: true, source: 'manager' },
 			],

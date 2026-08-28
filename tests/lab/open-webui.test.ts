@@ -86,7 +86,10 @@ describe("Open WebUI local single-user integration", () => {
 		expect(environment.ENABLE_OPENAI_API).toBe("true");
 		expect(environment.ENABLE_OLLAMA_API).toBe("false");
 		expect(environment.WEBUI_SESSION_COOKIE_SECURE).toBe("true");
-		expect(environment.WEBUI_AUTH).toBe("${OPEN_WEBUI_AUTH:-true}");
+		expect(environment.WEBUI_AUTH).toBe("${OPEN_WEBUI_AUTH:-false}");
+		expect(environment.ENABLE_LOGIN_FORM).toBe("${OPEN_WEBUI_ENABLE_LOGIN_FORM:-false}");
+		expect(environment.BYPASS_MODEL_ACCESS_CONTROL).toBe("${OPEN_WEBUI_BYPASS_MODEL_ACCESS_CONTROL:-true}");
+		expect(environment.WEBUI_URL).toBe("${OPEN_WEBUI_URL:-https://chat.ai.treeseed.localhost}");
 	});
 
 	it("reads authentication state from the Open WebUI API response shape", () => {
