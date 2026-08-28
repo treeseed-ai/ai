@@ -6,12 +6,12 @@ import{existsSync,mkdirSync,readFileSync,renameSync,writeFileSync}from'node:fs';
 const skippedHeaders = new Set(['connection','content-length','host','keep-alive','transfer-encoding','upgrade']);
 
 export function createInferenceGateway(input: { rawVllmUrl: string; publicModel: string; sourceModel: string; resolveModel?:(requested:string)=>Promise<string|null>; listModels?:()=>Promise<Array<{id:string;root:string}>>; resolveKey: ApiKeyResolver; fetch?: typeof fetch }) {
-	const app = new Hono(); const fetcher = input.fetch ?? fetch;let active=0;const modePath=process.env.AI_FACTORY_MODE_FILE,statusPath=process.env.AI_RUNTIME_STATUS;const mode=()=>{try{return modePath&&existsSync(modePath)?JSON.parse(readFileSync(modePath,'utf8')).mode:'awake';}catch{return'degraded';}};const status=()=>{if(!statusPath)return;mkdirSync(dirname(statusPath),{recursive:true});const temporary=`${statusPath}.${process.pid}.tmp`;writeFileSync(temporary,JSON.stringify({active,updatedAt:new Date().toISOString()}));renameSync(temporary,statusPath);};
+	const app = new Hono(); const fetcher = input.fetch ?? fetch;let active=0;const admissionPath=process.env.TREESEED_GPU_ADMISSION_FILE,legacyModePath=process.env.AI_FACTORY_MODE_FILE,statusPath=process.env.TREESEED_GPU_ACTIVITY_FILE??process.env.AI_RUNTIME_STATUS;const admitted=()=>{try{if(admissionPath)return existsSync(admissionPath)&&JSON.parse(readFileSync(admissionPath,'utf8')).admission==='open';return legacyModePath&&existsSync(legacyModePath)?JSON.parse(readFileSync(legacyModePath,'utf8')).mode==='awake':true;}catch{return false;}};const status=()=>{if(!statusPath)return;mkdirSync(dirname(statusPath),{recursive:true});const temporary=`${statusPath}.${process.pid}.tmp`;writeFileSync(temporary,JSON.stringify({active,updatedAt:new Date().toISOString()}));renameSync(temporary,statusPath);};
 	app.get('/healthz', (context) => context.json({ ok: true, service: 'inference-data-plane' }));
 	app.use('/v1/*', apiKeyAuthorization(input.resolveKey));
 	app.use('/v1/*', requireScope('inference:invoke'));
 	const proxy = async (context: Context) => {
-		if(mode()!=='awake')return context.json({error:{code:'inference_sleeping',message:'Inference is unavailable while the factory is in training mode.'}},503);
+		if(!admitted())return context.json({error:{code:'inference_sleeping',message:'Inference is unavailable while the managed GPU is in training mode.'}},503);
 		active++;status();
 		try{
 		const path = new URL(context.req.url).pathname;

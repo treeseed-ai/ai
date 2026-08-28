@@ -4,14 +4,15 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("independent product architecture", () => {
-	it("uses the SDK only to publish portable deployment contracts", () => {
+	it("uses the SDK only for portable deployment and AI mode contracts", () => {
 		const metadata = JSON.parse(readFileSync(resolve("package.json"), "utf8"));
-		expect(metadata.devDependencies["@treeseed/sdk"]).toBe("0.13.0-rc.51");
+		expect(metadata.devDependencies["@treeseed/sdk"]).toBe("0.13.0-rc.52");
 		const sources = ["packages/common", "packages/host-runtime", "packages/inference-api", "packages/inference-manager", "packages/training-api", "packages/training-manager"]
 			.map((path) => readFileSync(resolve(path, "package.json"), "utf8"))
 			.join("\n");
 		expect(sources).not.toMatch(/capacity-provider|treedx|assignment|settlement|@treeseed\/sdk/i);
 		expect(readFileSync(resolve("scripts/release/create-component-release.ts"), "utf8")).toContain("@treeseed/sdk/deployment");
+		expect(readFileSync(resolve("packages/lab/src/mode-control.ts"), "utf8")).toContain("@treeseed/sdk/deployment");
 	});
 
 	it("provides two independent migrations and deployments", () => {

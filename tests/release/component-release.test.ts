@@ -56,12 +56,16 @@ describe('managed AI component releases', () => {
 				expect(compose).toContain('/ai-lab/data/open-webui:/app/backend/data');
 				expect(compose).not.toContain('/usr/lib/treeseed-ai');
 				expect(release.runtime.stateVolumes).toContainEqual({ id: 'workspace', volume: '/var/lib/treeseed/components/ai-lab/data/workspace', backup: 'required' });
-				expect(release.runtime.configuration.secretFiles).toHaveLength(9);
+				expect(release.runtime.configuration.secretFiles).toHaveLength(11);
+				expect(release.runtime.modeControl).toMatchObject({ role: 'controller', internalControl: { transport: 'mtls', path: '/v1/ai/mode' } });
+				expect(compose).not.toContain('factory-control-key');
+				expect(compose).not.toContain('FACTORY_URL');
 			} else {
 				expect(compose).toContain('postgres@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73');
 				expect(compose).toContain(`/${componentId}/data/postgres`);
 				expect(release.runtime.stateVolumes).toContainEqual({ id: 'postgres', volume: `/var/lib/treeseed/components/${componentId}/data/postgres`, backup: 'required' });
 				if (componentId === 'ai-training') expect(document.services['training-api']?.volumes).toContainEqual({ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-training/data/training', target: '/artifacts' });
+				expect(release.runtime.modeControl).toMatchObject({ resource: 'ai-gpu', role: componentId === 'ai-inference' ? 'inference' : 'training', gate: { executable: '/usr/local/bin/treeseed-ai-gpu-gate' } });
 			}
 		}
 	});
