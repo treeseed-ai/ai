@@ -65,6 +65,12 @@ describe('managed AI component releases', () => {
 				expect(compose).toContain(`/${componentId}/data/postgres`);
 				expect(release.runtime.stateVolumes).toContainEqual({ id: 'postgres', volume: `/var/lib/treeseed/components/${componentId}/data/postgres`, backup: 'required' });
 				if (componentId === 'ai-training') expect(document.services['training-api']?.volumes).toContainEqual({ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-training/data/training', target: '/artifacts' });
+				if (componentId === 'ai-inference') {
+					expect(document.services['inference-api']?.volumes).toContainEqual({ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-inference/data/artifacts', target: '/artifacts' });
+					expect(document.services['inference-api']?.volumes).toContainEqual({ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-training/data/training', target: '/training-artifacts', read_only: true });
+					expect(release.runtime.stateVolumes).toContainEqual({ id: 'artifacts', volume: '/var/lib/treeseed/components/ai-inference/data/artifacts', backup: 'required' });
+					expect(release.runtime.configuration.secretFiles.map(({ id }) => id)).toEqual(['artifact-source-registry', 'artifact-destination-registry']);
+				}
 				expect(release.runtime.modeControl).toMatchObject({ resource: 'ai-gpu', role: componentId === 'ai-inference' ? 'inference' : 'training', gate: { executable: '/usr/local/bin/treeseed-ai-gpu-gate' } });
 			}
 		}

@@ -28,6 +28,7 @@ const definitions = {
 		states: [
 			{ id: 'postgres', volume: '/var/lib/treeseed/components/ai-inference/data/postgres', backup: 'required' },
 			{ id: 'inference', volume: '/var/lib/treeseed/components/ai-inference/data/inference', backup: 'required' },
+			{ id: 'artifacts', volume: '/var/lib/treeseed/components/ai-inference/data/artifacts', backup: 'required' },
 			{ id: 'models', volume: '/var/lib/treeseed/components/ai-inference/data/models', backup: 'optional' },
 		],
 		configuration: {
@@ -42,7 +43,10 @@ const definitions = {
 				{ name: 'INFERENCE_POSTGRES_PASSWORD', required: true },
 				{ name: 'AI_API_KEYS', required: true },
 			],
-			secretFiles: [], files: [],
+			secretFiles: [
+				{ id: 'artifact-source-registry', path: '/etc/treeseed/credentials/ai-inference-artifact-source', required: true },
+				{ id: 'artifact-destination-registry', path: '/etc/treeseed/credentials/ai-inference-artifact-destination', required: true },
+			], files: [],
 		},
 		migrations: [{ id: 'inference-database', order: 0, backupRequired: true }], dependencies: [], order: 50,
 		modeControl: { resource: 'ai-gpu', role: 'inference', gate: { service: 'inference-api', executable: '/usr/local/bin/treeseed-ai-gpu-gate' }, services: { base: ['inference-gpu-state-init', 'inference-postgres', 'inference-migrations', 'inference-evaluator', 'inference-manager', 'inference-api'], gpu: ['inference-vllm'], warm: 'inference-vllm' } },
@@ -137,7 +141,21 @@ function baseCompose(componentId: 'ai-inference' | 'ai-training') {
 	parsed.services = Object.fromEntries(definitions[componentId].services.map((name) => [name, parsed.services[name]]));
 	parsed.networks = Object.fromEntries(Object.entries(parsed.networks).filter(([name]) => name === `${family}-private` || name === 'platform' || name === 'treeseed-edge'));
 	if (componentId === 'ai-training') parsed.services['training-api'].volumes = [{ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-training/data/training', target: '/artifacts' }];
-	if (componentId === 'ai-inference') delete parsed.secrets;
+	if (componentId === 'ai-inference') {
+		const api = parsed.services['inference-api'];
+		api.environment.ARTIFACT_SOURCE_REGISTRY = '/run/secrets/artifact-source-registry';
+		api.environment.ARTIFACT_DESTINATION_REGISTRY = '/run/secrets/artifact-destination-registry';
+		api.secrets = ['artifact-source-registry', 'artifact-destination-registry'];
+		api.volumes = [
+			...(api.volumes ?? []),
+			{ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-inference/data/artifacts', target: '/artifacts' },
+			{ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-training/data/training', target: '/training-artifacts', read_only: true },
+		];
+		parsed.secrets = {
+			'artifact-source-registry': { file: '/etc/treeseed/credentials/ai-inference-artifact-source' },
+			'artifact-destination-registry': { file: '/etc/treeseed/credentials/ai-inference-artifact-destination' },
+		};
+	}
 	return parsed;
 }
 
