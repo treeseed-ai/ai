@@ -6,7 +6,7 @@ type Target = 'ai-inference' | 'ai-training' | 'ai-lab';
 const targets: Record<Target, string[]> = {
 	'ai-inference': ['inference-api', 'inference-manager', 'inference-vllm', 'inference-evaluator', 'inference-migrations'],
 	'ai-training': ['training-api', 'training-manager', 'axolotl-worker', 'marker-worker', 'artifact-worker', 'training-migrations'],
-	'ai-lab': ['lab-controller', 'lab-experience-proxy', 'lab-library-bridge', 'hermes-agent', 'lab-web-tool-proxy'],
+	'ai-lab': ['lab-controller', 'lab-experience-proxy', 'lab-library-bridge', 'lab-open-webui', 'hermes-agent', 'lab-web-tool-proxy'],
 };
 const [targetValue, operation = 'plan'] = process.argv.slice(2);
 if (!(targetValue in targets)) throw new Error('Target must be ai-inference, ai-training, or ai-lab.');

@@ -24,7 +24,7 @@ mkdirSync(output, { recursive: true });
 const definitions = {
 	'ai-inference': {
 		roles: ['inference-api', 'inference-manager', 'inference-vllm', 'inference-evaluator', 'inference-migrations'],
-		services: ['inference-postgres', 'inference-migrations', 'inference-vllm', 'inference-evaluator', 'inference-manager', 'inference-api'],
+		services: ['inference-gpu-state-init', 'inference-postgres', 'inference-migrations', 'inference-vllm', 'inference-evaluator', 'inference-manager', 'inference-api'],
 		states: [
 			{ id: 'postgres', volume: '/var/lib/treeseed/components/ai-inference/data/postgres', backup: 'required' },
 			{ id: 'inference', volume: '/var/lib/treeseed/components/ai-inference/data/inference', backup: 'required' },
@@ -45,10 +45,11 @@ const definitions = {
 			secretFiles: [], files: [],
 		},
 		migrations: [{ id: 'inference-database', order: 0, backupRequired: true }], dependencies: [], order: 50,
+		modeControl: { resource: 'ai-gpu', role: 'inference', gate: { service: 'inference-api', executable: '/usr/local/bin/treeseed-ai-gpu-gate' }, services: { base: ['inference-gpu-state-init', 'inference-postgres', 'inference-migrations', 'inference-evaluator', 'inference-manager', 'inference-api'], gpu: ['inference-vllm'], warm: 'inference-vllm' } },
 	},
 	'ai-training': {
 		roles: ['training-api', 'training-manager', 'axolotl-worker', 'marker-worker', 'artifact-worker', 'training-migrations'],
-		services: ['training-postgres', 'training-migrations', 'training-marker', 'training-axolotl', 'training-artifact', 'training-manager', 'training-api'],
+		services: ['training-gpu-state-init', 'training-postgres', 'training-migrations', 'training-marker', 'training-axolotl', 'training-artifact', 'training-manager', 'training-api'],
 		states: [
 			{ id: 'postgres', volume: '/var/lib/treeseed/components/ai-training/data/postgres', backup: 'required' },
 			{ id: 'training', volume: '/var/lib/treeseed/components/ai-training/data/training', backup: 'required' },
@@ -68,10 +69,11 @@ const definitions = {
 			secretFiles: [{ id: 'artifact-signing-key', path: '/etc/treeseed/credentials/ai-artifact-signing-key', required: true }], files: [],
 		},
 		migrations: [{ id: 'training-database', order: 0, backupRequired: true }], dependencies: [], order: 51,
+		modeControl: { resource: 'ai-gpu', role: 'training', gate: { service: 'training-api', executable: '/usr/local/bin/treeseed-ai-gpu-gate' }, services: { base: ['training-gpu-state-init', 'training-postgres', 'training-migrations', 'training-artifact', 'training-manager', 'training-api'], gpu: ['training-marker', 'training-axolotl'] } },
 	},
 	'ai-lab': {
-		roles: ['lab-controller', 'lab-experience-proxy', 'lab-library-bridge', 'hermes-agent', 'lab-web-tool-proxy'],
-		services: ['experience-proxy', 'controller', 'library-bridge', 'open-webui', 'web-tool-proxy', 'hermes-agent', 'hermes-dashboard'],
+		roles: ['lab-controller', 'lab-experience-proxy', 'lab-library-bridge', 'lab-open-webui', 'hermes-agent', 'lab-web-tool-proxy'],
+		services: ['experience-proxy', 'controller', 'library-bridge', 'open-webui', 'open-webui-action-init', 'web-tool-proxy', 'hermes-agent', 'hermes-dashboard'],
 		states: [
 			{ id: 'state', volume: '/var/lib/treeseed/components/ai-lab/data/state', backup: 'required' },
 			{ id: 'hermes', volume: '/var/lib/treeseed/components/ai-lab/data/hermes', backup: 'required' },
@@ -79,14 +81,14 @@ const definitions = {
 			{ id: 'webui', volume: '/var/lib/treeseed/components/ai-lab/data/open-webui', backup: 'required' },
 		],
 		configuration: {
-			environment: [
+				environment: [
 				{ name: 'BASE_MODEL_REVISION', required: true, default: '851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a' },
 				{ name: 'RUNTIME_GID', required: true, source: 'manager' },
+				{ name: 'TREESEED_AI_MODE_URL', required: true, source: 'manager' },
 			],
 			secretEnvironment: [{ name: 'AI_LAB_API_KEYS', required: true }],
 			secretFiles: [
 				{ id: 'training-source', path: '/etc/treeseed/credentials/ai-lab-training-source', required: true },
-				{ id: 'factory-control-key', path: '/etc/treeseed/credentials/ai-lab-factory-control-key', required: true },
 				{ id: 'factory-inference-key', path: '/etc/treeseed/credentials/ai-lab-factory-inference-key', required: true },
 				{ id: 'factory-training-key', path: '/etc/treeseed/credentials/ai-lab-factory-training-key', required: true },
 				{ id: 'hermes-api-key', path: '/etc/treeseed/credentials/ai-lab-hermes-api-key', required: true },
@@ -94,6 +96,9 @@ const definitions = {
 				{ id: 'hermes-session-secret', path: '/etc/treeseed/credentials/ai-lab-hermes-session-secret', required: true },
 				{ id: 'training-ingest-key', path: '/etc/treeseed/credentials/ai-lab-training-ingest-key', required: true },
 				{ id: 'lab-library-action-key', path: '/etc/treeseed/credentials/ai-lab-lab-library-action-key', required: true },
+				{ id: 'ai-mode-ca', path: '/etc/treeseed/credentials/ai-mode-ca.crt', required: true },
+				{ id: 'ai-mode-client-cert', path: '/etc/treeseed/credentials/ai-mode-client.crt', required: true },
+				{ id: 'ai-mode-client-key', path: '/etc/treeseed/credentials/ai-mode-client.key', required: true },
 			],
 			files: [],
 		},
@@ -102,6 +107,7 @@ const definitions = {
 			{ id: 'inference', capability: 'treeai-inference-api', locality: 'local', optional: false },
 			{ id: 'training', capability: 'treeai-training-api', locality: 'local', optional: false },
 		], order: 52,
+		modeControl: { resource: 'ai-gpu', role: 'controller', services: { base: ['experience-proxy', 'controller', 'library-bridge', 'open-webui', 'open-webui-action-init', 'web-tool-proxy', 'hermes-agent', 'hermes-dashboard'], gpu: [] }, internalControl: { transport: 'mtls', clientCommonName: 'client-ai-lab-mode', path: '/v1/ai/mode' } },
 	},
 } as const;
 
@@ -139,13 +145,12 @@ function labCompose() {
 	const parsed = YAML.parse(readFileSync(resolve('deploy/lab/compose.yml'), 'utf8')) as Record<string, any>;
 	const roleByService: Record<string, string> = {
 		'experience-proxy': 'lab-experience-proxy', controller: 'lab-controller', 'library-bridge': 'lab-library-bridge',
+		'open-webui': 'lab-open-webui', 'open-webui-action-init': 'lab-open-webui',
 		'web-tool-proxy': 'lab-web-tool-proxy', 'hermes-agent': 'hermes-agent', 'hermes-dashboard': 'hermes-agent',
 	};
 	parsed.name = 'treeseed-ai-lab';
 	delete parsed.services.gateway;
 	for (const [service, role] of Object.entries(roleByService)) parsed.services[service].image = exactImage(role);
-	const webui = runtimeImage('open-webui');
-	parsed.services['open-webui'].image = `${webui.repository}@${webui.digest}`;
 	const dataRoot = '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-lab/data';
 	const replaceVolume = (service: string, target: string, source: string, suffix = '') => {
 		parsed.services[service].volumes = (parsed.services[service].volumes ?? []).map((volume: string) =>
@@ -172,6 +177,7 @@ function labCompose() {
 
 function serviceContracts(componentId: keyof typeof definitions) {
 	if (componentId === 'ai-inference') return [
+		{ id: 'inference-gpu-state-init', composeService: 'inference-gpu-state-init', endpoints: [] },
 		{ id: 'inference-postgres', composeService: 'inference-postgres', endpoints: [] },
 		{ id: 'inference-migrations', composeService: 'inference-migrations', endpoints: [] }, { id: 'inference-vllm', composeService: 'inference-vllm', endpoints: [] },
 		{ id: 'inference-evaluator', composeService: 'inference-evaluator', endpoints: [] }, { id: 'inference-manager', composeService: 'inference-manager', endpoints: [] },
@@ -181,6 +187,7 @@ function serviceContracts(componentId: keyof typeof definitions) {
 		] },
 	];
 	if (componentId === 'ai-training') return [
+		{ id: 'training-gpu-state-init', composeService: 'training-gpu-state-init', endpoints: [] },
 		{ id: 'training-postgres', composeService: 'training-postgres', endpoints: [] },
 		{ id: 'training-migrations', composeService: 'training-migrations', endpoints: [] }, { id: 'training-marker', composeService: 'training-marker', endpoints: [] },
 		{ id: 'training-axolotl', composeService: 'training-axolotl', endpoints: [] }, { id: 'training-artifact', composeService: 'training-artifact', endpoints: [] },
@@ -192,6 +199,7 @@ function serviceContracts(componentId: keyof typeof definitions) {
 		{ id: 'controller', composeService: 'controller', endpoints: [{ id: 'control', protocol: 'http', port: 8081, visibility: 'host', defaultAlias: 'lab.ai.treeseed.localhost', aliasOverride: true, tls: 'edge', authentication: 'application', healthGate: { protocol: 'http', path: '/readyz', timeoutSeconds: 120 } }] },
 		{ id: 'library-bridge', composeService: 'library-bridge', endpoints: [] },
 		{ id: 'open-webui', composeService: 'open-webui', endpoints: [{ id: 'web', protocol: 'http', port: 8080, visibility: 'host', defaultAlias: 'chat.ai.treeseed.localhost', aliasOverride: true, tls: 'edge', authentication: 'none', healthGate: { protocol: 'http', path: '/health', timeoutSeconds: 120 } }] },
+		{ id: 'open-webui-action-init', composeService: 'open-webui-action-init', endpoints: [] },
 		{ id: 'web-tool-proxy', composeService: 'web-tool-proxy', endpoints: [] }, { id: 'hermes-agent', composeService: 'hermes-agent', endpoints: [] },
 		{ id: 'hermes-dashboard', composeService: 'hermes-dashboard', endpoints: [{ id: 'web', protocol: 'http', port: 9119, visibility: 'host', defaultAlias: 'hermes.ai.treeseed.localhost', aliasOverride: true, tls: 'edge', authentication: 'application', healthGate: { protocol: 'http', path: '/', timeoutSeconds: 120 } }] },
 	];
@@ -210,13 +218,14 @@ for (const componentId of Object.keys(definitions) as Array<keyof typeof definit
 		configuration: definition.configuration,
 		services: serviceContracts(componentId), stateVolumes: definition.states, migrations: definition.migrations,
 		requiredCapabilities: componentId === 'ai-lab' ? ['docker-compose'] : ['docker-compose', 'nvidia-container-runtime'], dependencies: definition.dependencies,
+		modeControl: definition.modeControl,
 	};
 	const localImages = definition.roles.map((role) => {
 		const image = manifest.images[role]!;
 		return { role, repository: image.repository, digest: image.digest, platforms: ['linux/amd64'], consumers: [componentId] };
 	});
 	const upstream = componentId === 'ai-lab'
-		? [{ role: 'open-webui', ...runtimeImage('open-webui'), platforms: ['linux/amd64'], consumers: [componentId] }]
+		? []
 		: [{ role: 'postgres', ...runtimeImage('postgres'), platforms: ['linux/amd64'], consumers: [componentId] }];
 	const componentImages = [...localImages, ...upstream];
 	const tagUrl = ({ repository }: { repository: string }) => {

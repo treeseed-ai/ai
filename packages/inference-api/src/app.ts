@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 
 const submitSchema = { type: 'object', required: ['idempotencyKey'], properties: { idempotencyKey: { type: 'string', minLength: 1 }, input: jsonObjectSchema } };
 function jobStateCounts(jobs: Array<{state:string}>) { return jobs.reduce<Record<string,number>>((counts,job)=>{counts[job.state]=(counts[job.state]??0)+1;return counts;},{}); }
-function runtimeMetrics(){let mode='unknown',active=0;try{mode=JSON.parse(readFileSync(process.env.AI_FACTORY_MODE_FILE!,'utf8')).mode;}catch{}try{active=Number(JSON.parse(readFileSync(process.env.AI_RUNTIME_STATUS!,'utf8')).active??0);}catch{}return[`ai_factory_mode{product="inference",mode="${mode}"} 1`,`ai_inference_active_requests ${active}`];}
+function runtimeMetrics(){let mode='unknown',active=0;try{const value=JSON.parse(readFileSync(process.env.TREESEED_GPU_ADMISSION_FILE??process.env.AI_FACTORY_MODE_FILE!,'utf8'));mode=value.admission==='open'?'awake':value.admission==='closed'?'sleep':value.mode;}catch{}try{active=Number(JSON.parse(readFileSync(process.env.TREESEED_GPU_ACTIVITY_FILE??process.env.AI_RUNTIME_STATUS!,'utf8')).active??0);}catch{}return[`ai_factory_mode{product="inference",mode="${mode}"} 1`,`ai_inference_active_requests ${active}`];}
 function internalImportToken(){try{return readFileSync(process.env.ARTIFACT_IMPORT_TOKEN_FILE!,'utf8').trim();}catch{return process.env.ARTIFACT_IMPORT_TOKEN??'';}}
 export const inferenceRoutes: RouteSpec[] = [
 	{ method:'GET',path:'/healthz',summary:'Liveness' },{ method:'GET',path:'/readyz',summary:'Readiness' },{ method:'GET',path:'/v1/version',summary:'Version',scope:'inference:read' },

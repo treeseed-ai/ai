@@ -4,5 +4,5 @@
   "private": true,
   "type": "module",
   "scripts": { "build": "tsc -p tsconfig.json && esbuild src/cli.ts --bundle --platform=node --format=esm --outfile=dist/cli.js", "start": "node dist/controller.js", "proxy": "node dist/proxy.js", "test": "vitest run ../../tests/lab" },
-  "dependencies": { "@ai-platform/common": "workspace:*", "@aws-sdk/client-s3": "^3.879.0", "@hono/node-server": "^1.19.9", "hono": "^4.11.4" }
+  "dependencies": { "@ai-platform/common": "workspace:*", "@aws-sdk/client-s3": "^3.879.0", "@hono/node-server": "^1.19.9", "@treeseed/sdk": "0.13.0-rc.52", "hono": "^4.11.4" }
 }

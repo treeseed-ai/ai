@@ -56,12 +56,15 @@ describe("Open WebUI local single-user integration", () => {
 		expect(compose.services['library-bridge'].group_add).toEqual([
 			"${RUNTIME_GID:?RUNTIME_GID is required}",
 		]);
-		expect(compose.services['open-webui'].volumes).toContain('/usr/lib/treeseed-ai/lab/open-webui:/opt/treeai/actions:ro');
+		expect(compose.services['open-webui'].volumes).toEqual(['open-webui-data:/app/backend/data']);
+		expect(compose.services['open-webui-action-init'].image).toBe('${LAB_OPEN_WEBUI_IMAGE:?LAB_OPEN_WEBUI_IMAGE is required}');
+		expect(compose.services['open-webui-action-init'].entrypoint).toEqual(['python','/opt/treeai/actions/install_treeai_action.py']);
 		expect(readFileSync('deploy/lab/Caddyfile','utf8')).toContain('reverse_proxy library-bridge:8082');
 		const action=readFileSync('deploy/lab/open-webui/treeai_train_library.py','utf8');
 		expect(action).toContain('class Action:');
 		const installer=readFileSync('deploy/lab/open-webui/install_treeai_action.py','utf8');
 		expect(installer).toContain('/api/v1/auths/signin');
+		expect(installer).toContain('OPEN_WEBUI_ORIGIN');
 		expect(installer).toContain('"authorization": f"Bearer {token}"');
 		expect(installer).toContain('call("GET", "/")');
 		expect(installer).not.toContain('print(token)');

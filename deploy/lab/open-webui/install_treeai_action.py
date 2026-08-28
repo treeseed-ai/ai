@@ -1,10 +1,11 @@
 import json
+import os
 import urllib.error
 import urllib.request
 from pathlib import Path
 
 
-origin = "http://127.0.0.1:8080"
+origin = os.environ.get("OPEN_WEBUI_ORIGIN", "http://127.0.0.1:8080").rstrip("/")
 base = f"{origin}/api/v1/functions"
 identifier = "treeai_train_library"
 payload = {

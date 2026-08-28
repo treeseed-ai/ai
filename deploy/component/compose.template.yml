@@ -4,6 +4,14 @@ x-product-environment: &product-environment
 x-security: &security
   security_opt: ["no-new-privileges:true"]
 services:
+  inference-gpu-state-init:
+    image: "@INFERENCE_API_IMAGE@"
+    <<: *security
+    user: "0:0"
+    restart: "no"
+    entrypoint: ["sh", "-c", "install -d -o 1000 -g 1000 -m 0770 /run/treeseed-ai"]
+    volumes: [gpu-admission:/run/treeseed-ai]
+    networks: [inference-private]
   inference-postgres:
     image: "@POSTGRES_IMAGE@"
     <<: *security
@@ -47,6 +55,7 @@ services:
     environment:
       HF_HOME: /models
       VLLM_ALLOW_RUNTIME_LORA_UPDATING: "True"
+      TREESEED_VLLM_MODEL: "${PUBLIC_MODEL:-local-model}"
     command: ["--model", "${SOURCE_MODEL:-Qwen/Qwen3.5-4B}", "--revision", "${SOURCE_MODEL_REVISION:-851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a}", "--served-model-name", "${PUBLIC_MODEL:-local-model}", "--max-model-len", "${MAX_MODEL_LENGTH:-16384}", "--enable-lora", "--enable-auto-tool-choice", "--tool-call-parser", "qwen3_coder", "--reasoning-parser", "qwen3"]
     deploy:
       resources:
@@ -85,6 +94,9 @@ services:
     environment:
       DATABASE_URL: "${INFERENCE_DATABASE_URL:?INFERENCE_DATABASE_URL is required}"
       EVALUATOR_URL: http://inference-evaluator:8080
+      TREESEED_GPU_ADMISSION_FILE: /run/treeseed-ai/gate.json
+      TREESEED_GPU_DEFAULT_ADMISSION: closed
+    volumes: [gpu-admission:/run/treeseed-ai]
     networks: [inference-private]
   inference-api:
     image: "@INFERENCE_API_IMAGE@"
@@ -92,12 +104,16 @@ services:
     restart: unless-stopped
     depends_on:
       inference-migrations: { condition: service_completed_successfully }
-      inference-vllm: { condition: service_healthy }
+      inference-gpu-state-init: { condition: service_completed_successfully }
     environment:
       DATABASE_URL: "${INFERENCE_DATABASE_URL:?INFERENCE_DATABASE_URL is required}"
       CONTROL_HOST: 0.0.0.0
       INFERENCE_HOST: 0.0.0.0
       VLLM_URL: http://inference-vllm:8000
+      TREESEED_GPU_ADMISSION_FILE: /run/treeseed-ai/gate.json
+      TREESEED_GPU_ACTIVITY_FILE: /run/treeseed-ai/status.json
+      TREESEED_GPU_DEFAULT_ADMISSION: closed
+    volumes: [gpu-admission:/run/treeseed-ai]
     expose: ["4770", "4771"]
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4770/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
@@ -106,6 +122,14 @@ services:
       retries: 30
       start_period: 180s
     networks: [inference-private, platform, treeseed-edge]
+  training-gpu-state-init:
+    image: "@TRAINING_API_IMAGE@"
+    <<: *security
+    user: "0:0"
+    restart: "no"
+    entrypoint: ["sh", "-c", "install -d -o 10001 -g 10001 -m 0770 /run/treeseed-ai"]
+    volumes: [gpu-admission:/run/treeseed-ai]
+    networks: [training-private]
   training-migrations:
     image: "@TRAINING_MIGRATIONS_IMAGE@"
     <<: [*product-environment, *security]
@@ -193,13 +217,18 @@ services:
     restart: unless-stopped
     depends_on:
       training-migrations: { condition: service_completed_successfully }
-      training-marker: { condition: service_healthy }
+      training-gpu-state-init: { condition: service_completed_successfully }
       training-artifact: { condition: service_healthy }
+    group_add: ["10001"]
     environment:
       DATABASE_URL: "${TRAINING_DATABASE_URL:?TRAINING_DATABASE_URL is required}"
       MARKER_URL: http://training-marker:8080
       AXOLOTL_URL: http://training-axolotl:8080
       ARTIFACT_URL: http://training-artifact:8080
+      TREESEED_GPU_ADMISSION_FILE: /run/treeseed-ai/gate.json
+      TREESEED_GPU_ACTIVITY_FILE: /run/treeseed-ai/status.json
+      TREESEED_GPU_DEFAULT_ADMISSION: closed
+    volumes: [gpu-admission:/run/treeseed-ai]
     networks: [training-private]
   training-api:
     image: "@TRAINING_API_IMAGE@"
@@ -207,9 +236,14 @@ services:
     restart: unless-stopped
     depends_on:
       training-migrations: { condition: service_completed_successfully }
+      training-gpu-state-init: { condition: service_completed_successfully }
     environment:
       DATABASE_URL: "${TRAINING_DATABASE_URL:?TRAINING_DATABASE_URL is required}"
       CONTROL_HOST: 0.0.0.0
+      TREESEED_GPU_ADMISSION_FILE: /run/treeseed-ai/gate.json
+      TREESEED_GPU_ACTIVITY_FILE: /run/treeseed-ai/status.json
+      TREESEED_GPU_DEFAULT_ADMISSION: closed
+    volumes: [gpu-admission:/run/treeseed-ai]
     expose: ["4780"]
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4780/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
@@ -221,6 +255,8 @@ services:
 secrets:
   artifact-signing-key:
     file: /etc/treeseed/credentials/ai-artifact-signing-key
+volumes:
+  gpu-admission: {}
 networks:
   inference-private: { internal: true }
   training-private: { internal: true }

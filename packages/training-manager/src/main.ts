@@ -11,8 +11,9 @@ const axolotlWorkerDispatcher=new Agent({headersTimeout:0,bodyTimeout:0});
 
 const command = process.argv[2] ?? 'worker';
 const gpuTypes = new Set(['document.process', 'library.document.marker', 'library.training.qlora', 'library.training.multimodal.qlora', 'library.training.multimodal.qualify', 'training.qlora']);
+const admissionFile = process.env.TREESEED_GPU_ADMISSION_FILE;
 const modeFile = process.env.AI_FACTORY_MODE_FILE;
-const statusFile = process.env.AI_FACTORY_STATUS_FILE;
+const statusFile = process.env.TREESEED_GPU_ACTIVITY_FILE ?? process.env.AI_FACTORY_STATUS_FILE;
 const trainingProfileFile = statusFile ? join(dirname(statusFile),'training-profile.json') : undefined;
 function safeWorkerError(value:string){return redactSensitiveText(value).replace(/[\u0000-\u001f\u007f]/gu,' ').slice(-2000);}
 async function cancelAxolotl(axolotl:string,jobId:string){try{await undiciFetch(`${axolotl}/cancel`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jobId}),dispatcher:axolotlWorkerDispatcher});}catch{/* cancellation is best effort; the worker-side execution lock still prevents duplicates */}}
@@ -20,6 +21,10 @@ async function axolotlCall(axolotl:string,path:string,job:any,signal:AbortSignal
 async function axolotlCallWithProgress(axolotl:string,path:string,job:any,signal:AbortSignal,progress:(value:number)=>Promise<void>){let outcome:{value?:Awaited<ReturnType<typeof axolotlCall>>;error?:unknown}|undefined;const task=axolotlCall(axolotl,path,job,signal).then(value=>{outcome={value};},error=>{outcome={error};});while(!outcome){await pause(3000);if(outcome)break;try{const response=await undiciFetch(`${axolotl}/status`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jobId:job.id}),signal,dispatcher:axolotlWorkerDispatcher});if(response.ok){const status=await response.json()as{state?:string;progress?:number};if(status.state==='running'&&typeof status.progress==='number'&&status.progress>=0&&status.progress<=1)await progress(.02+status.progress*.8);}}catch(error){if(signal.aborted)throw error;}}await task;if(outcome?.error)throw outcome.error;return outcome!.value!;}
 
 function factoryMode() {
+  if (admissionFile) {
+    try { return JSON.parse(readFileSync(admissionFile, 'utf8')).admission === 'open' ? 'sleep' : 'awake'; }
+    catch { return 'degraded'; }
+  }
   if (!modeFile) return 'sleep';
   try { return JSON.parse(readFileSync(modeFile, 'utf8')).mode as string; }
   catch { return 'degraded'; }

@@ -1,11 +1,10 @@
 name: treeseed-ai-lab
 x-lab-environment: &lab-environment
-  AI_FACTORY_CONTROL_KEY_FILE: /run/secrets/factory-control-key
   AI_FACTORY_INFERENCE_KEY_FILE: /run/secrets/factory-inference-key
   AI_FACTORY_TRAINING_KEY_FILE: /run/secrets/factory-training-key
   HERMES_API_KEY_FILE: /run/secrets/hermes-api-key
   HERMES_URL: http://hermes-agent:8642
-  FACTORY_URL: "${FACTORY_URL:-https://host.docker.internal:4790}"
+  TREESEED_AI_MODE_URL: "${TREESEED_AI_MODE_URL:?TREESEED_AI_MODE_URL is required}"
   TRAINING_URL: "${TRAINING_URL:-http://training-api:4780}"
   INFERENCE_CONTROL_URL: "${INFERENCE_CONTROL_URL:-http://inference-api:4770}"
   INFERENCE_URL: "${INFERENCE_URL:-http://inference-api:4771}"
@@ -38,12 +37,11 @@ services:
     group_add: ["${RUNTIME_GID:?RUNTIME_GID is required}", "10001"]
     depends_on:
       experience-proxy: { condition: service_healthy }
-    volumes: [lab-state:/state, hermes-workspace:/workspace:ro, "/etc/ssl/certs/treeseed-ai-ca.pem:/factory-ca.pem:ro"]
-    secrets: [training-source, factory-control-key, factory-inference-key, factory-training-key, hermes-api-key]
+    volumes: [lab-state:/state, hermes-workspace:/workspace:ro]
+    secrets: [training-source, factory-inference-key, factory-training-key, hermes-api-key, ai-mode-ca, ai-mode-client-cert, ai-mode-client-key]
     environment:
       <<: *lab-environment
       AI_LAB_API_KEYS: "${AI_LAB_API_KEYS:?AI_LAB_API_KEYS is required}"
-      NODE_EXTRA_CA_CERTS: /factory-ca.pem
       LAB_STATE_DIR: /state
       HERMES_WORKSPACE: /workspace
       WEB_TOOL_URL: http://web-tool-proxy:8090
@@ -77,7 +75,7 @@ services:
       timeout: 3s
       retries: 20
   open-webui:
-    image: ${OPEN_WEBUI_IMAGE:?OPEN_WEBUI_IMAGE is required}
+    image: ${LAB_OPEN_WEBUI_IMAGE:?LAB_OPEN_WEBUI_IMAGE is required}
     restart: unless-stopped
     depends_on: { experience-proxy: { condition: service_healthy } }
     environment:
@@ -97,7 +95,6 @@ services:
       WEBUI_SESSION_COOKIE_SECURE: "true"
     volumes:
       - open-webui-data:/app/backend/data
-      - /usr/lib/treeseed-ai/lab/open-webui:/opt/treeai/actions:ro
     networks: [lab-private]
     healthcheck:
       test: ["CMD","python","-c","import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=3).read()"]
@@ -105,6 +102,15 @@ services:
       timeout: 5s
       retries: 30
       start_period: 20s
+  open-webui-action-init:
+    image: ${LAB_OPEN_WEBUI_IMAGE:?LAB_OPEN_WEBUI_IMAGE is required}
+    restart: "no"
+    depends_on:
+      open-webui: { condition: service_healthy }
+    entrypoint: ["python", "/opt/treeai/actions/install_treeai_action.py"]
+    environment:
+      OPEN_WEBUI_ORIGIN: http://open-webui:8080
+    networks: [lab-private]
   web-tool-proxy:
     image: ${LAB_WEB_TOOL_IMAGE:?LAB_WEB_TOOL_IMAGE is required}
     restart: unless-stopped
@@ -177,7 +183,6 @@ networks:
   lab-egress: {}
 secrets:
   training-source: { file: /etc/treeseed-ai/lab/training-source.json }
-  factory-control-key: { file: /etc/treeseed-ai/lab/secrets/factory-control-key }
   factory-inference-key: { file: /etc/treeseed-ai/lab/secrets/factory-inference-key }
   factory-training-key: { file: /etc/treeseed-ai/lab/secrets/factory-training-key }
   hermes-api-key: { file: /etc/treeseed-ai/lab/secrets/hermes-api-key }
@@ -185,6 +190,9 @@ secrets:
   hermes-session-secret: { file: /etc/treeseed-ai/lab/secrets/hermes-session-secret }
   training-ingest-key: { file: /etc/treeseed-ai/lab/secrets/training-ingest-key }
   lab-library-action-key: { file: /etc/treeseed-ai/lab/secrets/lab-library-action-key }
+  ai-mode-ca: { file: /etc/treeseed/credentials/ai-mode-ca.crt }
+  ai-mode-client-cert: { file: /etc/treeseed/credentials/ai-mode-client.crt }
+  ai-mode-client-key: { file: /etc/treeseed/credentials/ai-mode-client.key }
 volumes:
   lab-state: {}
   hermes-home: {}
