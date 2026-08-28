@@ -32,7 +32,7 @@ describe('managed AI component releases', () => {
 		for (const [componentId, componentRoles] of expected) {
 			const release = componentReleaseSchema.parse(JSON.parse(readFileSync(resolve(output, `${componentId}-component-release.json`), 'utf8')));
 			const compose = readFileSync(resolve(output, `${componentId}-compose.yml`), 'utf8');
-			const document = YAML.parse(compose) as { services: Record<string, { image: string; ports?: unknown; networks?: string[]; restart?: string; healthcheck?: unknown; volumes?: Array<string | { source?: string; target?: string }> }>; secrets?: Record<string, { file: string }> };
+			const document = YAML.parse(compose) as { services: Record<string, { image: string; ports?: unknown; networks?: string[]; restart?: string; healthcheck?: unknown; env_file?: unknown; volumes?: Array<string | { source?: string; target?: string }> }>; secrets?: Record<string, { file: string }>; networks?: Record<string, { internal?: boolean }> };
 			const acceptedImages = new Set(release.images.map(({ repository, digest }) => `${repository}@${digest}`));
 			expect(release.componentId).toBe(componentId);
 			expect(release.release).toBe('0.11.0~rc1-2');
@@ -72,10 +72,20 @@ describe('managed AI component releases', () => {
 				expect(release.runtime.stateVolumes).toContainEqual({ id: 'postgres', volume: `/var/lib/treeseed/components/${componentId}/data/postgres`, backup: 'required' });
 				if (componentId === 'ai-training') expect(document.services['training-api']?.volumes).toContainEqual({ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-training/data/training', target: '/artifacts' });
 				if (componentId === 'ai-inference') {
+					expect(document.services['inference-vllm']?.env_file).toBeUndefined();
+					expect(document.services['inference-vllm']?.networks).toEqual(['inference-private', 'inference-model-egress']);
+					expect(document.networks?.['inference-model-egress']?.internal).not.toBe(true);
 					expect(document.services['inference-api']?.volumes).toContainEqual({ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-inference/data/artifacts', target: '/artifacts' });
 					expect(document.services['inference-api']?.volumes).toContainEqual({ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-training/data/training', target: '/training-artifacts', read_only: true });
 					expect(release.runtime.stateVolumes).toContainEqual({ id: 'artifacts', volume: '/var/lib/treeseed/components/ai-inference/data/artifacts', backup: 'required' });
 					expect(release.runtime.configuration.secretFiles.map(({ id }) => id)).toEqual(['artifact-source-registry', 'artifact-destination-registry']);
+				}
+				if (componentId === 'ai-training') {
+					for (const worker of ['training-marker', 'training-axolotl']) {
+						expect(document.services[worker]?.env_file).toBeUndefined();
+						expect(document.services[worker]?.networks).toEqual(['training-private', 'training-model-egress']);
+					}
+					expect(document.networks?.['training-model-egress']?.internal).not.toBe(true);
 				}
 				expect(release.runtime.modeControl).toMatchObject({ resource: 'ai-gpu', role: componentId === 'ai-inference' ? 'inference' : 'training', gate: { executable: '/usr/local/bin/treeseed-ai-gpu-gate' } });
 			}
