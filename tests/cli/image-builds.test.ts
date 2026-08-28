@@ -26,6 +26,7 @@ describe('selective image build identities',()=>{
     expect(workflow).toContain('git diff --quiet "$recovery_sha" HEAD');
     expect(workflow.indexOf('imagetools inspect "$repository:$recovery_tag"')).toBeGreaterThan(workflow.indexOf('if test "$action" = built'));
     expect(workflow).toContain("digest=$(jq -r --arg role \"$role\" '.images[$role].digest' prior/recovered-image-manifest.json)");
+    expect(workflow.match(/\.images\[\$role\]\.repository=\$repository/gu)).toHaveLength(2);
     expect(workflow).toContain('.name == "Publish every exact RC image and verify Docker Hub read-back" and .conclusion == "success"');
     expect(workflow).toContain('(.name == "Create exact managed component bundle" or .name == "Publish immutable prerelease") and .conclusion == "failure"');
     expect(workflow).toContain('checksum=$(mktemp)');
