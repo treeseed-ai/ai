@@ -28,12 +28,14 @@ services:
       SOURCE_MODEL_REVISION: "${SOURCE_MODEL_REVISION:-851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a}"
       TREEAI_MULTIMODAL_LORA_ENABLED: "${TREEAI_MULTIMODAL_LORA_ENABLED:-false}"
     ports: ["${CONTROL_BIND:-127.0.0.1}:4770:4770", "${INFERENCE_BIND:-0.0.0.0}:4771:4771"]
+    healthcheck: { test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4770/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"], interval: 15s, timeout: 5s, retries: 30, start_period: 180s }
   manager:
     image: ${INFERENCE_MANAGER_IMAGE:?INFERENCE_MANAGER_IMAGE is required}
     build: { context: ../.., dockerfile: containers/inference/manager.Dockerfile }
     restart: unless-stopped
     depends_on: { migrations: { condition: service_completed_successfully }, evaluator: { condition: service_healthy } }
     environment: { DATABASE_URL: "${DATABASE_URL:-postgresql://inference:inference@postgres:5432/inference}", EVALUATOR_URL: "http://evaluator:8080" }
+    healthcheck: { test: ["CMD", "node", "-e", "try{process.kill(1,0)}catch{process.exit(1)}"], interval: 15s, timeout: 5s, retries: 10 }
   evaluator:
     image: ${INFERENCE_EVALUATOR_IMAGE:?INFERENCE_EVALUATOR_IMAGE is required}
     build: { context: ../.., dockerfile: containers/inference/evaluator.Dockerfile }

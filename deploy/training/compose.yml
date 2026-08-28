@@ -27,6 +27,7 @@ services:
     restart: unless-stopped
     depends_on: { migrations: { condition: service_completed_successfully }, marker: { condition: service_healthy }, artifact: { condition: service_healthy } }
     environment: { DATABASE_URL: "${DATABASE_URL:-postgresql://training:training@postgres:5432/training}", MARKER_URL: "http://marker:8080", AXOLOTL_URL: "http://axolotl:8080", ARTIFACT_URL: "http://artifact:8080" }
+    healthcheck: { test: ["CMD", "node", "-e", "try{process.kill(1,0)}catch{process.exit(1)}"], interval: 15s, timeout: 5s, retries: 10 }
   marker:
     image: ${MARKER_WORKER_IMAGE:?MARKER_WORKER_IMAGE is required}
     build: { context: ../.., dockerfile: containers/training/marker.Dockerfile }

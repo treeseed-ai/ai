@@ -97,6 +97,11 @@ services:
       TREESEED_GPU_ADMISSION_FILE: /run/treeseed-ai/gate.json
       TREESEED_GPU_DEFAULT_ADMISSION: closed
     volumes: [gpu-admission:/run/treeseed-ai]
+    healthcheck:
+      test: ["CMD", "node", "-e", "try{process.kill(1,0)}catch{process.exit(1)}"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
     networks: [inference-private]
   inference-api:
     image: "@INFERENCE_API_IMAGE@"
@@ -229,6 +234,11 @@ services:
       TREESEED_GPU_ACTIVITY_FILE: /run/treeseed-ai/status.json
       TREESEED_GPU_DEFAULT_ADMISSION: closed
     volumes: [gpu-admission:/run/treeseed-ai]
+    healthcheck:
+      test: ["CMD", "node", "-e", "try{process.kill(1,0)}catch{process.exit(1)}"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
     networks: [training-private]
   training-api:
     image: "@TRAINING_API_IMAGE@"

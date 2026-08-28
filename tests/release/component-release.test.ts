@@ -32,7 +32,7 @@ describe('managed AI component releases', () => {
 		for (const [componentId, componentRoles] of expected) {
 			const release = componentReleaseSchema.parse(JSON.parse(readFileSync(resolve(output, `${componentId}-component-release.json`), 'utf8')));
 			const compose = readFileSync(resolve(output, `${componentId}-compose.yml`), 'utf8');
-			const document = YAML.parse(compose) as { services: Record<string, { image: string; ports?: unknown; networks?: string[]; volumes?: Array<string | { source?: string; target?: string }> }>; secrets?: Record<string, { file: string }> };
+			const document = YAML.parse(compose) as { services: Record<string, { image: string; ports?: unknown; networks?: string[]; restart?: string; healthcheck?: unknown; volumes?: Array<string | { source?: string; target?: string }> }>; secrets?: Record<string, { file: string }> };
 			const acceptedImages = new Set(release.images.map(({ repository, digest }) => `${repository}@${digest}`));
 			expect(release.componentId).toBe(componentId);
 			expect(release.release).toBe('0.11.0~rc1-2');
@@ -49,6 +49,7 @@ describe('managed AI component releases', () => {
 			for (const service of Object.values(document.services)) {
 				expect(acceptedImages.has(service.image), service.image).toBe(true);
 				expect(service.ports).toBeUndefined();
+				expect(Boolean(service.healthcheck) || service.restart === 'no', `${componentId} service ${service.image} must declare health or one-shot completion`).toBe(true);
 			}
 			if (componentId === 'ai-lab') {
 				expect(compose).not.toContain('ai-shared');
