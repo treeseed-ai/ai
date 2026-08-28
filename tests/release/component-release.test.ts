@@ -60,6 +60,11 @@ describe('managed AI component releases', () => {
 				expect(release.runtime.modeControl).toMatchObject({ role: 'controller', internalControl: { transport: 'mtls', path: '/v1/ai/mode' } });
 				expect(compose).not.toContain('factory-control-key');
 				expect(compose).not.toContain('FACTORY_URL');
+				expect(compose).toContain('WEBUI_AUTH: ${OPEN_WEBUI_AUTH:-false}');
+				expect(compose).toContain('ENABLE_LOGIN_FORM: ${OPEN_WEBUI_ENABLE_LOGIN_FORM:-false}');
+				expect(compose).toContain('BYPASS_MODEL_ACCESS_CONTROL: ${OPEN_WEBUI_BYPASS_MODEL_ACCESS_CONTROL:-true}');
+				expect(compose).toContain('https://chat.ai.treeseed.localhost');
+				expect(release.runtime.configuration.environment).toContainEqual({ name: 'OPEN_WEBUI_AUTH', required: false, source: 'configuration', default: 'false' });
 			} else {
 				expect(compose).toContain('postgres@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73');
 				expect(compose).toContain(`/${componentId}/data/postgres`);
