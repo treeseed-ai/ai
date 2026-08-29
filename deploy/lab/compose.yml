@@ -11,9 +11,17 @@ x-lab-environment: &lab-environment
   BASE_MODEL: "${BASE_MODEL:-Qwen/Qwen3.5-4B}"
   BASE_MODEL_REVISION: "${BASE_MODEL_REVISION:?BASE_MODEL_REVISION is required}"
 services:
+  lab-state-init:
+    image: ${LAB_CONTROLLER_IMAGE:?LAB_CONTROLLER_IMAGE is required}
+    user: "0:0"
+    restart: "no"
+    entrypoint: ["sh", "-c", "chown 1000:1000 /state && chmod 0750 /state && chown 10001:10001 /home/hermes/.hermes /workspace && chmod 0750 /home/hermes/.hermes /workspace"]
+    volumes: [lab-state:/state, hermes-home:/home/hermes/.hermes, hermes-workspace:/workspace]
+    networks: [lab-private]
   experience-proxy:
     image: ${LAB_PROXY_IMAGE:?LAB_PROXY_IMAGE is required}
     restart: unless-stopped
+    depends_on: { lab-state-init: { condition: service_completed_successfully } }
     group_add: ["${RUNTIME_GID:?RUNTIME_GID is required}"]
     environment:
       INFERENCE_URL: http://inference-api:4771
@@ -36,6 +44,7 @@ services:
     restart: unless-stopped
     group_add: ["${RUNTIME_GID:?RUNTIME_GID is required}", "10001"]
     depends_on:
+      lab-state-init: { condition: service_completed_successfully }
       experience-proxy: { condition: service_healthy }
     volumes: [lab-state:/state, hermes-workspace:/workspace:ro]
     secrets: [training-source, factory-inference-key, factory-training-key, hermes-api-key, ai-mode-ca, ai-mode-client-cert, ai-mode-client-key]
@@ -129,6 +138,7 @@ services:
     restart: unless-stopped
     group_add: ["${RUNTIME_GID:?RUNTIME_GID is required}"]
     depends_on:
+      lab-state-init: { condition: service_completed_successfully }
       experience-proxy: { condition: service_healthy }
       web-tool-proxy: { condition: service_healthy }
     environment:

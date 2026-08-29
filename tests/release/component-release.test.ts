@@ -52,6 +52,9 @@ describe('managed AI component releases', () => {
 				expect(Boolean(service.healthcheck) || service.restart === 'no', `${componentId} service ${service.image} must declare health or one-shot completion`).toBe(true);
 			}
 			if (componentId === 'ai-lab') {
+				expect(document.services['lab-state-init']?.restart).toBe('no');
+				expect(document.services['lab-state-init']?.entrypoint?.at(-1)).toContain('chown 1000:1000 /state');
+				expect(document.services['lab-state-init']?.entrypoint?.at(-1)).toContain('chown 10001:10001 /home/hermes/.hermes /workspace');
 				expect(compose).not.toContain('ai-shared');
 				expect(compose).not.toMatch(/^volumes:/mu);
 				expect(compose).toContain('/ai-lab/data/open-webui:/app/backend/data');
