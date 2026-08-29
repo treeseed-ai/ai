@@ -74,6 +74,7 @@ describe('managed AI component releases', () => {
 				if (componentId === 'ai-inference') {
 					expect(release.runtime.configuration.environment).toContainEqual({ name: 'MAX_NUM_SEQS', required: false, source: 'configuration', default: '2' });
 					expect(release.runtime.configuration.environment).toContainEqual({ name: 'GPU_MEMORY_UTILIZATION', required: false, source: 'configuration', default: '0.85' });
+					expect(release.runtime.services.flatMap(({ endpoints }) => endpoints).filter(({ healthGate }) => healthGate).every(({ healthGate }) => healthGate?.timeoutSeconds === 1_200)).toBe(true);
 					expect(document.services['inference-vllm']?.env_file).toBeUndefined();
 					expect(document.services['inference-vllm']?.networks).toEqual(['inference-private', 'inference-model-egress']);
 					expect(document.networks?.['inference-model-egress']?.internal).not.toBe(true);

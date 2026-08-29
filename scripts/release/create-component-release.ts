@@ -208,8 +208,8 @@ function serviceContracts(componentId: keyof typeof definitions) {
 		{ id: 'inference-migrations', composeService: 'inference-migrations', endpoints: [] }, { id: 'inference-vllm', composeService: 'inference-vllm', endpoints: [] },
 		{ id: 'inference-evaluator', composeService: 'inference-evaluator', endpoints: [] }, { id: 'inference-manager', composeService: 'inference-manager', endpoints: [] },
 		{ id: 'inference-api', composeService: 'inference-api', endpoints: [
-			{ id: 'control', protocol: 'http', port: 4770, visibility: 'host', defaultAlias: 'inference.ai.treeseed.localhost', aliasOverride: true, tls: 'edge', authentication: 'application', healthGate: { protocol: 'http', path: '/readyz', timeoutSeconds: 600 } },
-			{ id: 'inference', protocol: 'http', port: 4771, visibility: 'private', aliasOverride: false, tls: 'none', authentication: 'application', healthGate: { protocol: 'http', path: '/healthz', timeoutSeconds: 600 } },
+			{ id: 'control', protocol: 'http', port: 4770, visibility: 'host', defaultAlias: 'inference.ai.treeseed.localhost', aliasOverride: true, tls: 'edge', authentication: 'application', healthGate: { protocol: 'http', path: '/readyz', timeoutSeconds: 1_200 } },
+			{ id: 'inference', protocol: 'http', port: 4771, visibility: 'private', aliasOverride: false, tls: 'none', authentication: 'application', healthGate: { protocol: 'http', path: '/healthz', timeoutSeconds: 1_200 } },
 		] },
 	];
 	if (componentId === 'ai-training') return [

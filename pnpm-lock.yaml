@@ -25,8 +25,8 @@ importers:
         version: 2.9.0
     devDependencies:
       '@treeseed/sdk':
-        specifier: 0.13.0-rc.52
-        version: 0.13.0-rc.52
+        specifier: 0.13.0-rc.53
+        version: 0.13.0-rc.53
       '@types/node':
         specifier: ^24.6.0
         version: 24.13.3
@@ -525,6 +525,10 @@ packages:
 
   '@treeseed/sdk@0.13.0-rc.52':
     resolution: {integrity: sha512-likglVxDhv50N/4uGeKlxJFp+B6xhLeissA8lXM4bHVsQk3FHUdHTrJCcaEiHaNVXg2MMvf+aZaN12y0k2miEw==}
+    engines: {node: '>=22'}
+
+  '@treeseed/sdk@0.13.0-rc.53':
+    resolution: {integrity: sha512-IcXzHNRNhAkmEt7dCRD0BiIebz7A3BqTG+wDUFUi/CBDlBEpXxnI2h7p/srYXOYR2OKq9DgbDep0GFCYyCBkKQ==}
     engines: {node: '>=22'}
 
   '@treeseed/treedx@0.3.0-rc.4':
@@ -1270,6 +1274,14 @@ snapshots:
   '@standard-schema/spec@1.1.0': {}
 
   '@treeseed/sdk@0.13.0-rc.52':
+    dependencies:
+      '@treeseed/treedx': 0.3.0-rc.4
+      esbuild: 0.28.2
+      typescript: 5.9.3
+      yaml: 2.9.0
+      zod: 3.25.76
+
+  '@treeseed/sdk@0.13.0-rc.53':
     dependencies:
       '@treeseed/treedx': 0.3.0-rc.4
       esbuild: 0.28.2
