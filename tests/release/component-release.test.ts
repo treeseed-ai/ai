@@ -55,6 +55,9 @@ describe('managed AI component releases', () => {
 				expect(document.services['lab-state-init']?.restart).toBe('no');
 				expect(document.services['lab-state-init']?.entrypoint?.at(-1)).toContain('chown 1000:1000 /state');
 				expect(document.services['lab-state-init']?.entrypoint?.at(-1)).toContain('chown 10001:10001 /home/hermes/.hermes /workspace');
+				expect(document.services['library-bridge']?.depends_on?.['open-webui-action-init']).toEqual({ condition: 'service_completed_successfully' });
+				expect(release.runtime.services.map(({ id }) => id)).not.toContain('open-webui-action-init');
+				expect(release.runtime.modeControl?.services.base).not.toContain('open-webui-action-init');
 				expect(compose).not.toContain('ai-shared');
 				expect(compose).not.toMatch(/^volumes:/mu);
 				expect(compose).toContain('/ai-lab/data/open-webui:/app/backend/data');

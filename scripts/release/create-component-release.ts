@@ -121,7 +121,7 @@ const definitions = {
 			{ id: 'inference', capability: 'treeai-inference-api', locality: 'local', optional: false },
 			{ id: 'training', capability: 'treeai-training-api', locality: 'local', optional: false },
 		], order: 52,
-		modeControl: { resource: 'ai-gpu', role: 'controller', services: { base: ['experience-proxy', 'controller', 'library-bridge', 'open-webui', 'open-webui-action-init', 'web-tool-proxy', 'hermes-agent', 'hermes-dashboard'], gpu: [] }, internalControl: { transport: 'mtls', clientCommonName: 'client-ai-lab-mode', path: '/v1/ai/mode' } },
+		modeControl: { resource: 'ai-gpu', role: 'controller', services: { base: ['experience-proxy', 'controller', 'library-bridge', 'open-webui', 'web-tool-proxy', 'hermes-agent', 'hermes-dashboard'], gpu: [] }, internalControl: { transport: 'mtls', clientCommonName: 'client-ai-lab-mode', path: '/v1/ai/mode' } },
 	},
 } as const;
 
@@ -233,7 +233,6 @@ function serviceContracts(componentId: keyof typeof definitions) {
 		{ id: 'controller', composeService: 'controller', endpoints: [{ id: 'control', protocol: 'http', port: 8081, visibility: 'host', defaultAlias: 'lab.ai.treeseed.localhost', aliasOverride: true, tls: 'edge', authentication: 'application', healthGate: { protocol: 'http', path: '/readyz', timeoutSeconds: 120 } }] },
 		{ id: 'library-bridge', composeService: 'library-bridge', endpoints: [] },
 		{ id: 'open-webui', composeService: 'open-webui', endpoints: [{ id: 'web', protocol: 'http', port: 8080, visibility: 'host', defaultAlias: 'chat.ai.treeseed.localhost', aliasOverride: true, tls: 'edge', authentication: 'none', healthGate: { protocol: 'http', path: '/health', timeoutSeconds: 120 } }] },
-		{ id: 'open-webui-action-init', composeService: 'open-webui-action-init', endpoints: [] },
 		{ id: 'web-tool-proxy', composeService: 'web-tool-proxy', endpoints: [] }, { id: 'hermes-agent', composeService: 'hermes-agent', endpoints: [] },
 		{ id: 'hermes-dashboard', composeService: 'hermes-dashboard', endpoints: [{ id: 'web', protocol: 'http', port: 9119, visibility: 'host', defaultAlias: 'hermes.ai.treeseed.localhost', aliasOverride: true, tls: 'edge', authentication: 'application', healthGate: { protocol: 'http', path: '/', timeoutSeconds: 120 } }] },
 	];
