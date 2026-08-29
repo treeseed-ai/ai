@@ -69,6 +69,7 @@ services:
     group_add: ["${RUNTIME_GID:?RUNTIME_GID is required}"]
     depends_on:
       open-webui: { condition: service_healthy }
+      open-webui-action-init: { condition: service_completed_successfully }
     environment:
       OPEN_WEBUI_URL: http://open-webui:8080
       TRAINING_URL: http://training-api:4780
