@@ -72,6 +72,8 @@ describe('managed AI component releases', () => {
 				expect(release.runtime.stateVolumes).toContainEqual({ id: 'postgres', volume: `/var/lib/treeseed/components/${componentId}/data/postgres`, backup: 'required' });
 				if (componentId === 'ai-training') expect(document.services['training-api']?.volumes).toContainEqual({ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-training/data/training', target: '/artifacts' });
 				if (componentId === 'ai-inference') {
+					expect(release.runtime.configuration.environment).toContainEqual({ name: 'MAX_NUM_SEQS', required: false, source: 'configuration', default: '2' });
+					expect(release.runtime.configuration.environment).toContainEqual({ name: 'GPU_MEMORY_UTILIZATION', required: false, source: 'configuration', default: '0.85' });
 					expect(document.services['inference-vllm']?.env_file).toBeUndefined();
 					expect(document.services['inference-vllm']?.networks).toEqual(['inference-private', 'inference-model-egress']);
 					expect(document.networks?.['inference-model-egress']?.internal).not.toBe(true);
