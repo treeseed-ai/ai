@@ -33,6 +33,7 @@ const definitions = {
 		],
 		configuration: {
 			environment: [
+				{ name: 'RUNTIME_GID', required: true, source: 'manager' },
 				{ name: 'SOURCE_MODEL', required: false, default: 'Qwen/Qwen3.5-4B' },
 				{ name: 'SOURCE_MODEL_REVISION', required: false, default: '851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a' },
 				{ name: 'PUBLIC_MODEL', required: false, default: 'local-model' },
@@ -64,6 +65,7 @@ const definitions = {
 		],
 		configuration: {
 			environment: [
+				{ name: 'RUNTIME_GID', required: true, source: 'manager' },
 				{ name: 'ARTIFACT_BACKEND', required: false, default: 'filesystem' },
 				{ name: 'ARTIFACT_ROOT', required: false, default: '/artifacts' },
 			],
@@ -151,6 +153,7 @@ function baseCompose(componentId: 'ai-inference' | 'ai-training') {
 	if (componentId === 'ai-training') parsed.services['training-api'].volumes = [{ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-training/data/training', target: '/artifacts' }];
 	if (componentId === 'ai-inference') {
 		const api = parsed.services['inference-api'];
+		api.group_add = ['${RUNTIME_GID:?RUNTIME_GID is required}'];
 		api.environment.ARTIFACT_SOURCE_REGISTRY = '/run/secrets/artifact-source-registry';
 		api.environment.ARTIFACT_DESTINATION_REGISTRY = '/run/secrets/artifact-destination-registry';
 		api.secrets = ['artifact-source-registry', 'artifact-destination-registry'];
@@ -164,6 +167,7 @@ function baseCompose(componentId: 'ai-inference' | 'ai-training') {
 			'artifact-destination-registry': { file: '/etc/treeseed/credentials/ai-inference-artifact-destination' },
 		};
 	}
+	if (componentId === 'ai-training') parsed.services['training-artifact'].group_add = ['${RUNTIME_GID:?RUNTIME_GID is required}'];
 	return parsed;
 }
 
