@@ -78,7 +78,7 @@ describe('managed AI component releases', () => {
 					expect(document.services['inference-gpu-state-init']?.entrypoint?.at(-1)).toContain('chown 1000:1000 /artifacts');
 					expect(document.services['inference-gpu-state-init']?.entrypoint?.at(-1)).toContain('chown 10001:10001 /state');
 					expect(release.runtime.configuration.environment).toContainEqual({ name: 'RUNTIME_GID', required: true, source: 'manager' });
-					expect(document.services['inference-api']?.group_add).toEqual(['${RUNTIME_GID:?RUNTIME_GID is required}']);
+					expect(document.services['inference-api']?.group_add).toEqual(['${RUNTIME_GID:?RUNTIME_GID is required}', '10001']);
 					expect(release.runtime.configuration.environment).toContainEqual({ name: 'MAX_NUM_SEQS', required: false, source: 'configuration', default: '2' });
 					expect(release.runtime.configuration.environment).toContainEqual({ name: 'GPU_MEMORY_UTILIZATION', required: false, source: 'configuration', default: '0.85' });
 					expect(release.runtime.services.flatMap(({ endpoints }) => endpoints).filter(({ healthGate }) => healthGate).every(({ healthGate }) => healthGate?.timeoutSeconds === 1_200)).toBe(true);
