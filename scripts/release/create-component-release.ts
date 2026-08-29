@@ -37,6 +37,8 @@ const definitions = {
 				{ name: 'SOURCE_MODEL_REVISION', required: false, default: '851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a' },
 				{ name: 'PUBLIC_MODEL', required: false, default: 'local-model' },
 				{ name: 'MAX_MODEL_LENGTH', required: false, default: '16384' },
+				{ name: 'MAX_NUM_SEQS', required: false, default: '2' },
+				{ name: 'GPU_MEMORY_UTILIZATION', required: false, default: '0.85' },
 			],
 			secretEnvironment: [
 				{ name: 'INFERENCE_DATABASE_URL', required: true },

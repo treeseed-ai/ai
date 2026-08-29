@@ -35,6 +35,10 @@ describe("Deployment-managed AI mode component boundary", () => {
 		expect(compose.services["training-manager"].depends_on).not.toHaveProperty("training-marker");
 		expect(compose.services["inference-manager"].environment.TREESEED_GPU_ADMISSION_FILE).toBe("/run/treeseed-ai/gate.json");
 		expect(compose.services["inference-vllm"].environment.TREESEED_VLLM_MODEL).toBe("${PUBLIC_MODEL:-local-model}");
+		expect(compose.services["inference-vllm"].command).toEqual(expect.arrayContaining([
+			"--max-num-seqs", "${MAX_NUM_SEQS:-2}",
+			"--gpu-memory-utilization", "${GPU_MEMORY_UTILIZATION:-0.85}",
+		]));
 		expect(readFileSync("containers/inference/api.Dockerfile", "utf8")).toContain("/usr/local/bin/treeseed-ai-gpu-gate");
 		expect(readFileSync("containers/training/api.Dockerfile", "utf8")).toContain("/usr/local/bin/treeseed-ai-gpu-gate");
 		expect(readFileSync("containers/inference/vllm.Dockerfile", "utf8")).toContain("/usr/local/bin/treeseed-ai-warm");
