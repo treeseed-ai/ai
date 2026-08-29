@@ -28,6 +28,7 @@
 - Reuse prior successful GPU qualification evidence until a relevant fingerprint, implementation, dataset contract, or final release gate changes. Do not repeat long training merely for reassurance.
 - For long external workflows, use infrequent bounded status snapshots. Do not stream repetitive watch output or spend active work cycles polling unchanged state.
 - Before an expensive build, scan, publication, or GPU run, identify the exact unresolved acceptance criterion it proves and use the smallest affected package/image/test scope.
+- Before publishing a replacement release candidate, batch every currently known activation defect and run `pnpm check:activation-closure`. The affected closure must validate generated Compose, persistent versus one-shot service ownership, state-volume permissions for each declared runtime identity, every lifecycle executable, and mode-gate read/write behavior. Cut another candidate only for a downstream defect that the passing closure could not observe, and record why it was previously hidden.
 
 ## Qualification evidence and GPU cost
 

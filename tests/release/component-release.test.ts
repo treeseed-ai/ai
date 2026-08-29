@@ -95,6 +95,8 @@ describe('managed AI component releases', () => {
 				}
 				if (componentId === 'ai-training') {
 					expect(document.services['training-gpu-state-init']?.entrypoint?.at(-1)).toContain('chown 10001:10001 /artifacts /archive /models');
+					expect(document.services['training-api']?.volumes).toContain('gpu-admission:/run/treeseed-ai');
+					expect(document.services['training-api']?.volumes).toContainEqual({ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-training/data/training', target: '/artifacts' });
 					expect(release.runtime.configuration.environment).toContainEqual({ name: 'RUNTIME_GID', required: true, source: 'manager' });
 					expect(document.services['training-artifact']?.group_add).toEqual(['${RUNTIME_GID:?RUNTIME_GID is required}']);
 					for (const worker of ['training-marker', 'training-axolotl']) {
@@ -104,6 +106,9 @@ describe('managed AI component releases', () => {
 					expect(document.networks?.['training-model-egress']?.internal).not.toBe(true);
 				}
 				expect(release.runtime.modeControl).toMatchObject({ resource: 'ai-gpu', role: componentId === 'ai-inference' ? 'inference' : 'training', gate: { executable: '/usr/local/bin/treeseed-ai-gpu-gate' } });
+				const gateService = release.runtime.modeControl?.gate?.service;
+				expect(gateService && document.services[gateService]?.volumes, `${componentId} lifecycle gate must mount its admission state`).toContain('gpu-admission:/run/treeseed-ai');
+				expect(release.runtime.modeControl?.services.base).toContain(componentId === 'ai-inference' ? 'inference-gpu-state-init' : 'training-gpu-state-init');
 			}
 		}
 	});

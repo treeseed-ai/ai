@@ -150,7 +150,10 @@ function baseCompose(componentId: 'ai-inference' | 'ai-training') {
 	parsed.name = `treeseed-${componentId}`;
 	parsed.services = Object.fromEntries(definitions[componentId].services.map((name) => [name, parsed.services[name]]));
 	parsed.networks = Object.fromEntries(Object.entries(parsed.networks).filter(([name]) => name === `${family}-private` || name === `${family}-model-egress` || name === 'platform' || name === 'treeseed-edge'));
-	if (componentId === 'ai-training') parsed.services['training-api'].volumes = [{ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-training/data/training', target: '/artifacts' }];
+	if (componentId === 'ai-training') parsed.services['training-api'].volumes = [
+		...(parsed.services['training-api'].volumes ?? []),
+		{ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-training/data/training', target: '/artifacts' },
+	];
 	if (componentId === 'ai-inference') {
 		const api = parsed.services['inference-api'];
 		api.group_add = ['${RUNTIME_GID:?RUNTIME_GID is required}', '10001'];

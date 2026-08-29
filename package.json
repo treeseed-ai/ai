@@ -24,6 +24,7 @@
     "test": "vitest run",
     "check:file-architecture": "node --import tsx scripts/support/check-source-shape.ts",
     "check:release": "node --import tsx scripts/release/validate.ts",
+    "check:activation-closure": "vitest run tests/release/component-release.test.ts tests/release/ai-mode-component.test.ts",
     "build:component-release": "node --import tsx scripts/release/create-component-release.ts",
     "contracts:generate": "node --import tsx scripts/sdk/generate-contracts.ts",
     "contracts:check": "pnpm contracts:generate && git diff --exit-code -- packages/treeai-sdk/openapi packages/treeai-sdk/operation-inventory.json packages/treeai-sdk/src/generated/contract.ts",
