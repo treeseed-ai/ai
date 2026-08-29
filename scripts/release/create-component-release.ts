@@ -153,7 +153,7 @@ function baseCompose(componentId: 'ai-inference' | 'ai-training') {
 	if (componentId === 'ai-training') parsed.services['training-api'].volumes = [{ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-training/data/training', target: '/artifacts' }];
 	if (componentId === 'ai-inference') {
 		const api = parsed.services['inference-api'];
-		api.group_add = ['${RUNTIME_GID:?RUNTIME_GID is required}'];
+		api.group_add = ['${RUNTIME_GID:?RUNTIME_GID is required}', '10001'];
 		api.environment.ARTIFACT_SOURCE_REGISTRY = '/run/secrets/artifact-source-registry';
 		api.environment.ARTIFACT_DESTINATION_REGISTRY = '/run/secrets/artifact-destination-registry';
 		api.secrets = ['artifact-source-registry', 'artifact-destination-registry'];
