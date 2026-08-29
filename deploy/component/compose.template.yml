@@ -9,8 +9,15 @@ services:
     <<: *security
     user: "0:0"
     restart: "no"
-    entrypoint: ["sh", "-c", "install -d -o 1000 -g 1000 -m 0770 /run/treeseed-ai"]
-    volumes: [gpu-admission:/run/treeseed-ai]
+    entrypoint: ["sh", "-c", "install -d -o 1000 -g 1000 -m 0770 /run/treeseed-ai && chown 1000:1000 /artifacts && chmod 0750 /artifacts && chown 10001:10001 /state && chmod 0750 /state"]
+    volumes:
+      - gpu-admission:/run/treeseed-ai
+      - type: bind
+        source: ${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai/data/artifacts
+        target: /artifacts
+      - type: bind
+        source: ${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai/data/inference
+        target: /state
     networks: [inference-private]
   inference-postgres:
     image: "@POSTGRES_IMAGE@"
@@ -133,8 +140,18 @@ services:
     <<: *security
     user: "0:0"
     restart: "no"
-    entrypoint: ["sh", "-c", "install -d -o 10001 -g 10001 -m 0770 /run/treeseed-ai"]
-    volumes: [gpu-admission:/run/treeseed-ai]
+    entrypoint: ["sh", "-c", "install -d -o 10001 -g 10001 -m 0770 /run/treeseed-ai && chown 10001:10001 /artifacts /archive /models && chmod 0750 /artifacts /archive /models"]
+    volumes:
+      - gpu-admission:/run/treeseed-ai
+      - type: bind
+        source: ${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai/data/training
+        target: /artifacts
+      - type: bind
+        source: ${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai/data/archive
+        target: /archive
+      - type: bind
+        source: ${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai/data/models
+        target: /models
     networks: [training-private]
   training-migrations:
     image: "@TRAINING_MIGRATIONS_IMAGE@"

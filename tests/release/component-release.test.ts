@@ -32,7 +32,7 @@ describe('managed AI component releases', () => {
 		for (const [componentId, componentRoles] of expected) {
 			const release = componentReleaseSchema.parse(JSON.parse(readFileSync(resolve(output, `${componentId}-component-release.json`), 'utf8')));
 			const compose = readFileSync(resolve(output, `${componentId}-compose.yml`), 'utf8');
-			const document = YAML.parse(compose) as { services: Record<string, { image: string; ports?: unknown; networks?: string[]; restart?: string; healthcheck?: unknown; env_file?: unknown; group_add?: string[]; volumes?: Array<string | { source?: string; target?: string }> }>; secrets?: Record<string, { file: string }>; networks?: Record<string, { internal?: boolean }> };
+			const document = YAML.parse(compose) as { services: Record<string, { image: string; ports?: unknown; networks?: string[]; restart?: string; healthcheck?: unknown; env_file?: unknown; entrypoint?: string[]; group_add?: string[]; volumes?: Array<string | { source?: string; target?: string }> }>; secrets?: Record<string, { file: string }>; networks?: Record<string, { internal?: boolean }> };
 			const acceptedImages = new Set(release.images.map(({ repository, digest }) => `${repository}@${digest}`));
 			expect(release.componentId).toBe(componentId);
 			expect(release.release).toBe('0.11.0~rc1-2');
@@ -72,6 +72,8 @@ describe('managed AI component releases', () => {
 				expect(release.runtime.stateVolumes).toContainEqual({ id: 'postgres', volume: `/var/lib/treeseed/components/${componentId}/data/postgres`, backup: 'required' });
 				if (componentId === 'ai-training') expect(document.services['training-api']?.volumes).toContainEqual({ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-training/data/training', target: '/artifacts' });
 				if (componentId === 'ai-inference') {
+					expect(document.services['inference-gpu-state-init']?.entrypoint?.at(-1)).toContain('chown 1000:1000 /artifacts');
+					expect(document.services['inference-gpu-state-init']?.entrypoint?.at(-1)).toContain('chown 10001:10001 /state');
 					expect(release.runtime.configuration.environment).toContainEqual({ name: 'RUNTIME_GID', required: true, source: 'manager' });
 					expect(document.services['inference-api']?.group_add).toEqual(['${RUNTIME_GID:?RUNTIME_GID is required}']);
 					expect(release.runtime.configuration.environment).toContainEqual({ name: 'MAX_NUM_SEQS', required: false, source: 'configuration', default: '2' });
@@ -86,6 +88,7 @@ describe('managed AI component releases', () => {
 					expect(release.runtime.configuration.secretFiles.map(({ id }) => id)).toEqual(['artifact-source-registry', 'artifact-destination-registry']);
 				}
 				if (componentId === 'ai-training') {
+					expect(document.services['training-gpu-state-init']?.entrypoint?.at(-1)).toContain('chown 10001:10001 /artifacts /archive /models');
 					expect(release.runtime.configuration.environment).toContainEqual({ name: 'RUNTIME_GID', required: true, source: 'manager' });
 					expect(document.services['training-artifact']?.group_add).toEqual(['${RUNTIME_GID:?RUNTIME_GID is required}']);
 					for (const worker of ['training-marker', 'training-axolotl']) {
