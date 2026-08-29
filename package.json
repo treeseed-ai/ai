@@ -13,8 +13,12 @@
   },
   "type": "module",
   "packageManager": "pnpm@10.15.1",
-  "engines": { "node": ">=22" },
-  "workspaces": ["packages/*"],
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "build": "pnpm --filter @ai-platform/common build && pnpm --filter @ai-platform/manager build && pnpm --filter @ai-platform/cli build && pnpm --filter @ai-platform/host-runtime build && pnpm --filter @ai-platform/inference-api build && pnpm --filter @ai-platform/inference-manager build && pnpm --filter @ai-platform/training-api build && pnpm --filter @ai-platform/training-manager build && pnpm --filter @ai-platform/lab build && pnpm --filter @treeseed/treeai build",
     "test": "vitest run",
@@ -35,7 +39,7 @@
     "yaml": "^2.8.1"
   },
   "devDependencies": {
-    "@treeseed/sdk": "0.13.0-rc.52",
+    "@treeseed/sdk": "0.13.0-rc.53",
     "@types/node": "^24.6.0",
     "@types/pg": "^8.15.5",
     "esbuild": "^0.28.2",
