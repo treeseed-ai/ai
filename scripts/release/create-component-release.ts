@@ -81,7 +81,7 @@ const definitions = {
 	},
 	'ai-lab': {
 		roles: ['lab-controller', 'lab-experience-proxy', 'lab-library-bridge', 'lab-open-webui', 'hermes-agent', 'lab-web-tool-proxy'],
-		services: ['experience-proxy', 'controller', 'library-bridge', 'open-webui', 'open-webui-action-init', 'web-tool-proxy', 'hermes-agent', 'hermes-dashboard'],
+		services: ['lab-state-init', 'experience-proxy', 'controller', 'library-bridge', 'open-webui', 'open-webui-action-init', 'web-tool-proxy', 'hermes-agent', 'hermes-dashboard'],
 		states: [
 			{ id: 'state', volume: '/var/lib/treeseed/components/ai-lab/data/state', backup: 'required' },
 			{ id: 'hermes', volume: '/var/lib/treeseed/components/ai-lab/data/hermes', backup: 'required' },
@@ -174,6 +174,7 @@ function baseCompose(componentId: 'ai-inference' | 'ai-training') {
 function labCompose() {
 	const parsed = YAML.parse(readFileSync(resolve('deploy/lab/compose.yml'), 'utf8')) as Record<string, any>;
 	const roleByService: Record<string, string> = {
+		'lab-state-init': 'lab-controller',
 		'experience-proxy': 'lab-experience-proxy', controller: 'lab-controller', 'library-bridge': 'lab-library-bridge',
 		'open-webui': 'lab-open-webui', 'open-webui-action-init': 'lab-open-webui',
 		'web-tool-proxy': 'lab-web-tool-proxy', 'hermes-agent': 'hermes-agent', 'hermes-dashboard': 'hermes-agent',
@@ -186,7 +187,9 @@ function labCompose() {
 		parsed.services[service].volumes = (parsed.services[service].volumes ?? []).map((volume: string) =>
 			volume.split(':')[1] === target ? `${dataRoot}/${source}:${target}${suffix}` : volume);
 	};
-	for (const service of ['experience-proxy', 'controller']) replaceVolume(service, '/state', 'state');
+	for (const service of ['lab-state-init', 'experience-proxy', 'controller']) replaceVolume(service, '/state', 'state');
+	replaceVolume('lab-state-init', '/home/hermes/.hermes', 'hermes');
+	replaceVolume('lab-state-init', '/workspace', 'workspace');
 	replaceVolume('controller', '/workspace', 'workspace', ':ro');
 	replaceVolume('open-webui', '/app/backend/data', 'open-webui');
 	for (const service of ['hermes-agent', 'hermes-dashboard']) {
@@ -225,6 +228,7 @@ function serviceContracts(componentId: keyof typeof definitions) {
 		{ id: 'training-api', composeService: 'training-api', endpoints: [{ id: 'control', protocol: 'http', port: 4780, visibility: 'host', defaultAlias: 'training.ai.treeseed.localhost', aliasOverride: true, tls: 'edge', authentication: 'application', healthGate: { protocol: 'http', path: '/readyz', timeoutSeconds: 600 } }] },
 	];
 	return [
+		{ id: 'lab-state-init', composeService: 'lab-state-init', endpoints: [] },
 		{ id: 'experience-proxy', composeService: 'experience-proxy', endpoints: [] },
 		{ id: 'controller', composeService: 'controller', endpoints: [{ id: 'control', protocol: 'http', port: 8081, visibility: 'host', defaultAlias: 'lab.ai.treeseed.localhost', aliasOverride: true, tls: 'edge', authentication: 'application', healthGate: { protocol: 'http', path: '/readyz', timeoutSeconds: 120 } }] },
 		{ id: 'library-bridge', composeService: 'library-bridge', endpoints: [] },
