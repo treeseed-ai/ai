@@ -17,8 +17,8 @@ export function verifyDelegation(token: string, trust: DelegationTrust, now = Ma
 			|| claims.teamId !== trust.teamId || claims.nodeId !== trust.nodeId || typeof claims.sub !== 'string' || !claims.sub
 			|| typeof claims.jti !== 'string' || !claims.jti || !Number.isInteger(claims.iat) || !Number.isInteger(claims.exp)
 			|| claims.iat > now + 5 || claims.exp <= now || claims.exp <= claims.iat || claims.exp - claims.iat > 120
-			|| !Array.isArray(claims.scopes) || !claims.scopes.length || claims.scopes.length > 32
-			|| claims.scopes.some((scope: unknown) => typeof scope !== 'string' || !/^[a-z][a-z-]+:[a-z][a-z-]+$/u.test(scope))) throw new Error();
+			|| !Array.isArray(claims.scopes) || claims.scopes.length > 32
+			|| claims.scopes.some((scope: unknown) => typeof scope !== 'string' || !/^[a-z][a-z-]+(?::[a-z][a-z-]+)+$/u.test(scope))) throw new Error();
 		return { id: claims.sub, teamId: claims.teamId, nodeId: claims.nodeId, scopes: [...new Set(claims.scopes)] as string[] };
 	} catch { throw new Error('Control-plane delegation is invalid or expired.'); }
 }
