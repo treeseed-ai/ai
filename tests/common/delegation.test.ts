@@ -1,6 +1,7 @@
 import { generateKeyPairSync, sign } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { configuredDelegationTrust, verifyDelegation } from '../../packages/common/src/auth/delegation.js';
+import { TREEAI_OPERATIONS } from '../../packages/treeai-sdk/src/generated/contract.js';
 
 const pair = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const publicKey = { ...pair.publicKey.export({ format: 'jwk' }), kid: 'fixture', alg: 'RS256', use: 'sig' };
@@ -13,6 +14,7 @@ function token(overrides: Record<string, unknown> = {}, header: Record<string, u
 describe('bounded control-plane delegation', () => {
 	it('accepts exact trusted identity and operation scopes', () => {
 		expect(verifyDelegation(token(), trust, 1001)).toEqual({ id: 'actor', teamId: 'team', nodeId: 'node', scopes: ['inference:invoke'] });
+		for (const operation of TREEAI_OPERATIONS) expect(verifyDelegation(token({ scopes: operation.scopes }), trust, 1001).scopes).toEqual(operation.scopes);
 	});
 	it('rejects cross-team/node, wrong issuer/audience, expired and oversized grants', () => {
 		for (const value of [{ teamId: 'other' }, { nodeId: 'other' }, { iss: 'other' }, { aud: 'other' }, { exp: 1001 }, { exp: 1200 }, { iat: 1010 }, { scopes: ['*'] }])

@@ -210,9 +210,7 @@ function labCompose() {
 	parsed.networks.platform = { name: 'treeseed-platform', external: true };
 	parsed.networks['treeseed-edge'] = { name: 'treeseed-edge', external: true };
 	delete parsed.volumes;
-	for (const secret of Object.values(parsed.secrets) as Array<{ file: string }>) secret.file = secret.file.endsWith('/training-source.json')
-		? '/etc/treeseed/credentials/ai-lab-training-source'
-		: secret.file.replace('/etc/treeseed-ai/lab/secrets/', '/etc/treeseed/credentials/ai-lab-');
+	for (const secret of Object.values(parsed.secrets) as Array<{ file: string }>) secret.file = secret.file.replace('/etc/treeseed-ai/lab/secrets/', '/etc/treeseed/credentials/ai-lab-');
 	return parsed;
 }
 
