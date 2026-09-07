@@ -173,6 +173,7 @@ export function createLabController(options: ControllerOptions = {}) {
 		return context.json(result, 202);
 	}
 	const app = new Hono();
+	app.get("/", (context) => context.html('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TreeSeed AI Lab API</title><main><h1>TreeSeed AI Lab API</h1><p>This is a backend API, not the chat application. It manages agent profiles, captured interactions, and training-library workflows.</p><p>Use the TreeSeed application to manage AI services. API operations require authorized credentials.</p><nav aria-label="API resources"><a href="/docs">API documentation</a> · <a href="/openapi.json">OpenAPI specification</a> · <a href="/healthz">Service health</a></nav></main></html>'));
 	app.get("/healthz", (context) => context.json({ ok: true })); app.get("/readyz", async (context) => { try { await hermes("/health"); return context.json({ ok: true }); } catch { return context.json({ ok: false, reason: "hermes-unavailable" }, 503); } });
 	app.get("/openapi.json", (context) => context.json(labOpenApi()));
 	app.get("/docs", (context) => context.html('<!doctype html><title>TreeAI Lab API</title><script id="api-reference" data-url="/openapi.json"></script><script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>'));
