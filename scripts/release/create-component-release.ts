@@ -20,6 +20,8 @@ const debianRelease = `${release.replace(/-rc\.?([0-9]+)$/u, '~rc$1')}-${revisio
 const manifest = JSON.parse(readFileSync(resolve(manifestPath), 'utf8')) as ImageManifest;
 const output = resolve(process.env.TREEAI_COMPONENT_OUTPUT ?? 'release-assets/component');
 mkdirSync(output, { recursive: true });
+const delegationEnvironment = ['AI_DELEGATION_ISSUER', 'AI_DELEGATION_AUDIENCE', 'AI_TEAM_ID', 'AI_NODE_ID', 'AI_DELEGATION_PUBLIC_KEYS']
+	.map(name => ({ name, required: true, source: 'configuration' as const }));
 
 const definitions = {
 	'ai-inference': {
@@ -33,6 +35,7 @@ const definitions = {
 		],
 		configuration: {
 			environment: [
+				...delegationEnvironment,
 				{ name: 'RUNTIME_GID', required: true, source: 'manager' },
 				{ name: 'SOURCE_MODEL', required: false, default: 'Qwen/Qwen3.5-4B' },
 				{ name: 'SOURCE_MODEL_REVISION', required: false, default: '851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a' },
@@ -65,6 +68,7 @@ const definitions = {
 		],
 		configuration: {
 			environment: [
+				...delegationEnvironment,
 				{ name: 'RUNTIME_GID', required: true, source: 'manager' },
 				{ name: 'ARTIFACT_BACKEND', required: false, default: 'filesystem' },
 				{ name: 'ARTIFACT_ROOT', required: false, default: '/artifacts' },
@@ -90,6 +94,7 @@ const definitions = {
 		],
 		configuration: {
 				environment: [
+				...delegationEnvironment,
 				{ name: 'BASE_MODEL_REVISION', required: true, default: '851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a' },
 				{ name: 'OPEN_WEBUI_AUTH', required: false, default: 'false' },
 				{ name: 'OPEN_WEBUI_ENABLE_SIGNUP', required: false, default: 'false' },
@@ -102,7 +107,6 @@ const definitions = {
 			],
 			secretEnvironment: [{ name: 'AI_LAB_API_KEYS', required: true }],
 			secretFiles: [
-				{ id: 'training-source', path: '/etc/treeseed/credentials/ai-lab-training-source', required: true },
 				{ id: 'factory-inference-key', path: '/etc/treeseed/credentials/ai-lab-factory-inference-key', required: true },
 				{ id: 'factory-training-key', path: '/etc/treeseed/credentials/ai-lab-factory-training-key', required: true },
 				{ id: 'hermes-api-key', path: '/etc/treeseed/credentials/ai-lab-hermes-api-key', required: true },
@@ -183,6 +187,7 @@ function labCompose() {
 		'web-tool-proxy': 'lab-web-tool-proxy', 'hermes-agent': 'hermes-agent', 'hermes-dashboard': 'hermes-agent',
 	};
 	parsed.name = 'treeseed-ai-lab';
+	for (const { name } of delegationEnvironment) parsed.services.controller.environment[name] = `\${${name}:?${name} is required}`;
 	delete parsed.services.gateway;
 	for (const [service, role] of Object.entries(roleByService)) parsed.services[service].image = exactImage(role);
 	const dataRoot = '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-lab/data';

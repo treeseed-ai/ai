@@ -63,7 +63,9 @@ describe('managed AI component releases', () => {
 				expect(compose).toContain('/ai-lab/data/open-webui:/app/backend/data');
 				expect(compose).not.toContain('/usr/lib/treeseed-ai');
 				expect(release.runtime.stateVolumes).toContainEqual({ id: 'workspace', volume: '/var/lib/treeseed/components/ai-lab/data/workspace', backup: 'required' });
-				expect(release.runtime.configuration.secretFiles).toHaveLength(11);
+				expect(release.runtime.configuration.secretFiles).toHaveLength(10);
+				expect(compose).not.toContain('training-source');
+				expect(compose).toContain('AI_DELEGATION_PUBLIC_KEYS');
 				expect(release.runtime.modeControl).toMatchObject({ role: 'controller', internalControl: { transport: 'mtls', path: '/v1/ai/mode' } });
 				expect(compose).not.toContain('factory-control-key');
 				expect(compose).not.toContain('FACTORY_URL');
