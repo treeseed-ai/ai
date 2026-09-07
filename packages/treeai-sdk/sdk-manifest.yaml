@@ -3,7 +3,7 @@ language: typescript
 version: 0.11.0
 openapiVersion: 3.1.1
 operationInventory: operation-inventory.json
-services: [inference, training, lab, qualification]
+services: [inference, training, lab]
 capabilities:
   health.basic: implemented
   inference.models: implemented
@@ -19,8 +19,5 @@ capabilities:
   lab.sessions: implemented
   lab.routing: implemented
   lab.library_cycles: implemented
-  qualification.profiles: implemented
-  qualification.campaigns: implemented
-  platform.gpu_mode: implemented
   observability.events: implemented
   observability.metrics: implemented

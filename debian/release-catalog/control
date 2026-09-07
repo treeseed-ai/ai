@@ -1,7 +1,0 @@
-Package: treeseed-ai-release-catalog
-Version: 0.11.0-1
-Section: admin
-Priority: optional
-Architecture: all
-Maintainer: TreeSeed AI Releases <releases@treeseed.ai>
-Description: Signed release compatibility and deployment catalog for TreeAI

@@ -12,13 +12,9 @@ export const TREEAI_OPENAPI_CONTRACTS = {
   "lab": {
     "openapiVersion": "3.1.1",
     "digest": "sha256:8f9a3ca31a63143506e1b28ddb78eda50b2f6760278531b723047d968f56aa07"
-  },
-  "qualification": {
-    "openapiVersion": "3.1.1",
-    "digest": "sha256:ed7537eb4145563e245dd8f11ea6d7825ad5959ebb6df4206fb9ec520642cea6"
   }
 } as const;
-export const TREEAI_OPERATION_INVENTORY_DIGEST = 'sha256:a8ee2e1d9e833288d94567e7efdf599fc7b2d8230e6db29ba0091ea24d9c1c58' as const;
+export const TREEAI_OPERATION_INVENTORY_DIGEST = 'sha256:f1eaf33641e615e2f714d01d96e95454c42482d4ebbece6156e7601c5bb645d7' as const;
 export const TREEAI_OPERATIONS = [
   {
     "service": "inference",
@@ -626,141 +622,6 @@ export const TREEAI_OPERATIONS = [
     "scopes": [
       "lab:write"
     ],
-    "kind": "mutation"
-  },
-  {
-    "service": "qualification",
-    "operationId": "qualification.get.events.stream",
-    "method": "GET",
-    "path": "/v1/events/stream",
-    "summary": "qualification.get.events.stream",
-    "scopes": [],
-    "kind": "read"
-  },
-  {
-    "service": "qualification",
-    "operationId": "qualification.get.healthz",
-    "method": "GET",
-    "path": "/healthz",
-    "summary": "qualification.get.healthz",
-    "scopes": [],
-    "kind": "read"
-  },
-  {
-    "service": "qualification",
-    "operationId": "qualification.get.metrics",
-    "method": "GET",
-    "path": "/v1/metrics",
-    "summary": "qualification.get.metrics",
-    "scopes": [],
-    "kind": "read"
-  },
-  {
-    "service": "qualification",
-    "operationId": "qualification.get.mode",
-    "method": "GET",
-    "path": "/v1/mode",
-    "summary": "qualification.get.mode",
-    "scopes": [],
-    "kind": "read"
-  },
-  {
-    "service": "qualification",
-    "operationId": "qualification.get.qualification.campaigns",
-    "method": "GET",
-    "path": "/v1/qualification/campaigns",
-    "summary": "qualification.get.qualification.campaigns",
-    "scopes": [],
-    "kind": "read"
-  },
-  {
-    "service": "qualification",
-    "operationId": "qualification.get.qualification.campaigns.id",
-    "method": "GET",
-    "path": "/v1/qualification/campaigns/{id}",
-    "summary": "qualification.get.qualification.campaigns.id",
-    "scopes": [],
-    "kind": "read"
-  },
-  {
-    "service": "qualification",
-    "operationId": "qualification.get.qualification.profile",
-    "method": "GET",
-    "path": "/v1/qualification/profile",
-    "summary": "qualification.get.qualification.profile",
-    "scopes": [],
-    "kind": "read"
-  },
-  {
-    "service": "qualification",
-    "operationId": "qualification.get.qualification.profiles",
-    "method": "GET",
-    "path": "/v1/qualification/profiles",
-    "summary": "qualification.get.qualification.profiles",
-    "scopes": [],
-    "kind": "read"
-  },
-  {
-    "service": "qualification",
-    "operationId": "qualification.get.readyz",
-    "method": "GET",
-    "path": "/readyz",
-    "summary": "qualification.get.readyz",
-    "scopes": [],
-    "kind": "read"
-  },
-  {
-    "service": "qualification",
-    "operationId": "qualification.get.status",
-    "method": "GET",
-    "path": "/v1/status",
-    "summary": "qualification.get.status",
-    "scopes": [],
-    "kind": "read"
-  },
-  {
-    "service": "qualification",
-    "operationId": "qualification.get.transitions.id",
-    "method": "GET",
-    "path": "/v1/transitions/{id}",
-    "summary": "qualification.get.transitions.id",
-    "scopes": [],
-    "kind": "read"
-  },
-  {
-    "service": "qualification",
-    "operationId": "qualification.get.version",
-    "method": "GET",
-    "path": "/v1/version",
-    "summary": "qualification.get.version",
-    "scopes": [],
-    "kind": "read"
-  },
-  {
-    "service": "qualification",
-    "operationId": "qualification.post.mode",
-    "method": "POST",
-    "path": "/v1/mode",
-    "summary": "qualification.post.mode",
-    "scopes": [],
-    "kind": "mutation"
-  },
-  {
-    "service": "qualification",
-    "operationId": "qualification.post.qualification.campaigns",
-    "method": "POST",
-    "path": "/v1/qualification/campaigns",
-    "summary": "qualification.post.qualification.campaigns",
-    "scopes": [],
-    "kind": "mutation"
-  },
-  {
-    "service": "qualification",
-    "operationId": "qualification.post.qualification.campaigns.id.cancel",
-    "method": "POST",
-    "path": "/v1/qualification/campaigns/{id}/cancel",
-    "summary": "qualification.post.qualification.campaigns.id.cancel",
-    "scopes": [],
     "kind": "mutation"
   },
   {

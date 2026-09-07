@@ -1,52 +1,37 @@
-# Operations
+# AI operations
 
-Install the downloaded `treeseed-ai_*.deb` once. Its maintainer script only creates protected seed state and launches `treeseed-ai-bootstrap.service` asynchronously. The service waits for APT/dpkg locks, installs the private runtime, CLI, catalog, and manager from the signed repository, then hands desired state to the manager.
+## One host authority
 
-### Explicit 0.4 takeover
+Use the TreeSeed manager and `trsd` for installation, updates, health, GPU mode, and recovery. Platform supplies the composition; AI supplies immutable component contracts. There is no independent AI installer, APT repository, host supervisor, or host configuration.
 
-An installed 0.4 local factory has no unified TreeAI configuration, and its package removal guard owns the legacy coordinator. The central installer detects this layout and deliberately does not begin handoff automatically. It also does not stop containers, rewrite product environments, or touch volumes during package installation.
+Runtime identities are generated on the installed host. Source repositories must not contain hostnames, personal paths, credentials, or runtime receipts. An update must preserve existing provider and artifact-signing identities without purge or bootstrap replacement.
 
-Review and approve the fixed migration after installing the central package:
+## Service-vault storage
 
-```bash
-sudo /usr/lib/treeseed-ai/bootstrap/migrate-0.4.sh plan
-sudo /usr/lib/treeseed-ai/bootstrap/migrate-0.4.sh apply --confirm
-sudo journalctl -fu treeseed-ai-bootstrap.service
-```
+An authorized team service manager binds a registered AI node to a configured Cloudflare object-storage connection and an explicitly selected private bucket. Bucket verification adopts an existing private bucket or creates the selected bucket; it refuses public access without silently changing policy.
 
-The plan blocks when inference or GPU training counters are nonzero, the persisted mode is unsafe, or required bundled PostgreSQL/MinIO credentials are absent. Apply records approval and starts the asynchronous bootstrap. At the dpkg boundary it backs up and hashes the legacy environments and coordinator assets, disables the old coordinator, upgrades the repository-managed packages, and converges with registry images. Existing Compose project names and Docker volumes are retained. PostgreSQL, S3, and MinIO credentials are read from the old product environments; TLS, artifact-signing material, and `awake`/`sleep` mode move to manager ownership. A failure before package installation restores the old coordinator. Once dpkg starts, recovery remains manager-owned because restarting old code against partially upgraded files is unsafe.
+The API resolves current team/node/project authority and vault custody for every request. AI signs a fresh, short-lived proof with its Deployment-provisioned Ed25519 workload identity. The API rejects replay and enforces a per-node issuance limit before retrieving the parent token in a bounded vault session.
 
-Use `treeai platform status`, `treeai platform doctor`, `treeai platform events`, and `treeai update watch` for live operation. Read-only monitoring and mode changes use the authenticated manager API. Applying releases, changing channels, adopting a different configuration ID, component ownership, and recovery require local root over `/run/treeseed-ai/manager/control.sock`.
+Deployment mints a 60-second R2 credential scoped beneath:
 
-## Desired state
+`teams/<teamId>/projects/<projectId>/ai/v1/nodes/<nodeId>/<storeId>/`
 
-The active configuration is `/etc/treeseed-ai/platform.json` and conforms to `treeai.platform/v1`. Repository upgrades never overwrite it. A seed with the same configuration ID and a higher generation is staged automatically; a different ID requires `sudo treeai config adopt --confirm`. External credentials are local secret-provider references only.
+A grant permits one action against an exact object (or an explicitly requested listing prefix). Inference may read the registered training store but may not write it. Workloads never receive the parent provider credential. TLS verification is mandatory and no ambient AWS credential fallback exists.
 
-Configured installers may include temporary TreeAI-owned credentials. Initial convergence replaces them, records seed consumption, and warns the operator to delete the downloaded package. Final private material remains under `/etc/treeseed-ai`.
+Revocation denies new operations immediately at the API boundary; already-issued provider credentials expire within 60 seconds. Issuance limits are not storage quotas or hard spending ceilings. Credentials, signed proofs, and lease values must not enter receipts, logs, configuration, or evidence.
 
-## Updates
+## Artifact continuity
 
-Stable hosts check daily, stage compatible releases, and apply them Sunday at 03:00 local time with jitter. Development hosts use a separately signed suite and a persistent 60-second timer. An unchanged catalog generation causes no package download, image pull, migration, or restart. Network failures use bounded exponential backoff.
+Filesystem and managed R2 stores use canonical `artifact://<storeId>/<key>` references and immutable SHA-256 metadata. Static credential registries and legacy bucket aliases are rejected.
 
-Every update is catalog-driven. Package channel and image source are independent. A `package-only` development generation reuses signed production image digests and may converge automatically. A `local-images-required` generation is downloaded and staged, but package installation is postponed until an explicit repository build creates a matching receipt:
+Do not change an existing artifact backend merely by toggling configuration. Inventory and quiesce affected jobs, verify destination access, copy and verify immutable records, then switch all consumers together. Preserve the source until acceptance. Existing external-storage bindings cannot be silently redirected to another connection or bucket.
 
-```bash
-sudo treeai local-build plan --source /home/adrian/Projects/ai
-sudo treeai local-build build --source /home/adrian/Projects/ai
-```
+Single-object uploads are bounded to 5 GB in this implementation. Longer-running operations renew scoped access rather than requesting permanent tokens. Training execution requires its own end-to-end qualification.
 
-The receipt binds the catalog generation, exact source revision, role build identities, amd64 image IDs/configuration digests, base digests, dirty-tree state, and smoke results. A missing image, moved tag, different commit, or mismatched identity blocks before `dpkg`. The manager never clones source or runs repository Dockerfiles from its timer.
+## GPU mode and recovery
 
-The manager also rejects removals, implicit downgrades, foreign origins, and uncataloged packages; downloads before installation; pulls only changed production and upstream runtime image digests; validates prerequisites; drains affected work; records receipts and last-known-good state; migrates in declared order; and reconciles only affected services. Compose reuses unchanged containers, so an unchanged vLLM digest is neither pulled nor restarted. Drain expiry postpones work without killing it. Cancellation ends when dpkg installation begins.
+The manager's awake transition drains training and warms inference; sleep drains inference and admits the selected training services. AI reads the manager-owned admission/activity files and never invokes Docker to change modes.
 
-Use `sudo treeai update channel stable|development` to switch suites. Returning from a development version never performs an implicit Debian downgrade. Major, breaking, destructive, reboot, driver, and downgrade changes require explicit local approval.
+Before restore, verify that an encrypted archive covers every required state volume in the active component manifests at the configured runtime data root. A valid receipt or encryption check alone is insufficient. Preserve independent databases, artifact-signing identity, managed vault state, and referenced artifacts together; do not start an old writer against incompatible migrated state.
 
-## GPU modes
-
-`treeai mode awake` drains training, starts and warms vLLM, and then admits inference. `treeai mode sleep` drains inference, stops vLLM, and then admits Marker/Axolotl GPU work. The manager never starts both GPU workloads and never owns product job queues.
-
-Product systemd units remain available for independently installed products, but manager-owned deployments do not enable them. The root supervisor uses fixed Compose files and service allowlists, persists mode under `/var/lib/treeseed-ai/platform/`, and exposes only the TLS gateways. Raw vLLM, PostgreSQL, MinIO, migrations, and workers remain private.
-
-## Backup and recovery
-
-Product PostgreSQL databases and object stores remain independent. Back them up separately, preserve the training Ed25519 key, and retain catalog generations referenced by known-good receipts. Use `treeai recovery status|retry|restore`; restoration is refused unless the target catalog declares rollback compatibility. Unsafe recovery enters `degraded` rather than guessing.
+Acceptance status and immutable evidence belong in GitHub Issues and Actions. Storage read/write/isolation, mode cycling, backup coverage, restore, and training are separate gates.

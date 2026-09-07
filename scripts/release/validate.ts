@@ -1,12 +1,28 @@
-import{existsSync,mkdtempSync,readFileSync,rmSync}from'node:fs';import{spawnSync}from'node:child_process';import{tmpdir}from'node:os';import{join}from'node:path';
-const root=process.cwd(),manifest=JSON.parse(readFileSync(`${root}/release/manifest.json`,'utf8'))as{schemaVersion:string;version:string;debianVersion:string;dockerNamespace:string;products:string[];functionalProducts:string[];images:string[];imageBuilds:string;catalog:string;apt:{fingerprintFile:string;developmentFingerprintFile:string}};
-function assert(value:unknown,message:string):asserts value{if(!value)throw new Error(message);}
-assert(manifest.schemaVersion==='treeai.release/v2','Invalid release manifest schema.');assert(/^\d+\.\d+\.\d+$/u.test(manifest.version),'Release version must be semantic.');assert(manifest.debianVersion===`${manifest.version}-1`,'Debian version must include revision 1.');assert(manifest.dockerNamespace==='treeseed','Docker namespace must remain treeseed.');assert(new Set(manifest.images).size===17,'Exactly seventeen unique role images are required.');assert(manifest.products[0]==='bootstrap','The central bootstrap must be the first managed package.');
-const builds=JSON.parse(readFileSync(`${root}/${manifest.imageBuilds}`,'utf8'))as{schemaVersion:string;platform:string;images:Record<string,{dockerfile:string;inputs:string[]}>};assert(builds.schemaVersion==='treeai.image-builds/v1'&&builds.platform==='linux/amd64','Invalid image-build manifest.');assert(JSON.stringify(Object.keys(builds.images).sort())===JSON.stringify([...manifest.images].sort()),'Image-build roles differ from release roles.');for(const[role,build]of Object.entries(builds.images)){assert(build.inputs.includes(build.dockerfile),`${role} build identity omits its Dockerfile.`);for(const input of build.inputs)assert(existsSync(`${root}/${input}`),`${role} build input does not exist: ${input}`);}
-for(const product of manifest.products){const control=`${root}/debian/${product}/control`;assert(existsSync(control),`${product} control is missing.`);assert(readFileSync(control,'utf8').includes(`Version: ${manifest.debianVersion}`),`${product} control version drifted.`);}
-for(const name of['host','inference','training','lab','platform','update','mode','config','recovery','local-build']){const descriptor=JSON.parse(readFileSync(`${root}/deploy/commands/${name}.json`,'utf8'))as{schemaVersion:string;abi:number;packageRange:string;cliRange:string};assert(descriptor.schemaVersion==='treeai.command-descriptor/v2'&&descriptor.abi===2,`${name} descriptor ABI drifted.`);assert(descriptor.packageRange&&descriptor.cliRange,`${name} descriptor compatibility is missing.`);}
-for(const name of['package.json',...['common','manager','cli','host-runtime','inference-api','inference-manager','training-api','training-manager','lab','treeai-sdk'].map(item=>`packages/${item}/package.json`)]){const value=JSON.parse(readFileSync(`${root}/${name}`,'utf8'))as{version:string};assert(value.version===manifest.version,`${name} version drifted.`);}
-const catalog=JSON.parse(readFileSync(`${root}/${manifest.catalog}`,'utf8'))as{schemaVersion:string;release:string;channel:string};assert(catalog.schemaVersion==='treeai.release-catalog/v1'&&catalog.release===manifest.version&&catalog.channel==='stable','Release catalog drifted.');assert(readFileSync(`${root}/debian/rules`,'utf8').includes('dh $@'),'Debhelper rules are missing.');assert(readFileSync(`${root}/config/platform.schema.json`,'utf8').includes('treeai.platform/v1'),'Platform schema is missing.');
-function key(directory:string,fingerprintFile:string,name:string){const fingerprint=readFileSync(`${root}/${fingerprintFile}`,'utf8').trim(),publicKey=readFileSync(`${root}/${directory}/${name}`,'utf8');assert(/^[A-F0-9]{40}$/u.test(fingerprint),`${directory} fingerprint is not configured.`);assert(publicKey.includes('BEGIN PGP PUBLIC KEY BLOCK')&&!publicKey.includes('PRIVATE KEY BLOCK'),`${directory} must contain public material only.`);const home=mkdtempSync(join(tmpdir(),'treeai-gpg-'));try{const result=spawnSync('gpg',['--batch','--homedir',home,'--show-keys','--with-colons',`${root}/${directory}/${name}`],{encoding:'utf8'});assert(result.status===0,`Cannot parse ${directory} key.`);const actual=result.stdout.split('\n').find(line=>line.startsWith('fpr:'))?.split(':')[9];assert(actual===fingerprint,`${directory} public key fingerprint differs.`);}finally{rmSync(home,{recursive:true,force:true});}}
-if(process.argv.includes('--release')){key('release/apt',manifest.apt.fingerprintFile,'treeseed-ai-archive-keyring.asc');key('release/apt-development',manifest.apt.developmentFingerprintFile,'treeseed-ai-development-archive-keyring.asc');}
-process.stdout.write(`${JSON.stringify({status:'ready',version:manifest.version,debianVersion:manifest.debianVersion,products:manifest.products.length,images:manifest.images.length})}\n`);
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+function assert(value: unknown, message: string): asserts value { if (!value) throw new Error(message); }
+const read = (path: string) => JSON.parse(readFileSync(resolve(path), 'utf8'));
+const manifest = read('release/manifest.json');
+assert(manifest.schemaVersion === 'treeai.release/v3', 'Invalid component release manifest.');
+assert(/^\d+\.\d+\.\d+$/u.test(manifest.version), 'Release version must be semantic.');
+assert(manifest.dockerNamespace === 'treeseed', 'Unexpected image namespace.');
+assert(JSON.stringify(manifest.components) === JSON.stringify(['ai-inference', 'ai-training', 'ai-lab']), 'Managed component set differs.');
+assert(new Set(manifest.images).size === 17, 'Exactly seventeen unique role images are required.');
+for (const field of ['apt', 'products', 'functionalProducts', 'catalog', 'debianVersion'])
+	assert(!(field in manifest), 'Host packaging belongs to Deployment, not AI.');
+for (const path of ['debian/control', 'systemd/treeseed-ai-manager-api.service', 'packages/manager/package.json', 'packages/cli/package.json', 'packages/host-runtime/package.json', 'deploy/commands/platform.json', 'scripts/package-deb.ts'])
+	assert(!existsSync(path), 'Retired standalone implementation remains: ' + path);
+const builds = read(manifest.imageBuilds);
+assert(builds.schemaVersion === 'treeai.image-builds/v1' && builds.platform === 'linux/amd64', 'Invalid image-build manifest.');
+assert(JSON.stringify(Object.keys(builds.images).sort()) === JSON.stringify([...manifest.images].sort()), 'Image-build roles differ.');
+for (const [role, value] of Object.entries(builds.images)) {
+	const build = value as { dockerfile: string; inputs: string[] };
+	assert(build.inputs.includes(build.dockerfile), role + ' omits its Dockerfile.');
+	for (const input of build.inputs) assert(existsSync(input), role + ' has a missing input: ' + input);
+}
+for (const path of ['package.json', ...['common', 'inference-api', 'inference-manager', 'training-api', 'training-manager', 'lab', 'treeai-sdk'].map(name => 'packages/' + name + '/package.json')])
+	assert(read(path).version === manifest.version, path + ' version differs.');
+for (const image of read(manifest.runtimeImages).runtimeImages)
+	assert(/^sha256:[a-f0-9]{64}$/u.test(image.digest) && image.reference.endsWith('@' + image.digest), 'Runtime images must be immutable.');
+console.log(JSON.stringify({ status: 'ready', version: manifest.version, components: manifest.components, images: manifest.images.length }));

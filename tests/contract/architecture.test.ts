@@ -6,11 +6,11 @@ import { describe, expect, it } from "vitest";
 describe("independent product architecture", () => {
 	it("uses the SDK only for portable deployment and AI mode contracts", () => {
 		const metadata = JSON.parse(readFileSync(resolve("package.json"), "utf8"));
-		expect(metadata.devDependencies["@treeseed/sdk"]).toBe("0.13.0-rc.53");
-		const sources = ["packages/common", "packages/host-runtime", "packages/inference-api", "packages/inference-manager", "packages/training-api", "packages/training-manager"]
+		expect(metadata.devDependencies["@treeseed/sdk"]).toBe("0.13.0-rc.96");
+		const sources = ["packages/inference-api", "packages/inference-manager", "packages/training-api", "packages/training-manager"]
 			.map((path) => readFileSync(resolve(path, "package.json"), "utf8"))
 			.join("\n");
-		expect(sources).not.toMatch(/capacity-provider|treedx|assignment|settlement|@treeseed\/sdk/i);
+		expect(sources).not.toMatch(/capacity-provider|treedx|assignment|settlement/i);
 		expect(readFileSync(resolve("scripts/release/create-component-release.ts"), "utf8")).toContain("@treeseed/sdk/deployment");
 		expect(readFileSync(resolve("packages/lab/src/mode-control.ts"), "utf8")).toContain("@treeseed/sdk/deployment");
 	});
@@ -18,7 +18,7 @@ describe("independent product architecture", () => {
 	it("provides two independent migrations and deployments", () => {
 		for (const product of ["inference", "training"]) {
 			expect(readFileSync(resolve(`migrations/${product}/001_initial.sql`), "utf8")).toContain("CREATE TABLE IF NOT EXISTS jobs");
-			expect(readFileSync(resolve(`deploy/${product}/compose.yml`), "utf8")).toContain(`name: treeseed-ai-${product}`);
+			expect(readFileSync(resolve("deploy/component/compose.template.yml"), "utf8")).toContain(`${product}-migrations:`);
 		}
 	});
 
