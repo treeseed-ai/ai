@@ -1,6 +1,7 @@
 import { randomBytes,scryptSync,timingSafeEqual } from 'node:crypto';
 import type { MiddlewareHandler } from 'hono';
 import type { Pool } from 'pg';
+import { configuredDelegationTrust, verifyDelegation } from './auth/delegation.js';
 
 export interface ApiKeyRecord { id: string; hash: string; scopes: string[]; revoked: boolean }
 export type ApiKeyResolver = (id: string) => Promise<ApiKeyRecord | null>;
@@ -26,10 +27,23 @@ export function verifyApiKey(secret: string, encoded: string) {
 }
 
 export function apiKeyAuthorization(resolve: ApiKeyResolver): MiddlewareHandler {
+	const trust = configuredDelegationTrust();
 	return async (context, next) => {
 		const requestId = context.req.header('x-request-id') ?? crypto.randomUUID();
 		context.header('x-request-id', requestId);
 		context.set('requestId' as never,requestId as never);
+		// Engine-local service keys and short-lived control-plane delegations are
+		// distinct credentials. A rejected delegation never falls back to a key.
+		if (trust && !context.req.header('authorization')?.startsWith('Bearer ak_')) {
+			try {
+				const token = context.req.header('authorization')?.match(/^Bearer (.+)$/u)?.[1];
+				if (!token) throw new Error();
+				const principal = verifyDelegation(token, trust);
+				context.set('apiKey' as never, { id: principal.id, scopes: principal.scopes, revoked: false } as never);
+				context.set('delegatedPrincipal' as never, principal as never);
+			} catch { return context.json({ error: { code: 'unauthorized', message: 'A valid control-plane delegation is required.', requestId } }, 401); }
+			await next(); return;
+		}
 		const value = context.req.header('authorization')?.match(/^Bearer ak_([^_]+)_(.+)$/u);
 		if (!value) return context.json({ error: { code: 'unauthorized', message: 'A valid API key is required.', requestId } }, 401);
 		const record = await resolve(value[1]!);
