@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-import { httpHandler,JobWorker,PostgresJobRepository,reconcileCompose,requiredEnv,type JobHandler } from '@ai-platform/common';
+import { httpHandler,JobWorker,PostgresJobRepository,requiredEnv,type JobHandler } from '@ai-platform/common';
 import { readFileSync } from 'node:fs';
 import { Pool } from 'pg';
 import { Agent,fetch as undiciFetch } from 'undici';
 
 const evaluatorDispatcher=new Agent({headersTimeout:0,bodyTimeout:0});
 
-const command=process.argv[2]??'worker';
+if (process.argv[2] && process.argv[2] !== 'worker') throw new Error('Host lifecycle belongs to TreeSeed Deployment.');
 function artifactImportHandler(fallback:string):JobHandler{
   if(!process.env.ARTIFACT_IMPORT_URL)return httpHandler(`${fallback}/import`);
   return async(job,signal,progress)=>{await progress(.05);const token=readFileSync(process.env.ARTIFACT_IMPORT_TOKEN_FILE!,'utf8').trim();const response=await fetch(process.env.ARTIFACT_IMPORT_URL!,{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify(job),signal});if(!response.ok)throw new Error(`Artifact importer returned ${response.status}: ${await response.text()}`);await progress(.95);return((await response.json())as{resultManifest:string}).resultManifest;};
@@ -29,8 +29,6 @@ function deploymentHandler(pool:Pool,evaluator:string,action:'promote'|'rollback
     await progress(.98);return result.resultManifest;
   };
 }
-if(command==='plan'||command==='apply'){
-  const result=await reconcileCompose({composeFile:process.env.COMPOSE_FILE??'/usr/lib/treeseed-ai/inference/compose.yml',project:'treeseed-ai-inference',action:command});process.stdout.write(JSON.stringify(result,null,2)+'\n');
-}else{
-  const pool=new Pool({connectionString:requiredEnv('DATABASE_URL')});const jobs=new PostgresJobRepository(pool);const evaluator=process.env.EVALUATOR_URL??'http://evaluator:8080';const handlers={'adapter.import':artifactImportHandler(evaluator),'evaluation.run':evaluationHandler(evaluator),'ranking.run':rankingHandler(pool,evaluator),'deployment.promote':deploymentHandler(pool,evaluator,'promote'),'deployment.rollback':deploymentHandler(pool,evaluator,'rollback')};const admissionFile=process.env.TREESEED_GPU_ADMISSION_FILE,modeFile=process.env.AI_FACTORY_MODE_FILE;const enabled=()=>{if(!admissionFile&&!modeFile)return Object.keys(handlers);try{const value=JSON.parse(readFileSync(admissionFile??modeFile!,'utf8')),awake=admissionFile?value.admission==='open':value.mode==='awake';return awake?Object.keys(handlers):['adapter.import','ranking.run'];}catch{return['adapter.import','ranking.run'];}};const worker=new JobWorker({jobs,workerId:`inference-manager-${process.pid}`,handlers,enabledTypes:enabled});process.on('SIGTERM',()=>worker.stop());await worker.run();
+{
+  const pool=new Pool({connectionString:requiredEnv('DATABASE_URL')});const jobs=new PostgresJobRepository(pool);const evaluator=process.env.EVALUATOR_URL??'http://evaluator:8080';const handlers={'adapter.import':artifactImportHandler(evaluator),'evaluation.run':evaluationHandler(evaluator),'ranking.run':rankingHandler(pool,evaluator),'deployment.promote':deploymentHandler(pool,evaluator,'promote'),'deployment.rollback':deploymentHandler(pool,evaluator,'rollback')};const admissionFile=process.env.TREESEED_GPU_ADMISSION_FILE;const enabled=()=>{if(!admissionFile)return Object.keys(handlers);try{const value=JSON.parse(readFileSync(admissionFile!,'utf8')),awake=value.admission==='open';return awake?Object.keys(handlers):['adapter.import','ranking.run'];}catch{return['adapter.import','ranking.run'];}};const worker=new JobWorker({jobs,workerId:`inference-manager-${process.pid}`,handlers,enabledTypes:enabled});process.on('SIGTERM',()=>worker.stop());await worker.run();
 }

@@ -15,7 +15,7 @@ function stage(id: string, source: string, destination: string) {
 	staged[id] = { file: destination, sha256: createHash('sha256').update(readFileSync(resolve(output, destination))).digest('hex') };
 }
 
-for (const service of ['inference', 'training', 'lab', 'qualification']) stage(`openapi.${service}`, `packages/treeai-sdk/openapi/${service}.json`, `treeai-${service}-openapi.json`);
+for (const service of ['inference', 'training', 'lab']) stage(`openapi.${service}`, `packages/treeai-sdk/openapi/${service}.json`, `treeai-${service}-openapi.json`);
 stage('operationInventory', 'packages/treeai-sdk/operation-inventory.json', 'treeai-operation-inventory.json');
 stage('sdkManifest', 'packages/treeai-sdk/sdk-manifest.yaml', 'treeai-sdk-manifest.yaml');
 

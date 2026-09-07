@@ -1,1 +1,1 @@
-export { httpHandler,JobWorker,reconcileCompose } from '@ai-platform/common';
+export { httpHandler,JobWorker } from '@ai-platform/common';

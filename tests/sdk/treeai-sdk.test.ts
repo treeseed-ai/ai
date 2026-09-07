@@ -5,11 +5,11 @@ import { TREEAI_OPENAPI_CONTRACTS, TREEAI_OPERATIONS } from '../../packages/tree
 
 const endpoints = {
 	inference: 'https://inference.example', training: 'https://training.example',
-	lab: 'https://lab.example', qualification: 'https://qualification.example',
+	lab: 'https://lab.example',
 } as const;
 
 describe('generic TreeAI SDK contract', () => {
-	it('publishes four OpenAPI 3.1.1 contracts with one unique inventory entry per operation', () => {
+	it('publishes three OpenAPI 3.1.1 contracts with one unique inventory entry per operation', () => {
 		const ids = TREEAI_OPERATIONS.map(({ operationId }) => operationId);
 		expect(new Set(ids).size).toBe(ids.length);
 		for (const service of Object.keys(TREEAI_OPENAPI_CONTRACTS)) {
@@ -19,11 +19,12 @@ describe('generic TreeAI SDK contract', () => {
 		}
 	});
 
-	it('keeps package update and reconciliation authority out of the generic qualification contract', () => {
-		const paths = JSON.parse(readFileSync('packages/treeai-sdk/openapi/qualification.json', 'utf8')).paths as Record<string, unknown>;
+	it('keeps package update and reconciliation authority out of the AI service contracts', () => {
+		expect(Object.keys(TREEAI_OPENAPI_CONTRACTS)).toEqual(['inference','training','lab']);
+		const paths = Object.assign({}, ...Object.keys(TREEAI_OPENAPI_CONTRACTS).map(service => JSON.parse(readFileSync(`packages/treeai-sdk/openapi/${service}.json`,'utf8')).paths));
 		expect(Object.keys(paths)).not.toContain('/v1/updates');
 		expect(Object.keys(paths)).not.toContain('/v1/reconcile');
-		expect(Object.keys(paths)).toContain('/v1/qualification/campaigns');
+		expect(Object.keys(paths)).not.toContain('/v1/qualification/campaigns');
 	});
 
 	it('dispatches only cataloged operations with path parameters, authentication, and typed failures', async () => {

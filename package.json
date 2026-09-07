@@ -20,7 +20,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "pnpm --filter @ai-platform/common build && pnpm --filter @ai-platform/manager build && pnpm --filter @ai-platform/cli build && pnpm --filter @ai-platform/host-runtime build && pnpm --filter @ai-platform/inference-api build && pnpm --filter @ai-platform/inference-manager build && pnpm --filter @ai-platform/training-api build && pnpm --filter @ai-platform/training-manager build && pnpm --filter @ai-platform/lab build && pnpm --filter @treeseed/treeai build",
+    "build": "pnpm --filter @ai-platform/common build && pnpm --filter @ai-platform/inference-api build && pnpm --filter @ai-platform/inference-manager build && pnpm --filter @ai-platform/training-api build && pnpm --filter @ai-platform/training-manager build && pnpm --filter @ai-platform/lab build && pnpm --filter @treeseed/treeai build",
     "test": "vitest run",
     "check:file-architecture": "node --import tsx scripts/support/check-source-shape.ts",
     "check:release": "node --import tsx scripts/release/validate.ts",
@@ -29,7 +29,6 @@
     "contracts:generate": "node --import tsx scripts/sdk/generate-contracts.ts",
     "contracts:check": "pnpm contracts:generate && git diff --exit-code -- packages/treeai-sdk/openapi packages/treeai-sdk/operation-inventory.json packages/treeai-sdk/src/generated/contract.ts",
     "contracts:stage-release": "node --import tsx scripts/sdk/stage-release.ts",
-    "build:deb": "pnpm build && node --import tsx scripts/package-deb.ts all",
     "verify": "pnpm check:release && pnpm check:file-architecture && pnpm build && pnpm contracts:check && pnpm test"
   },
   "dependencies": {
@@ -40,7 +39,7 @@
     "yaml": "^2.8.1"
   },
   "devDependencies": {
-    "@treeseed/sdk": "0.13.0-rc.53",
+    "@treeseed/sdk": "0.13.0-rc.96",
     "@types/node": "^24.6.0",
     "@types/pg": "^8.15.5",
     "esbuild": "^0.28.2",

@@ -9,7 +9,7 @@ import { join } from "node:path";
 
 describe("tight Hermes integration", () => {
 	it("merges discovery and routes only the fixed Hermes model", async () => {
-		process.env.AI_FACTORY_INFERENCE_KEY = "inference-secret";
+		process.env.AI_INFERENCE_KEY = "inference-secret";
 		process.env.HERMES_API_KEY = "hermes-secret";
 		const calls: Array<{ url: string; authorization: string }> = [], records: Array<{ kind: string; value: unknown }> = [];
 		const request = async (input: string | URL | Request, init?: RequestInit) => {
@@ -44,7 +44,7 @@ describe("tight Hermes integration", () => {
 	});
 
 	it("routes adapter agents through Hermes and rewrites only validated inner markers", async () => {
-		process.env.AI_FACTORY_INFERENCE_KEY = "inference-secret"; process.env.HERMES_API_KEY = "hermes-secret";
+		process.env.AI_INFERENCE_KEY = "inference-secret"; process.env.HERMES_API_KEY = "hermes-secret";
 		const root=mkdtempSync(join(tmpdir(),"treeai-agent-proxy-")),profiles=new AgentProfiles(root),profile=profiles.promote("library-1","finance","candidate-1",["evaluation-1"]),calls:Array<{url:string;body:Record<string,unknown>}>=[];
 		const request=async(input:string|URL|Request,init?:RequestInit)=>{const body=JSON.parse(String(init?.body??"{}"))as Record<string,unknown>;calls.push({url:String(input),body});if(String(input).endsWith("/v1/models"))return Response.json({object:"list",data:[{id:"local-model"}]});if(String(input).includes("library-deployments"))return Response.json({items:[{modelAlias:"library/finance",candidateId:"candidate-1"}]});return Response.json({choices:[{message:{role:"assistant",content:"ok"}}]},{headers:{"x-hermes-session-id":"session-1"}});};
 		const app=createExperienceProxy({inferenceUrl:"http://inference",inferenceControlUrl:"http://control",hermesUrl:"http://hermes",fetch:request as typeof fetch,record:()=>{},profiles});
@@ -77,7 +77,7 @@ describe("tight Hermes integration", () => {
 	});
 
 	it("preserves authoritative Hermes session correlation on inner inference", async () => {
-		process.env.AI_FACTORY_INFERENCE_KEY = "inference-secret";
+		process.env.AI_INFERENCE_KEY = "inference-secret";
 		const records: Array<{ kind: string; value: Record<string, unknown> }> = [];
 		const request = async (input: string | URL | Request) => String(input).includes("deployments/current")
 			? Response.json({ deployment: { id: "deployment-7", candidateId: "adapter-3" } })
@@ -89,7 +89,7 @@ describe("tight Hermes integration", () => {
 	});
 
 	it("returns a typed unavailable response when the private Hermes API fails", async () => {
-		process.env.AI_FACTORY_INFERENCE_KEY = "inference-secret";
+		process.env.AI_INFERENCE_KEY = "inference-secret";
 		process.env.HERMES_API_KEY = "hermes-secret";
 		const app = createExperienceProxy({ fetch: (async () => new Response("internal details", { status: 500 })) as typeof fetch, record: () => {} });
 		const response = await app.request("/v1/chat/completions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: "hermes-agent", messages: [] }) });
@@ -107,9 +107,7 @@ describe("tight Hermes integration", () => {
 		expect(controller).toContain('app.get("/v1/provider/models", requireScope("lab:read")');
 		expect(controller).toContain('multimodalDirect: multimodal || undefined');
 		expect(controller).toContain('await completion("hermes-agent", false, content)');
-		const cli = readFileSync("packages/lab/src/cli.ts", "utf8");
-		expect(cli).toContain('call("/v1/hermes/verify", "POST", { multimodal })');
-		expect(cli).toContain('"--multimodal"')
+		expect(controller).toContain('/v1/hermes/verify');
 	});
 
 	it("rejects error-bearing extraction output as web evidence", () => {

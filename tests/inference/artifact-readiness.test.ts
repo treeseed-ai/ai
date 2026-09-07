@@ -19,8 +19,8 @@ function trust() {
 it('verifies the local signed source and durable inference destination', async () => {
 	const root = mkdtempSync(join(tmpdir(), 'treeai-artifact-exchange-')), training = join(root, 'training'), inference = join(root, 'inference');
 	const sourcePath = join(root, 'source.json'), destinationPath = join(root, 'destination.json');
-	writeFileSync(sourcePath, JSON.stringify({ sourceId: 'training-local', trustedPublicKey: trust(), store: { backend: 'filesystem', storeId: 'training', root: training, legacyBuckets: ['ai-training'] } }));
-	writeFileSync(destinationPath, JSON.stringify({ backend: 'filesystem', storeId: 'inference', root: inference, legacyBuckets: ['ai-inference'] }));
+	writeFileSync(sourcePath, JSON.stringify({ sourceId: 'training-local', trustedPublicKey: trust(), store: { backend: 'filesystem', storeId: 'training', root: training } }));
+	writeFileSync(destinationPath, JSON.stringify({ backend: 'filesystem', storeId: 'inference', root: inference }));
 	process.env.ARTIFACT_SOURCE_REGISTRY = sourcePath; process.env.ARTIFACT_DESTINATION_REGISTRY = destinationPath;
 	const input = repository(sourceConfiguration().store); await input.put('manifests/example.json', new TextEncoder().encode('{}'));
 	await expect(verifyArtifactSource()).resolves.toBeUndefined();
@@ -28,13 +28,15 @@ it('verifies the local signed source and durable inference destination', async (
 	expect(Buffer.from(await repository(destinationConfiguration()).bytes('artifact://inference/_health/artifact-readiness-v2')).toString()).toBe('treeai-artifact-readiness-v2');
 });
 
-it('accepts R2 only through a protected registry payload and rejects unsafe endpoints', () => {
-	const root = mkdtempSync(join(tmpdir(), 'treeai-artifact-r2-')), path = join(root, 'destination.json');
-	writeFileSync(path, JSON.stringify({ backend: 'r2', storeId: 'inference', endpoint: 'https://account.r2.cloudflarestorage.com', bucket: 'inference', accessKeyId: 'access', secretAccessKey: 'secret' }));
-	process.env.ARTIFACT_DESTINATION_REGISTRY = path;
-	expect(destinationConfiguration()).toMatchObject({ backend: 'r2', storeId: 'inference', bucket: 'inference' });
-	writeFileSync(path, JSON.stringify({ backend: 'r2', storeId: 'inference', endpoint: 'http://localhost:9000', bucket: 'inference', accessKeyId: 'access', secretAccessKey: 'secret' }));
-	expect(() => destinationConfiguration()).toThrow(/HTTPS origin/u);
+it('accepts only managed R2 descriptors and rejects embedded credentials', () => {
+ const root=mkdtempSync(join(tmpdir(),'treeai-artifact-r2-')),path=join(root,'destination.json');
+ process.env.ARTIFACT_DESTINATION_REGISTRY=path;
+ writeFileSync(path,JSON.stringify({backend:'r2',storeId:'managed-inference'}));
+ expect(destinationConfiguration()).toEqual({backend:'r2',storeId:'managed-inference'});
+ for(const extra of [{endpoint:'https://example.invalid'},{accessKeyId:'access',secretAccessKey:'secret'},{legacyBuckets:['old']}]) {
+  writeFileSync(path,JSON.stringify({backend:'r2',storeId:'managed-inference',...extra}));
+  expect(()=>destinationConfiguration()).toThrow('unsupported fields');
+ }
 });
 
 it('rejects cross-store artifact access before reading bytes', async () => {

@@ -1,9 +1,0 @@
-Package: treeseed-ai-host-runtime
-Version: 0.11.0-1
-Section: admin
-Priority: optional
-Architecture: amd64
-Maintainer: TreeSeed AI Releases <releases@treeseed.ai>
-Depends: treeseed-ai-cli (>= 0.6.0), treeseed-ai-host-js-runtime (>= 0.6.0), ca-certificates, curl, gnupg
-Description: Opt-in Docker and NVIDIA Container Toolkit host bootstrapper
- Installs inert host capability files. Platform lifecycle belongs to treeseed-ai-manager.

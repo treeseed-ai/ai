@@ -3,12 +3,12 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 type Document = { openapi: string; info: { title: string; version: string }; paths: Record<string, Record<string, Record<string, any>>> };
-type Service = 'inference' | 'training' | 'lab' | 'qualification';
+type Service = 'inference' | 'training' | 'lab';
 
 process.env.NODE_ENV = 'test';
-const [{ inferenceOpenApi }, { trainingOpenApi }, { labOpenApi }, { managerOpenApi }] = await Promise.all([
+const [{ inferenceOpenApi }, { trainingOpenApi }, { labOpenApi }] = await Promise.all([
 	import('../../packages/inference-api/src/app.ts'), import('../../packages/training-api/src/app.ts'),
-	import('../../packages/lab/src/controller.ts'), import('../../packages/manager/src/http/api.ts'),
+	import('../../packages/lab/src/controller.ts'),
 ]);
 
 function canonical(value: unknown): string {
@@ -28,15 +28,10 @@ function normalize(service: Service, document: Document): Document {
 	return document;
 }
 
-const rawQualification = managerOpenApi() as Document;
-const qualificationPaths = Object.fromEntries(Object.entries(rawQualification.paths).filter(([path]) => [
-	'/healthz', '/readyz', '/v1/version', '/v1/status', '/v1/mode', '/v1/events/stream', '/v1/metrics',
-].includes(path) || path.startsWith('/v1/qualification/') || path.startsWith('/v1/transitions/')));
 const documents: Record<Service, Document> = {
 	inference: normalize('inference', inferenceOpenApi() as Document),
 	training: normalize('training', trainingOpenApi() as Document),
 	lab: normalize('lab', labOpenApi() as Document),
-	qualification: normalize('qualification', { ...rawQualification, info: { title: 'TreeAI Qualification and Mode API', version: '0.11.0' }, paths: qualificationPaths }),
 };
 
 const operations = Object.entries(documents).flatMap(([service, document]) => Object.entries(document.paths).flatMap(([path, methods]) => Object.entries(methods).map(([method, operation]) => ({

@@ -8,14 +8,7 @@ function run(source:string,destination:string){return spawnSync(process.execPath
 
 describe('release asset staging',()=>{
 	it('leaves stable and development APT publication to Deployment',()=>{for(const path of['.github/workflows/release.yml','.github/workflows/publish-development.yml']){const workflow=readFileSync(path,'utf8');expect(workflow).not.toContain('mirror-apt-suite.sh');expect(workflow).not.toContain('apt-pages');}});
-	it('repairs APT without rebuilding immutable release packages',()=>{const workflow=readFileSync('.github/workflows/repair-apt.yml','utf8');expect(workflow).toContain('workflow_dispatch:');expect(workflow).toContain('gh release download');expect(workflow).not.toContain('dpkg-buildpackage');expect(workflow).not.toContain('docker');});
-	it('keeps the newest Debian changelog entry chronologically newest',()=>{
-		const dates=[...readFileSync('debian/changelog','utf8').matchAll(/^ -- .+?  (.+)$/gmu)].map(match=>Date.parse(match[1]!));
-		expect(dates.length).toBeGreaterThan(1);
-		expect(dates.every(Number.isFinite)).toBe(true);
-		expect(dates[0]).toBeGreaterThan(dates[1]!);
-	});
-
+	it('publishes only managed components, not a competing installer',()=>{const manifest=JSON.parse(readFileSync('release/manifest.json','utf8'));expect(manifest.components).toEqual(['ai-inference','ai-training','ai-lab']);expect(manifest).not.toHaveProperty('apt');expect(manifest).not.toHaveProperty('products');});
   it('matches GitHub Release basename publication',()=>{
     const root=mkdtempSync(join(tmpdir(),'treeai-assets-')),source=join(root,'source'),destination=join(root,'published');
     mkdirSync(join(source,'sboms'),{recursive:true});

@@ -1,7 +1,7 @@
 name: treeseed-ai-lab
 x-lab-environment: &lab-environment
-  AI_FACTORY_INFERENCE_KEY_FILE: /run/secrets/factory-inference-key
-  AI_FACTORY_TRAINING_KEY_FILE: /run/secrets/factory-training-key
+  AI_INFERENCE_KEY_FILE: /run/secrets/factory-inference-key
+  AI_TRAINING_KEY_FILE: /run/secrets/factory-training-key
   HERMES_API_KEY_FILE: /run/secrets/hermes-api-key
   HERMES_URL: http://hermes-agent:8642
   TREESEED_AI_MODE_URL: "${TREESEED_AI_MODE_URL:?TREESEED_AI_MODE_URL is required}"
@@ -27,13 +27,13 @@ services:
       INFERENCE_URL: http://inference-api:4771
       INFERENCE_CONTROL_URL: http://inference-api:4770
       HERMES_URL: http://hermes-agent:8642
-      AI_FACTORY_INFERENCE_KEY_FILE: /run/secrets/factory-inference-key
+      AI_INFERENCE_KEY_FILE: /run/secrets/factory-inference-key
       HERMES_API_KEY_FILE: /run/secrets/hermes-api-key
       LAB_STATE_DIR: /state
       BASE_MODEL_REVISION: "${BASE_MODEL_REVISION:?BASE_MODEL_REVISION is required}"
     secrets: [factory-inference-key, hermes-api-key]
     volumes: [lab-state:/state]
-    networks: [lab-private, ai-shared]
+    networks: [lab-private, platform]
     healthcheck:
       test: ["CMD","node","-e","fetch('http://127.0.0.1:8080/healthz').then(r=>{if(!r.ok)process.exit(1)})"]
       interval: 10s
@@ -55,7 +55,7 @@ services:
       HERMES_WORKSPACE: /workspace
       WEB_TOOL_URL: http://web-tool-proxy:8090
       EXPERIENCE_PROXY_URL: http://experience-proxy:8080
-    networks: [lab-private, ai-shared]
+    networks: [lab-private, platform]
     extra_hosts: ["host.docker.internal:host-gateway"]
     healthcheck:
       test: ["CMD","node","-e","fetch('http://127.0.0.1:8081/healthz').then(r=>{if(!r.ok)process.exit(1)})"]
@@ -77,7 +77,7 @@ services:
       LAB_CONTROLLER_URL: http://controller:8081
       PORT: "8082"
     secrets: [training-ingest-key, lab-library-action-key]
-    networks: [lab-private, ai-shared]
+    networks: [lab-private, platform]
     healthcheck:
       test: ["CMD","node","-e","fetch('http://127.0.0.1:8082/healthz').then(r=>{if(!r.ok)process.exit(1)})"]
       interval: 10s
@@ -178,27 +178,18 @@ services:
       timeout: 5s
       retries: 30
       start_period: 30s
-  gateway:
-    image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
-    restart: unless-stopped
-    volumes: ["/usr/lib/treeseed-ai/lab/Caddyfile:/etc/caddy/Caddyfile:ro", "/etc/treeseed-ai/manager/tls:/tls:ro"]
-    # Keep application routing on the internal network, but attach the only
-    # published service to a non-internal edge bridge so Docker can install
-    # host port forwarding rules.
-    networks: [lab-private, lab-edge]
 networks:
-  ai-shared: { external: true, name: ai-shared }
+  platform: { external: true, name: treeseed-platform }
   lab-private: { internal: true }
-  lab-edge: {}
   lab-egress: {}
 secrets:
-  factory-inference-key: { file: /etc/treeseed-ai/lab/secrets/factory-inference-key }
-  factory-training-key: { file: /etc/treeseed-ai/lab/secrets/factory-training-key }
-  hermes-api-key: { file: /etc/treeseed-ai/lab/secrets/hermes-api-key }
-  hermes-password-hash: { file: /etc/treeseed-ai/lab/secrets/hermes-password-hash }
-  hermes-session-secret: { file: /etc/treeseed-ai/lab/secrets/hermes-session-secret }
-  training-ingest-key: { file: /etc/treeseed-ai/lab/secrets/training-ingest-key }
-  lab-library-action-key: { file: /etc/treeseed-ai/lab/secrets/lab-library-action-key }
+  factory-inference-key: { file: /etc/treeseed/credentials/ai-lab-factory-inference-key }
+  factory-training-key: { file: /etc/treeseed/credentials/ai-lab-factory-training-key }
+  hermes-api-key: { file: /etc/treeseed/credentials/ai-lab-hermes-api-key }
+  hermes-password-hash: { file: /etc/treeseed/credentials/ai-lab-hermes-password-hash }
+  hermes-session-secret: { file: /etc/treeseed/credentials/ai-lab-hermes-session-secret }
+  training-ingest-key: { file: /etc/treeseed/credentials/ai-lab-training-ingest-key }
+  lab-library-action-key: { file: /etc/treeseed/credentials/ai-lab-lab-library-action-key }
   ai-mode-ca: { file: /etc/treeseed/credentials/ai-mode-ca.crt }
   ai-mode-client-cert: { file: /etc/treeseed/credentials/ai-mode-client.crt }
   ai-mode-client-key: { file: /etc/treeseed/credentials/ai-mode-client.key }

@@ -63,6 +63,7 @@ services:
       HF_HOME: /models
       VLLM_CACHE_ROOT: /models/vllm-cache
       VLLM_ALLOW_RUNTIME_LORA_UPDATING: "True"
+      TREEAI_MULTIMODAL_LORA_ENABLED: "${TREEAI_MULTIMODAL_LORA_ENABLED:-false}"
       TREESEED_VLLM_MODEL: "${SOURCE_MODEL:-Qwen/Qwen3.5-4B}"
     command: ["--model", "${SOURCE_MODEL:-Qwen/Qwen3.5-4B}", "--revision", "${SOURCE_MODEL_REVISION:-851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a}", "--served-model-name", "${SOURCE_MODEL:-Qwen/Qwen3.5-4B}", "--max-model-len", "${MAX_MODEL_LENGTH:-16384}", "--max-num-seqs", "${MAX_NUM_SEQS:-2}", "--gpu-memory-utilization", "${GPU_MEMORY_UTILIZATION:-0.85}", "--enable-lora", "--enable-auto-tool-choice", "--tool-call-parser", "qwen3_coder", "--reasoning-parser", "qwen3"]
     deploy:
@@ -185,7 +186,9 @@ services:
     <<: *security
     restart: unless-stopped
     environment:
-      HF_HOME: /models
+      HF_HOME: /models/huggingface
+      XDG_CACHE_HOME: /models/cache
+      FONT_PATH: /models/cache/fonts/GoNotoCurrent-Regular.ttf
       ARTIFACT_BACKEND: "${ARTIFACT_BACKEND:-filesystem}"
       ARTIFACT_ROOT: "${ARTIFACT_ROOT:-/artifacts}"
     volumes:
@@ -210,7 +213,10 @@ services:
     <<: *security
     restart: unless-stopped
     environment:
-      HF_HOME: /models
+      HF_HOME: /models/huggingface
+      XDG_CACHE_HOME: /models/cache
+      TORCH_HOME: /models/torch
+      TRITON_CACHE_DIR: /models/triton
       ARTIFACT_BACKEND: "${ARTIFACT_BACKEND:-filesystem}"
       ARTIFACT_ROOT: "${ARTIFACT_ROOT:-/artifacts}"
     volumes:

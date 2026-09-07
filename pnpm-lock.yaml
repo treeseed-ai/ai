@@ -25,8 +25,8 @@ importers:
         version: 2.9.0
     devDependencies:
       '@treeseed/sdk':
-        specifier: 0.13.0-rc.53
-        version: 0.13.0-rc.53
+        specifier: 0.13.0-rc.96
+        version: 0.13.0-rc.96
       '@types/node':
         specifier: ^24.6.0
         version: 24.13.3
@@ -46,28 +46,20 @@ importers:
         specifier: ^4.1.2
         version: 4.1.11(@types/node@24.13.3)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(tsx@4.23.12)(yaml@2.9.0))
 
-  packages/cli: {}
-
   packages/common:
     dependencies:
       '@aws-sdk/client-s3':
         specifier: ^3.879.0
         version: 3.1115.0
+      '@treeseed/sdk':
+        specifier: 0.13.0-rc.96
+        version: 0.13.0-rc.96
       hono:
         specifier: ^4.11.4
         version: 4.13.3
       pg:
         specifier: ^8.16.3
         version: 8.23.0
-
-  packages/host-runtime:
-    dependencies:
-      '@hono/node-server':
-        specifier: ^1.19.9
-        version: 1.19.17(hono@4.13.3)
-      hono:
-        specifier: ^4.11.4
-        version: 4.13.3
 
   packages/inference-api:
     dependencies:
@@ -108,20 +100,8 @@ importers:
         specifier: ^1.19.9
         version: 1.19.17(hono@4.13.3)
       '@treeseed/sdk':
-        specifier: 0.13.0-rc.52
-        version: 0.13.0-rc.52
-      hono:
-        specifier: ^4.11.4
-        version: 4.13.3
-
-  packages/manager:
-    dependencies:
-      '@ai-platform/common':
-        specifier: workspace:*
-        version: link:../common
-      '@hono/node-server':
-        specifier: ^1.19.9
-        version: 1.19.17(hono@4.13.3)
+        specifier: 0.13.0-rc.96
+        version: 0.13.0-rc.96
       hono:
         specifier: ^4.11.4
         version: 4.13.3
@@ -523,16 +503,12 @@ packages:
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
-  '@treeseed/sdk@0.13.0-rc.52':
-    resolution: {integrity: sha512-likglVxDhv50N/4uGeKlxJFp+B6xhLeissA8lXM4bHVsQk3FHUdHTrJCcaEiHaNVXg2MMvf+aZaN12y0k2miEw==}
+  '@treeseed/sdk@0.13.0-rc.96':
+    resolution: {integrity: sha512-0UXfpUxjG8uOUWJf3DTGqakgwaP1Id00J8Bik4zS6SXL6I+bNG+ejuLkobZlKXFYTvtv/7Rq/HunSXazAWuzfA==}
     engines: {node: '>=22'}
 
-  '@treeseed/sdk@0.13.0-rc.53':
-    resolution: {integrity: sha512-IcXzHNRNhAkmEt7dCRD0BiIebz7A3BqTG+wDUFUi/CBDlBEpXxnI2h7p/srYXOYR2OKq9DgbDep0GFCYyCBkKQ==}
-    engines: {node: '>=22'}
-
-  '@treeseed/treedx@0.3.0-rc.4':
-    resolution: {integrity: sha512-ZBmY/C30kge84Ns/qzpa/h4XfLXtZMDiyfCJM8WTLHQBU2I5QYrhx2aI32mHk90jQib+SyWfwYMknIip8RHF8A==}
+  '@treeseed/treedx@0.3.0-rc.17':
+    resolution: {integrity: sha512-L1DCxkOZGS2of2IvbSC70baIpGlEuFBpHUhV4oKq53xXARN8dw4st2SFUz7IaxOIRzR9gD/vH12hIPnTFLJ7tA==}
     engines: {node: '>=22'}
 
   '@types/chai@5.2.3':
@@ -629,6 +605,12 @@ packages:
   hono@4.13.3:
     resolution: {integrity: sha512-r8AO2mYHoLxSHkgafNeC/BXyb2vWRxD3jem4Ts+ptav8oTG5FIRifAjuJEmZI4bSvvc2ns0GxmIYiZnHqN3mMw==}
     engines: {node: '>=16.9.0'}
+
+  libsodium-sumo@0.8.4:
+    resolution: {integrity: sha512-TMtHShQfVVsaxDygyapvUC3o7YsPgXa/hRWeIgzyFz6w5k/1hirGptCxp1U7XwW3rCskaTTYKgV10v86UiGgNw==}
+
+  libsodium-wrappers-sumo@0.8.4:
+    resolution: {integrity: sha512-ql7hcgulKZ3ekfa2DGAogcCKsWU0diA/0nArz1CFzh93WQdb46/Kj18ka/Hifq6uA3Ush34Pc6vU/6HXeRwUkg==}
 
   lightningcss-android-arm64@1.33.0:
     resolution: {integrity: sha512-gEpRTalKdosp4Bb8qWtc2iOgE5SeIHlpS1up9bFq2wAyYhl1UdTObYiHe98zEM9SQvSoqQZ1IQD0JNpg3Ml5pg==}
@@ -1273,23 +1255,16 @@ snapshots:
 
   '@standard-schema/spec@1.1.0': {}
 
-  '@treeseed/sdk@0.13.0-rc.52':
+  '@treeseed/sdk@0.13.0-rc.96':
     dependencies:
-      '@treeseed/treedx': 0.3.0-rc.4
+      '@treeseed/treedx': 0.3.0-rc.17
       esbuild: 0.28.2
+      libsodium-wrappers-sumo: 0.8.4
       typescript: 5.9.3
       yaml: 2.9.0
       zod: 3.25.76
 
-  '@treeseed/sdk@0.13.0-rc.53':
-    dependencies:
-      '@treeseed/treedx': 0.3.0-rc.4
-      esbuild: 0.28.2
-      typescript: 5.9.3
-      yaml: 2.9.0
-      zod: 3.25.76
-
-  '@treeseed/treedx@0.3.0-rc.4': {}
+  '@treeseed/treedx@0.3.0-rc.17': {}
 
   '@types/chai@5.2.3':
     dependencies:
@@ -1406,6 +1381,12 @@ snapshots:
     optional: true
 
   hono@4.13.3: {}
+
+  libsodium-sumo@0.8.4: {}
+
+  libsodium-wrappers-sumo@0.8.4:
+    dependencies:
+      libsodium-sumo: 0.8.4
 
   lightningcss-android-arm64@1.33.0:
     optional: true

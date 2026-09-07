@@ -1,5 +1,6 @@
 import hashlib,os,re,shutil,tempfile
 from pathlib import Path
+from contextlib import contextmanager
 from urllib.parse import urlparse
 
 def safe_key(value):
@@ -8,32 +9,32 @@ def safe_key(value):
     return '/'.join(parts)
 
 class ArtifactRepository:
-    def __init__(self,store_id,backend='filesystem',root=None,endpoint=None,bucket=None,access_key=None,secret_key=None,legacy_buckets=()):
+    def __init__(self,store_id,backend='filesystem',root=None):
         if not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,62}',store_id or ''):raise ValueError('Artifact store ID is invalid')
-        self.store_id=store_id;self.backend=backend;self.legacy_buckets=set(legacy_buckets);self.bucket=bucket;self.root=Path(root).resolve() if root else None
+        self.store_id=store_id;self.backend=backend;self.root=Path(root).resolve() if root else None
         if backend=='filesystem':
             if not self.root:raise ValueError('Filesystem artifact root is required')
             self.root.mkdir(parents=True,exist_ok=True)
             if self.root.is_symlink():raise ValueError('Artifact root cannot be a symlink')
-            self.client=None
         elif backend=='r2':
-            if not all((endpoint,bucket,access_key,secret_key)):raise ValueError('R2 artifact configuration is incomplete')
-            import boto3
-            from botocore.exceptions import ClientError
-            self.client_error=ClientError
-            self.client=boto3.client('s3',endpoint_url=endpoint,region_name='auto',aws_access_key_id=access_key,aws_secret_access_key=secret_key)
+            if store_id not in ('managed-inference','managed-training','managed-lab'):raise ValueError('Managed storage allocation required')
         else:raise ValueError('Unsupported artifact backend')
     @classmethod
     def from_env(cls):
-        secret=lambda name:Path(os.environ[name]).read_text().strip() if os.getenv(name) else None
-        return cls(os.getenv('ARTIFACT_STORE_ID','training'),os.getenv('ARTIFACT_BACKEND','filesystem'),os.getenv('ARTIFACT_ROOT','/artifacts'),os.getenv('R2_ENDPOINT'),os.getenv('R2_BUCKET'),secret('R2_ACCESS_KEY_FILE'),secret('R2_SECRET_KEY_FILE'),filter(None,os.getenv('ARTIFACT_LEGACY_BUCKETS','').split(',')))
+        return cls(os.getenv('ARTIFACT_STORE_ID','managed-training'),os.getenv('ARTIFACT_BACKEND','filesystem'),os.getenv('ARTIFACT_ROOT','/artifacts'))
+    @contextmanager
+    def remote(self,action,key):
+        from .storage_custody import storage_client
+        client,lease=storage_client(self.store_id,action,key)
+        try:yield client,lease
+        except Exception:raise ValueError('Managed artifact storage operation failed') from None
+        finally:client.close()
     def uri(self,key):return f'artifact://{self.store_id}/{safe_key(key)}'
     def key(self,value):
         value=str(value)
         if '://' not in value:return safe_key(value)
         parsed=urlparse(value)
         if parsed.scheme=='artifact' and parsed.netloc==self.store_id:return safe_key(parsed.path.lstrip('/'))
-        if parsed.scheme=='s3' and parsed.netloc in self.legacy_buckets:return safe_key(parsed.path.lstrip('/'))
         raise ValueError('Artifact URI is not accepted by this store')
     def path(self,key):
         unresolved=self.root/safe_key(key)
@@ -46,14 +47,19 @@ class ArtifactRepository:
         return target
     def bytes(self,value):
         key=self.key(value)
-        if self.backend=='r2':return self.client.get_object(Bucket=self.bucket,Key=key)['Body'].read()
+        if self.backend=='r2':
+            with self.remote('read',key) as (client,lease):
+                response=client.get_object(Bucket=lease['bucket'],Key=lease['objectKey'])
+                with response['Body'] as body:return body.read()
         target=self.path(key)
         if target.is_symlink() or not target.is_file():raise ValueError('Artifact is not a regular file')
         return target.read_bytes()
     def head(self,value):
         key=self.key(value)
         if self.backend=='r2':
-            result=self.client.head_object(Bucket=self.bucket,Key=key);checksum=result.get('Metadata',{}).get('sha256')
+            with self.remote('read',key) as (client,lease):
+                result=client.head_object(Bucket=lease['bucket'],Key=lease['objectKey'])
+            checksum=result.get('Metadata',{}).get('sha256')
             if not checksum:raise ValueError('Remote artifact has no SHA-256 metadata')
             return {'uri':self.uri(key),'key':key,'size':result.get('ContentLength',0),'sha256':checksum}
         target=self.path(key)
@@ -65,12 +71,13 @@ class ArtifactRepository:
     def put_bytes(self,key,data,content_type='application/octet-stream'):
         key=safe_key(key);data=bytes(data);checksum=hashlib.sha256(data).hexdigest()
         if self.backend=='r2':
-            try:
-                current=self.client.head_object(Bucket=self.bucket,Key=key);existing=current.get('Metadata',{}).get('sha256')
-                if existing!=checksum or current.get('ContentLength')!=len(data):raise ValueError('Immutable artifact already exists with different content')
-            except self.client_error as error:
-                if error.response.get('ResponseMetadata',{}).get('HTTPStatusCode')!=404:raise
-                self.client.put_object(Bucket=self.bucket,Key=key,Body=data,ContentType=content_type,Metadata={'sha256':checksum})
+            with self.remote('write',key) as (client,lease):
+                from botocore.exceptions import ClientError
+                try:client.put_object(Bucket=lease['bucket'],Key=lease['objectKey'],Body=data,ContentType=content_type,Metadata={'sha256':checksum},IfNoneMatch='*')
+                except ClientError as error:
+                    if error.response.get('ResponseMetadata',{}).get('HTTPStatusCode')!=412:raise
+                    current=self.head(key)
+                    if current['sha256']!=checksum or current['size']!=len(data):raise ValueError('Immutable artifact already exists with different content')
         else:
             target=self.path(key);target.parent.mkdir(parents=True,exist_ok=True)
             if target.exists():
@@ -92,13 +99,15 @@ class ArtifactRepository:
             for chunk in iter(lambda:source.read(1024*1024),b''):checksum.update(chunk)
         checksum=checksum.hexdigest()
         if self.backend=='r2':
-            try:
-                current=self.client.head_object(Bucket=self.bucket,Key=key);existing=current.get('Metadata',{}).get('sha256')
-                if existing!=checksum or current.get('ContentLength')!=size:raise ValueError('Immutable artifact already exists with different content')
-                return {'uri':self.uri(key),'key':key,'size':size,'sha256':checksum}
-            except self.client_error as error:
-                if error.response.get('ResponseMetadata',{}).get('HTTPStatusCode')!=404:raise
-            self.client.upload_file(str(path),self.bucket,key,ExtraArgs={'ContentType':content_type,'Metadata':{'sha256':checksum}})
+            if size>5_000_000_000:raise ValueError('Artifact exceeds the supported single-object upload size')
+            with self.remote('write',key) as (client,lease):
+                from botocore.exceptions import ClientError
+                try:
+                    with path.open('rb') as source:client.put_object(Bucket=lease['bucket'],Key=lease['objectKey'],Body=source,ContentLength=size,ContentType=content_type,Metadata={'sha256':checksum},IfNoneMatch='*')
+                except ClientError as error:
+                    if error.response.get('ResponseMetadata',{}).get('HTTPStatusCode')!=412:raise
+                    current=self.head(key)
+                    if current['sha256']!=checksum or current['size']!=size:raise ValueError('Immutable artifact already exists with different content')
         else:
             target=self.path(key);target.parent.mkdir(parents=True,exist_ok=True)
             if target.exists():
@@ -116,7 +125,12 @@ class ArtifactRepository:
     def list(self,prefix=''):
         if self.backend=='r2':
             keys=[]
-            for page in self.client.get_paginator('list_objects_v2').paginate(Bucket=self.bucket,Prefix=prefix):keys.extend(item['Key'] for item in page.get('Contents',[]))
+            with self.remote('list',prefix.rstrip('/')) as (client,lease):
+                for page in client.get_paginator('list_objects_v2').paginate(Bucket=lease['bucket'],Prefix=lease['objectKey']):
+                    for item in page.get('Contents',[]):
+                        if not item['Key'].startswith(lease['objectKey']):raise ValueError('Artifact listing escaped its allocation')
+                        keys.append(item['Key'][len(lease['prefix']):])
+                    if len(keys)>100000:raise ValueError('Artifact listing exceeds its bounded page size')
             return [self.head(key) for key in sorted(keys)]
         values=[]
         for item in sorted(self.root.rglob('*')):

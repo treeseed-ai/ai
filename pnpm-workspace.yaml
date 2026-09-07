@@ -5,4 +5,5 @@ onlyBuiltDependencies:
 allowBuilds:
   esbuild: true
 minimumReleaseAgeExclude:
-  - '@treeseed/sdk@0.13.0-rc.52 || 0.13.0-rc.53'
+  - '@treeseed/sdk@0.13.0-rc.52 || 0.13.0-rc.53 || 0.13.0-rc.96'
+  - '@treeseed/treedx@0.3.0-rc.17'

@@ -22,6 +22,12 @@ const output = resolve(process.env.TREEAI_COMPONENT_OUTPUT ?? 'release-assets/co
 mkdirSync(output, { recursive: true });
 const delegationEnvironment = ['AI_DELEGATION_ISSUER', 'AI_DELEGATION_AUDIENCE', 'AI_TEAM_ID', 'AI_NODE_ID', 'AI_DELEGATION_PUBLIC_KEYS']
 	.map(name => ({ name, required: true, source: 'configuration' as const }));
+const storageEnvironment = ['AI_PROJECT_ID', 'AI_STORAGE_SERVICE', 'AI_STORAGE_URL', 'AI_STORAGE_HOST']
+	.map(name => ({ name, required: true, source: 'configuration' as const }));
+const storageFiles = (role: string) => [
+	{ id: `ai-${role}-storage-identity`, path: `/etc/treeseed/credentials/ai-${role}-storage-identity`, required: true },
+	{ id: 'ai-storage-ca', path: '/etc/treeseed/credentials/ai-storage-ca', required: true },
+];
 
 const definitions = {
 	'ai-inference': {
@@ -36,6 +42,7 @@ const definitions = {
 		configuration: {
 			environment: [
 				...delegationEnvironment,
+				...storageEnvironment,
 				{ name: 'RUNTIME_GID', required: true, source: 'manager' },
 				{ name: 'SOURCE_MODEL', required: false, default: 'Qwen/Qwen3.5-4B' },
 				{ name: 'SOURCE_MODEL_REVISION', required: false, default: '851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a' },
@@ -50,6 +57,7 @@ const definitions = {
 				{ name: 'AI_API_KEYS', required: true },
 			],
 			secretFiles: [
+				...storageFiles('inference'),
 				{ id: 'artifact-source-registry', path: '/etc/treeseed/credentials/ai-inference-artifact-source', required: true },
 				{ id: 'artifact-destination-registry', path: '/etc/treeseed/credentials/ai-inference-artifact-destination', required: true },
 			], files: [],
@@ -69,6 +77,7 @@ const definitions = {
 		configuration: {
 			environment: [
 				...delegationEnvironment,
+				...storageEnvironment,
 				{ name: 'RUNTIME_GID', required: true, source: 'manager' },
 				{ name: 'ARTIFACT_BACKEND', required: false, default: 'filesystem' },
 				{ name: 'ARTIFACT_ROOT', required: false, default: '/artifacts' },
@@ -78,7 +87,7 @@ const definitions = {
 				{ name: 'TRAINING_POSTGRES_PASSWORD', required: true },
 				{ name: 'AI_API_KEYS', required: true },
 			],
-			secretFiles: [{ id: 'artifact-signing-key', path: '/etc/treeseed/credentials/ai-artifact-signing-key', required: true }], files: [],
+			secretFiles: [...storageFiles('training'), { id: 'artifact-signing-key', path: '/etc/treeseed/credentials/ai-artifact-signing-key', required: true }], files: [],
 		},
 		migrations: [{ id: 'training-database', order: 0, backupRequired: true }], dependencies: [], order: 51,
 		modeControl: { resource: 'ai-gpu', role: 'training', gate: { service: 'training-api', executable: '/usr/local/bin/treeseed-ai-gpu-gate' }, services: { base: ['training-gpu-state-init', 'training-postgres', 'training-migrations', 'training-artifact', 'training-manager', 'training-api'], gpu: ['training-marker', 'training-axolotl'] } },
@@ -136,7 +145,7 @@ function exactImage(role: string) {
 }
 
 function runtimeImage(id: string): Image {
-	const catalog = JSON.parse(readFileSync(resolve('release/catalog.json'), 'utf8')) as { runtimeImages: RuntimeImage[] };
+	const catalog = JSON.parse(readFileSync(resolve('release/runtime-images.json'), 'utf8')) as { runtimeImages: RuntimeImage[] };
 	const selected = catalog.runtimeImages.find((image) => image.id === id);
 	if (!selected || !selected.reference.endsWith(`@${selected.digest}`) || !/^sha256:[a-f0-9]{64}$/u.test(selected.digest)) throw new Error(`The ${id} runtime image is not pinned.`);
 	return { repository: selected.reference.slice(0, selected.reference.indexOf('@')).replace(/:[^/:]+$/u, ''), digest: selected.digest };
@@ -175,6 +184,25 @@ function baseCompose(componentId: 'ai-inference' | 'ai-training') {
 		};
 	}
 	if (componentId === 'ai-training') parsed.services['training-artifact'].group_add = ['${RUNTIME_GID:?RUNTIME_GID is required}'];
+	const consumers = family === 'inference' ? ['inference-api', 'inference-evaluator'] : ['training-api', 'training-marker', 'training-axolotl', 'training-artifact'];
+	for (const name of consumers) {
+		const service = parsed.services[name];
+		service.environment ??= {};
+		for (const variable of [...storageEnvironment, ...delegationEnvironment.filter(item => ['AI_TEAM_ID', 'AI_NODE_ID'].includes(item.name))])
+			service.environment[variable.name] = `\${${variable.name}:?${variable.name} is required}`;
+		service.environment.ARTIFACT_STORE_ID = `managed-${family}`;
+		service.environment.ARTIFACT_BACKEND = '${ARTIFACT_BACKEND:-filesystem}';
+		service.environment.NODE_EXTRA_CA_CERTS = '/run/secrets/ai-storage-ca';
+		service.secrets = [...(service.secrets ?? []), `ai-${family}-storage-identity`, 'ai-storage-ca'];
+		service.group_add = [...new Set([...(service.group_add ?? []), '${RUNTIME_GID:?RUNTIME_GID is required}'])];
+		service.extra_hosts = ['${AI_STORAGE_HOST:?AI_STORAGE_HOST is required}:host-gateway'];
+		service.networks = [...new Set([...(service.networks ?? []), `${family}-model-egress`])];
+	}
+	for (const file of storageFiles(family)) (parsed.secrets ??= {})[file.id] = { file: file.path };
+	if (family === 'inference') {
+		parsed.services['inference-evaluator'].volumes.push({ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-inference/data/artifacts', target: '/artifacts', read_only: true });
+		parsed.services['inference-evaluator'].group_add.push('1000');
+	}
 	return parsed;
 }
 
@@ -188,7 +216,6 @@ function labCompose() {
 	};
 	parsed.name = 'treeseed-ai-lab';
 	for (const { name } of delegationEnvironment) parsed.services.controller.environment[name] = `\${${name}:?${name} is required}`;
-	delete parsed.services.gateway;
 	for (const [service, role] of Object.entries(roleByService)) parsed.services[service].image = exactImage(role);
 	const dataRoot = '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-lab/data';
 	const replaceVolume = (service: string, target: string, source: string, suffix = '') => {
@@ -206,11 +233,9 @@ function labCompose() {
 	}
 	for (const service of ['experience-proxy', 'controller', 'library-bridge']) parsed.services[service].networks = ['lab-private', 'platform'];
 	for (const service of ['open-webui', 'hermes-dashboard', 'controller']) parsed.services[service].networks = [...new Set([...parsed.services[service].networks, 'treeseed-edge'])];
-	delete parsed.networks['ai-shared']; delete parsed.networks['lab-edge'];
 	parsed.networks.platform = { name: 'treeseed-platform', external: true };
 	parsed.networks['treeseed-edge'] = { name: 'treeseed-edge', external: true };
 	delete parsed.volumes;
-	for (const secret of Object.values(parsed.secrets) as Array<{ file: string }>) secret.file = secret.file.replace('/etc/treeseed-ai/lab/secrets/', '/etc/treeseed/credentials/ai-lab-');
 	return parsed;
 }
 

@@ -93,7 +93,10 @@ describe('managed AI component releases', () => {
 					expect(document.services['inference-api']?.volumes).toContainEqual({ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-inference/data/artifacts', target: '/artifacts' });
 					expect(document.services['inference-api']?.volumes).toContainEqual({ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-training/data/training', target: '/training-artifacts', read_only: true });
 					expect(release.runtime.stateVolumes).toContainEqual({ id: 'artifacts', volume: '/var/lib/treeseed/components/ai-inference/data/artifacts', backup: 'required' });
-					expect(release.runtime.configuration.secretFiles.map(({ id }) => id)).toEqual(['artifact-source-registry', 'artifact-destination-registry']);
+					expect(release.runtime.configuration.secretFiles.map(({ id }) => id)).toEqual(['ai-inference-storage-identity', 'ai-storage-ca', 'artifact-source-registry', 'artifact-destination-registry']);
+					expect(document.services['inference-api']?.secrets).toContain('ai-inference-storage-identity');
+					expect(document.services['inference-evaluator']?.secrets).toContain('ai-inference-storage-identity');
+					expect(document.services['inference-evaluator']?.volumes).toContainEqual({type:'bind',source:'${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-inference/data/artifacts',target:'/artifacts',read_only:true});
 				}
 				if (componentId === 'ai-training') {
 					expect(document.services['training-gpu-state-init']?.entrypoint?.at(-1)).toContain('chown 10001:10001 /artifacts /archive /models');

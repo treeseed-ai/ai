@@ -23,14 +23,4 @@ Qwen 3.5 currently runs with Axolotl sample packing disabled because the upstrea
 
 Upload files into an Open WebUI Knowledge Base and attach exactly one Knowledge Base to the current chat. The managed **Train Library** action shows ready, pending, rejected, and estimated-token counts before confirmation. Choose `smoke` to qualify document processing and QLoRA mechanics, or `standard` for an evaluation- and promotion-eligible run.
 
-The equivalent CLI flow is:
-
-```text
-treeai lab libraries
-treeai training library documents <library-id>
-treeai training library retry <library-id> <document-id>
-treeai lab library train <library-id> --mode smoke
-treeai lab library watch <run-id>
-```
-
-Normal inspection and monitoring do not require root for members of `treeseed-ai-operators`. Host mutation and recovery commands remain root-only.
+Use the authenticated Training/Lab APIs or their cataloged TreeAI SDK operations for the same workflow. Host permissions and GPU mode are managed by the TreeSeed control plane and Deployment. There is no separate `treeai` host CLI or operator group.

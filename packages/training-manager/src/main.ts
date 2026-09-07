@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { httpHandler, JobWorker, PostgresJobRepository, reconcileCompose, redactSensitiveText, requiredEnv } from '@ai-platform/common';
+import { httpHandler, JobWorker, PostgresJobRepository,  redactSensitiveText, requiredEnv } from '@ai-platform/common';
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname,join } from 'node:path';
@@ -9,11 +9,10 @@ import { Agent, fetch as undiciFetch } from 'undici';
 
 const axolotlWorkerDispatcher=new Agent({headersTimeout:0,bodyTimeout:0});
 
-const command = process.argv[2] ?? 'worker';
+if (process.argv[2] && process.argv[2] !== 'worker') throw new Error('Host lifecycle belongs to TreeSeed Deployment.');
 const gpuTypes = new Set(['document.process', 'library.document.marker', 'library.training.qlora', 'library.training.multimodal.qlora', 'library.training.multimodal.qualify', 'training.qlora']);
 const admissionFile = process.env.TREESEED_GPU_ADMISSION_FILE;
-const modeFile = process.env.AI_FACTORY_MODE_FILE;
-const statusFile = process.env.TREESEED_GPU_ACTIVITY_FILE ?? process.env.AI_FACTORY_STATUS_FILE;
+const statusFile = process.env.TREESEED_GPU_ACTIVITY_FILE;
 const trainingProfileFile = statusFile ? join(dirname(statusFile),'training-profile.json') : undefined;
 function safeWorkerError(value:string){return redactSensitiveText(value).replace(/[\u0000-\u001f\u007f]/gu,' ').slice(-2000);}
 async function cancelAxolotl(axolotl:string,jobId:string){try{await undiciFetch(`${axolotl}/cancel`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jobId}),dispatcher:axolotlWorkerDispatcher});}catch{/* cancellation is best effort; the worker-side execution lock still prevents duplicates */}}
@@ -25,9 +24,7 @@ function factoryMode() {
     try { return JSON.parse(readFileSync(admissionFile, 'utf8')).admission === 'open' ? 'sleep' : 'awake'; }
     catch { return 'degraded'; }
   }
-  if (!modeFile) return 'sleep';
-  try { return JSON.parse(readFileSync(modeFile, 'utf8')).mode as string; }
-  catch { return 'degraded'; }
+  return 'sleep';
 }
 
 function writeStatus(active: number,type='training.qlora') {
@@ -53,13 +50,8 @@ function classifyHandler(pool:Pool,jobs:PostgresJobRepository,artifact:string):J
 function markerHandler(pool:Pool,marker:string):JobHandler{return async(job,signal,progress)=>{await progress(.05);const result=await markerCall(marker,job,signal,progress);await updateDocument(pool,job,{...result,processor:'marker'});await progress(.95);return result.resultManifest;};}
 function datasetHandler(pool:Pool,axolotl:string):JobHandler{return async(job,signal,progress)=>{const request=job.request as any,snapshot=await pool.query(`SELECT s.id,s.mode,s.library_id,l.name library_name FROM library_snapshots s JOIN libraries l ON l.id=s.library_id WHERE s.id=$1`,[request.snapshotId]);if(!snapshot.rowCount)throw new Error('Library snapshot not found');const documents=await pool.query(`SELECT r.id revision_id,r.object_sha256,r.filename,r.relative_path,r.normalized_manifest_uri,d.relative_path topic_path FROM library_snapshot_documents sd JOIN document_revisions r ON r.id=sd.document_revision_id LEFT JOIN library_directories d ON d.library_id=(SELECT library_id FROM library_snapshots WHERE id=sd.snapshot_id) AND d.external_id=r.directory_external_id WHERE sd.snapshot_id=$1 ORDER BY r.object_sha256,r.relative_path`,[request.snapshotId]);if(documents.rows.some((item)=>!item.normalized_manifest_uri))throw new Error('Snapshot documents are not all ready');const directories=await pool.query(`SELECT d.external_id,d.name,d.relative_path,p.relative_path parent_path,COALESCE((SELECT json_agg(c.name ORDER BY c.name) FROM library_directories c WHERE c.library_id=d.library_id AND c.parent_external_id=d.external_id AND c.deleted=false),'[]') child_topics,COALESCE((SELECT json_agg(r.filename ORDER BY r.filename) FROM library_snapshot_documents sd JOIN document_revisions r ON r.id=sd.document_revision_id WHERE sd.snapshot_id=$2 AND r.directory_external_id=d.external_id),'[]') document_titles FROM library_directories d LEFT JOIN library_directories p ON p.library_id=d.library_id AND p.external_id=d.parent_external_id WHERE d.library_id=$1 AND d.deleted=false ORDER BY d.relative_path`,[snapshot.rows[0].library_id,request.snapshotId]);await progress(.1);const response=await fetch(`${axolotl}/prepare-library-dataset`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jobId:job.id,type:job.type,input:{snapshotId:request.snapshotId,mode:snapshot.rows[0].mode,libraryName:snapshot.rows[0].library_name,baseModel:request.baseModel,baseModelRevision:request.baseModelRevision,sequenceLength:request.sequenceLength??2048,directories:directories.rows.map((item)=>({externalId:item.external_id,name:item.name,relativePath:item.relative_path,parentPath:item.parent_path,childTopics:item.child_topics,documentTitles:item.document_titles})),documents:documents.rows.map((item)=>({revisionId:item.revision_id,sha256:item.object_sha256,filename:item.filename,relativePath:item.relative_path,topicPath:item.topic_path,manifestUri:item.normalized_manifest_uri}))}}),signal});if(!response.ok)throw new Error(`Dataset worker returned ${response.status}: ${await response.text()}`);const result=await response.json()as any;await pool.query(`INSERT INTO library_datasets(snapshot_id,manifest_uri,train_uri,evaluation_uri,multimodal_train_uri,multimodal_evaluation_uri,multimodal_example_count,token_count,evaluation_token_count,digest) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(snapshot_id) DO UPDATE SET manifest_uri=excluded.manifest_uri,train_uri=excluded.train_uri,evaluation_uri=excluded.evaluation_uri,multimodal_train_uri=excluded.multimodal_train_uri,multimodal_evaluation_uri=excluded.multimodal_evaluation_uri,multimodal_example_count=excluded.multimodal_example_count,token_count=excluded.token_count,evaluation_token_count=excluded.evaluation_token_count,digest=excluded.digest`,[request.snapshotId,result.resultManifest,result.trainUri,result.evaluationUri,result.multimodalTrainUri,result.multimodalEvaluationUri,result.multimodalExamples??0,result.tokenCount,result.evaluationTokenCount,result.digest]);await pool.query(`UPDATE library_snapshot_documents SET held_out=document_revision_id=ANY($2::uuid[]) WHERE snapshot_id=$1`,[request.snapshotId,result.heldOutRevisionIds??[]]);await pool.query(`UPDATE library_snapshots SET state='ready',manifest_uri=$2,token_count=$3,updated_at=now() WHERE id=$1`,[request.snapshotId,result.resultManifest,Number(result.tokenCount)+Number(result.evaluationTokenCount)]);await progress(.95);return result.resultManifest;};}
 
-if (command === 'plan' || command === 'apply') {
-  const result = await reconcileCompose({
-    composeFile: process.env.COMPOSE_FILE ?? '/usr/lib/treeseed-ai/training/compose.yml',
-    project: 'treeseed-ai-training', action: command,
-  });
-  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-} else {
+{
+
   const jobs = new PostgresJobRepository(new Pool({ connectionString: requiredEnv('DATABASE_URL') }));
   const marker = process.env.MARKER_URL ?? 'http://marker:8080';
   const axolotl = process.env.AXOLOTL_URL ?? 'http://axolotl:8080';

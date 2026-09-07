@@ -2,10 +2,10 @@ import base64, hashlib, json, mimetypes, os, re, urllib.error, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from sys import path
-import boto3
 
 path.insert(0, "/app")
 from common.server import serve
+from common.artifacts import ArtifactRepository
 
 STATE = Path(os.getenv("STATE_DIR", "/state")); STATE.mkdir(parents=True, exist_ok=True)
 PRIVATE_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -74,15 +74,8 @@ def authorize(job):
     ranking=json.loads(target.read_text());candidate=job["input"].get("candidateId")
     if not ranking.get("promotable") or ranking.get("ranking",[{}])[0].get("candidate")!=candidate:raise ValueError("Strict promotion gate rejected candidate")
     return{"resultManifest":uri,"authorized":True}
-def s3_client():
-    return boto3.client("s3", endpoint_url=os.environ["AWS_ENDPOINT_URL"], region_name=os.getenv("AWS_REGION", "us-east-1"), aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"], aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"])
 def object_bytes(uri):
-    try:return s3_client().get_object(Bucket=os.environ["S3_BUCKET"],Key=key(uri))["Body"].read()
-    except Exception as error:raise RuntimeError(f"inference object store read failed: {type(error).__name__}") from error
-def key(uri):
-    prefix=f"s3://{os.environ['S3_BUCKET']}/"
-    if not uri.startswith(prefix): raise ValueError("Copied adapter object is outside the inference bucket")
-    return uri[len(prefix):]
+    return ArtifactRepository.from_env().bytes(uri)
 def post(path, body):
     request=urllib.request.Request(f"{os.getenv('VLLM_URL','http://vllm:8000')}{path}", data=json.dumps(body).encode(), headers={"content-type":"application/json"})
     try:return PRIVATE_OPENER.open(request, timeout=240).read()
@@ -94,11 +87,13 @@ def deployment(job, action):
     candidate=str(job["input"]["candidateId"]); value=job["input"]["manifest"]
     source=value["sourceManifest"]; copied=value["copiedObjects"]
     target=STATE/"adapters"/candidate; target.mkdir(parents=True, exist_ok=True)
-    client=s3_client()
+    repository=ArtifactRepository.from_env()
     for original, stored in zip(source["objects"], copied, strict=True):
         marker=f"/adapters/{source['artifactId']}/";relative=original["uri"].split(marker,1)[-1];name=Path(relative)
         if marker not in original["uri"] or name.is_absolute() or ".." in name.parts: raise ValueError("Adapter object has no safe relative path")
-        destination=target/name;destination.parent.mkdir(parents=True,exist_ok=True);client.download_file(os.environ["S3_BUCKET"],key(stored["uri"]),str(destination))
+        destination=target/name;destination.parent.mkdir(parents=True,exist_ok=True);data=repository.bytes(stored['uri'])
+        if hashlib.sha256(data).hexdigest()!=stored['sha256']:raise ValueError('Copied adapter checksum differs')
+        destination.write_bytes(data)
     try: post("/v1/unload_lora_adapter",{"lora_name":candidate})
     except PrivateHttpError as error:
         if error.status not in {400,404}: raise

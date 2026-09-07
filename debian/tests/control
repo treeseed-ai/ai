@@ -1,3 +1,0 @@
-Tests: package-contract
-Depends: @, curl, systemd
-Restrictions: superficial
