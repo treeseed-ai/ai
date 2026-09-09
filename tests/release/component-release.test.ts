@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { componentReleaseSchema } from '@treeseed/sdk/deployment';
+import { componentReleaseSchema, deploymentDigest } from '@treeseed/sdk/deployment';
 import YAML from 'yaml';
 
 const roles = [
@@ -30,7 +30,10 @@ describe('managed AI component releases', () => {
 			['ai-lab', ['lab-controller', 'lab-experience-proxy', 'lab-library-bridge', 'lab-open-webui', 'hermes-agent', 'lab-web-tool-proxy']],
 		]);
 		for (const [componentId, componentRoles] of expected) {
-			const release = componentReleaseSchema.parse(JSON.parse(readFileSync(resolve(output, `${componentId}-component-release.json`), 'utf8')));
+			const emitted = JSON.parse(readFileSync(resolve(output, `${componentId}-component-release.json`), 'utf8'));
+			const release = componentReleaseSchema.parse(emitted);
+			expect(emitted.runtimeDigest, `${componentId} raw JSON custody`).toBe(deploymentDigest(emitted.runtime));
+			expect(release.runtimeDigest, `${componentId} emitted runtime custody`).toBe(deploymentDigest(release.runtime));
 			const compose = readFileSync(resolve(output, `${componentId}-compose.yml`), 'utf8');
 			const document = YAML.parse(compose) as { services: Record<string, { image: string; ports?: unknown; networks?: string[]; restart?: string; healthcheck?: unknown; env_file?: unknown; entrypoint?: string[]; group_add?: string[]; volumes?: Array<string | { source?: string; target?: string }> }>; secrets?: Record<string, { file: string }>; networks?: Record<string, { internal?: boolean }> };
 			const acceptedImages = new Set(release.images.map(({ repository, digest }) => `${repository}@${digest}`));

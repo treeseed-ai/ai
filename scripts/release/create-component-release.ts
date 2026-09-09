@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { componentReleaseSchema, deploymentDigest } from '@treeseed/sdk/deployment';
+import { componentReleaseSchema, deploymentDigest, packageRuntimeSchema } from '@treeseed/sdk/deployment';
 import YAML from 'yaml';
 
 interface Image { repository: string; digest: string }
@@ -276,14 +276,14 @@ for (const componentId of Object.keys(definitions) as Array<keyof typeof definit
 	const compose = YAML.stringify(componentId === 'ai-lab' ? labCompose() : baseCompose(componentId));
 	if (/\bbuild\s*:/u.test(compose) || /@[A-Z_]+_IMAGE@/u.test(compose) || /^\s*ports\s*:/mu.test(compose)) throw new Error(`${componentId} Compose is not immutable and manager-owned.`);
 	const composeDigest = `sha256:${createHash('sha256').update(compose).digest('hex')}`;
-	const runtime = {
+	const runtime = packageRuntimeSchema.parse({
 		schemaVersion: 'treeseed.package-runtime/v1' as const, componentId, version: debianRelease,
 		compose: { projectName: `treeseed-${componentId}`, files: [{ path: composeName, digest: composeDigest }] },
 		configuration: definition.configuration,
 		services: serviceContracts(componentId), stateVolumes: definition.states, migrations: definition.migrations,
 		requiredCapabilities: componentId === 'ai-lab' ? ['docker-compose'] : ['docker-compose', 'nvidia-container-runtime'], dependencies: definition.dependencies,
 		modeControl: definition.modeControl,
-	};
+	});
 	const localImages = definition.roles.map((role) => {
 		const image = manifest.images[role]!;
 		return { role, repository: image.repository, digest: image.digest, platforms: ['linux/amd64'], consumers: [componentId] };
@@ -309,6 +309,7 @@ for (const componentId of Object.keys(definitions) as Array<keyof typeof definit
 		images: componentImages, runtime, runtimeDigest: deploymentDigest(runtime), rollback: { compatible: true, requiresBackup: true },
 		evidence: { provenance: componentImages.map(tagUrl), sboms: componentImages.map(tagUrl), vulnerabilities: [] },
 	});
+	if (bundle.runtimeDigest !== deploymentDigest(bundle.runtime)) throw new Error(`${componentId} emitted runtime digest differs from its normalized contract.`);
 	writeFileSync(resolve(output, composeName), compose);
 	writeFileSync(resolve(output, manifestName), `${JSON.stringify(bundle, null, 2)}\n`);
 	results.push({ componentId, manifestName, composeName, runtimeDigest: bundle.runtimeDigest, composeDigest });
