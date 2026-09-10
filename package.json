@@ -39,7 +39,7 @@
     "yaml": "^2.8.1"
   },
   "devDependencies": {
-    "@treeseed/sdk": "0.13.0-rc.96",
+    "@treeseed/sdk": "0.13.0-rc.108",
     "@types/node": "^24.6.0",
     "@types/pg": "^8.15.5",
     "esbuild": "^0.28.2",

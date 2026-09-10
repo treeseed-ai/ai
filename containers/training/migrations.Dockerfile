@@ -1,8 +1,16 @@
-FROM alpine:3.23.5@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
-LABEL org.opencontainers.image.base.name="alpine:3.23.5" org.opencontainers.image.base.digest="sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40"
-RUN apk add --no-cache postgresql17-client=17.11-r0
+FROM node:24.19.0-bookworm-slim@sha256:3638d9a6fe4030bd716be989438248074489337ba3275657f93595428be4fc03 AS build
+WORKDIR /app
+RUN corepack enable
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages ./packages
+RUN pnpm install --frozen-lockfile
+COPY containers/migrations/run.ts ./containers/migrations/run.ts
+RUN pnpm exec esbuild containers/migrations/run.ts --bundle --platform=node --format=esm --external:pg-native --outfile=/out/run.mjs --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);"
+FROM node:24.19.0-bookworm-slim@sha256:3638d9a6fe4030bd716be989438248074489337ba3275657f93595428be4fc03
+LABEL org.opencontainers.image.base.name="node:24.19.0-bookworm-slim" org.opencontainers.image.base.digest="sha256:3638d9a6fe4030bd716be989438248074489337ba3275657f93595428be4fc03"
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+COPY --from=build /out/run.mjs /usr/local/lib/treeai-run-migrations.mjs
 COPY migrations/training /migrations
-COPY containers/migrations/run.sh /usr/local/bin/treeai-run-migrations
-RUN chmod 0555 /usr/local/bin/treeai-run-migrations
 ENV TREEAI_MIGRATION_PRODUCT=training
-ENTRYPOINT ["/usr/local/bin/treeai-run-migrations"]
+USER 10001:10001
+ENTRYPOINT ["node", "/usr/local/lib/treeai-run-migrations.mjs"]

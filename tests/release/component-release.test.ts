@@ -25,8 +25,8 @@ describe('managed AI component releases', () => {
 			cwd: process.cwd(), env: { ...process.env, TREEAI_COMPONENT_RELEASE: '0.11.0-rc1', TREEAI_COMPONENT_REVISION: '2', TREEAI_SOURCE_COMMIT: 'a'.repeat(40), TREEAI_IMAGE_MANIFEST: manifest, TREEAI_COMPONENT_OUTPUT: output },
 		});
 		const expected = new Map([
-			['ai-inference', ['inference-api', 'inference-manager', 'inference-vllm', 'inference-evaluator', 'inference-migrations', 'postgres']],
-			['ai-training', ['training-api', 'training-manager', 'axolotl-worker', 'marker-worker', 'artifact-worker', 'training-migrations', 'postgres']],
+			['ai-inference', ['inference-api', 'inference-manager', 'inference-vllm', 'inference-evaluator', 'inference-migrations']],
+			['ai-training', ['training-api', 'training-manager', 'axolotl-worker', 'marker-worker', 'artifact-worker', 'training-migrations']],
 			['ai-lab', ['lab-controller', 'lab-experience-proxy', 'lab-library-bridge', 'lab-open-webui', 'hermes-agent', 'lab-web-tool-proxy']],
 		]);
 		for (const [componentId, componentRoles] of expected) {
@@ -78,8 +78,18 @@ describe('managed AI component releases', () => {
 				expect(compose).toContain('https://chat.ai.treeseed.localhost');
 				expect(release.runtime.configuration.environment).toContainEqual({ name: 'OPEN_WEBUI_AUTH', required: false, source: 'configuration', default: 'false' });
 			} else {
-				expect(compose).toContain('postgres@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73');
-				expect(compose).toContain(`/${componentId}/data/postgres`);
+				expect(compose).not.toContain('postgres@sha256:');
+				expect(compose).not.toContain('_POSTGRES_PASSWORD');
+				expect(compose).not.toMatch(/\sDATABASE_URL:/u);
+				expect(document.networks?.database).toEqual({ external: true, name: 'treeseed-postgres-private' });
+				expect(release.runtime.postgresRequirements).toEqual([{ id: componentId, supportedMajors: [17], extensions: ['pgcrypto'], runtimeConnectionLimit: 20 }]);
+				const family = componentId === 'ai-inference' ? 'inference' : 'training';
+				expect(document.services[`${family}-postgres`]).toBeUndefined();
+				for (const suffix of ['migrations','api','manager']) {
+					const phase = suffix === 'migrations' ? 'migration' : 'runtime';
+					expect(document.services[`${family}-${suffix}`]?.volumes).toContainEqual({ type: 'bind',
+						source: `/run/treeseed/postgres-clients/${componentId}/${componentId}/${phase}`, target: `/run/treeseed/postgres/${componentId}`, read_only: true });
+				}
 				expect(release.runtime.stateVolumes).toContainEqual({ id: 'postgres', volume: `/var/lib/treeseed/components/${componentId}/data/postgres`, backup: 'required' });
 				if (componentId === 'ai-training') expect(document.services['training-api']?.volumes).toContainEqual({ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-training/data/training', target: '/artifacts' });
 				if (componentId === 'ai-inference') {

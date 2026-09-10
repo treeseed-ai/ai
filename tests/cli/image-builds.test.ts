@@ -56,7 +56,7 @@ describe('selective image build identities',()=>{
     expect(builds.platform).toBe('linux/amd64');
     for(const [role,build]of Object.entries(builds.images)){expect(build.inputs.length,role).toBeGreaterThan(0);expect(build.inputs).toContain(build.dockerfile);}
 		for(const role of['inference-api','inference-manager','training-api','training-manager','lab-controller','lab-experience-proxy'])expect(builds.images[role]?.inputs).not.toContain('packages');
-		for(const role of['inference-migrations','training-migrations'])expect(builds.images[role]?.inputs).toContain('containers/migrations/run.sh');
+		for(const role of['inference-migrations','training-migrations'])expect(builds.images[role]?.inputs).toContain('containers/migrations/run.ts');
 		for(const role of['lab-controller','lab-experience-proxy','lab-library-bridge']){expect(builds.images[role]?.inputs).not.toContain('packages/lab');expect(builds.images[role]?.inputs).not.toContain('packages/lab/src/cli.ts');expect(builds.images[role]?.inputs).not.toContain('packages/lab/src/corpus.ts');}
 		expect(builds.images['lab-controller']?.inputs).toContain('packages/lab/src/controller.ts');expect(builds.images['lab-experience-proxy']?.inputs).toContain('packages/lab/src/proxy.ts');expect(builds.images['lab-library-bridge']?.inputs).toContain('packages/lab/src/library-bridge.ts');
   });

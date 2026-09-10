@@ -1,5 +1,6 @@
 export * from './auth.js';
 export * from './config.js';
+export * from './database/connection.js';
 export * from './jobs.js';
 export * from './job-worker.js';
 export * from './manifest.js';

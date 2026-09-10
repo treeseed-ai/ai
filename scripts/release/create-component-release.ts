@@ -6,7 +6,6 @@ import YAML from 'yaml';
 
 interface Image { repository: string; digest: string }
 interface ImageManifest { images: Record<string, Image> }
-interface RuntimeImage { id: string; reference: string; digest: string }
 
 const release = process.env.TREEAI_COMPONENT_RELEASE;
 const sourceCommit = process.env.TREEAI_SOURCE_COMMIT;
@@ -32,7 +31,7 @@ const storageFiles = (role: string) => [
 const definitions = {
 	'ai-inference': {
 		roles: ['inference-api', 'inference-manager', 'inference-vllm', 'inference-evaluator', 'inference-migrations'],
-		services: ['inference-gpu-state-init', 'inference-postgres', 'inference-migrations', 'inference-vllm', 'inference-evaluator', 'inference-manager', 'inference-api'],
+		services: ['inference-gpu-state-init', 'inference-migrations', 'inference-vllm', 'inference-evaluator', 'inference-manager', 'inference-api'],
 		states: [
 			{ id: 'postgres', volume: '/var/lib/treeseed/components/ai-inference/data/postgres', backup: 'required' },
 			{ id: 'inference', volume: '/var/lib/treeseed/components/ai-inference/data/inference', backup: 'required' },
@@ -52,8 +51,6 @@ const definitions = {
 				{ name: 'GPU_MEMORY_UTILIZATION', required: false, default: '0.85' },
 			],
 			secretEnvironment: [
-				{ name: 'INFERENCE_DATABASE_URL', required: true },
-				{ name: 'INFERENCE_POSTGRES_PASSWORD', required: true },
 				{ name: 'AI_API_KEYS', required: true },
 			],
 			secretFiles: [
@@ -63,11 +60,11 @@ const definitions = {
 			], files: [],
 		},
 		migrations: [{ id: 'inference-database', order: 0, backupRequired: true }], dependencies: [], order: 50,
-		modeControl: { resource: 'ai-gpu', role: 'inference', gate: { service: 'inference-api', executable: '/usr/local/bin/treeseed-ai-gpu-gate' }, services: { base: ['inference-gpu-state-init', 'inference-postgres', 'inference-migrations', 'inference-evaluator', 'inference-manager', 'inference-api'], gpu: ['inference-vllm'], warm: 'inference-vllm' } },
+		modeControl: { resource: 'ai-gpu', role: 'inference', gate: { service: 'inference-api', executable: '/usr/local/bin/treeseed-ai-gpu-gate' }, services: { base: ['inference-gpu-state-init', 'inference-evaluator', 'inference-manager', 'inference-api'], gpu: ['inference-vllm'], warm: 'inference-vllm' } },
 	},
 	'ai-training': {
 		roles: ['training-api', 'training-manager', 'axolotl-worker', 'marker-worker', 'artifact-worker', 'training-migrations'],
-		services: ['training-gpu-state-init', 'training-postgres', 'training-migrations', 'training-marker', 'training-axolotl', 'training-artifact', 'training-manager', 'training-api'],
+		services: ['training-gpu-state-init', 'training-migrations', 'training-marker', 'training-axolotl', 'training-artifact', 'training-manager', 'training-api'],
 		states: [
 			{ id: 'postgres', volume: '/var/lib/treeseed/components/ai-training/data/postgres', backup: 'required' },
 			{ id: 'training', volume: '/var/lib/treeseed/components/ai-training/data/training', backup: 'required' },
@@ -83,14 +80,12 @@ const definitions = {
 				{ name: 'ARTIFACT_ROOT', required: false, default: '/artifacts' },
 			],
 			secretEnvironment: [
-				{ name: 'TRAINING_DATABASE_URL', required: true },
-				{ name: 'TRAINING_POSTGRES_PASSWORD', required: true },
 				{ name: 'AI_API_KEYS', required: true },
 			],
 			secretFiles: [...storageFiles('training'), { id: 'artifact-signing-key', path: '/etc/treeseed/credentials/ai-artifact-signing-key', required: true }], files: [],
 		},
 		migrations: [{ id: 'training-database', order: 0, backupRequired: true }], dependencies: [], order: 51,
-		modeControl: { resource: 'ai-gpu', role: 'training', gate: { service: 'training-api', executable: '/usr/local/bin/treeseed-ai-gpu-gate' }, services: { base: ['training-gpu-state-init', 'training-postgres', 'training-migrations', 'training-artifact', 'training-manager', 'training-api'], gpu: ['training-marker', 'training-axolotl'] } },
+		modeControl: { resource: 'ai-gpu', role: 'training', gate: { service: 'training-api', executable: '/usr/local/bin/treeseed-ai-gpu-gate' }, services: { base: ['training-gpu-state-init', 'training-artifact', 'training-manager', 'training-api'], gpu: ['training-marker', 'training-axolotl'] } },
 	},
 	'ai-lab': {
 		roles: ['lab-controller', 'lab-experience-proxy', 'lab-library-bridge', 'lab-open-webui', 'hermes-agent', 'lab-web-tool-proxy'],
@@ -144,25 +139,26 @@ function exactImage(role: string) {
 	return `${image.repository}@${image.digest}`;
 }
 
-function runtimeImage(id: string): Image {
-	const catalog = JSON.parse(readFileSync(resolve('release/runtime-images.json'), 'utf8')) as { runtimeImages: RuntimeImage[] };
-	const selected = catalog.runtimeImages.find((image) => image.id === id);
-	if (!selected || !selected.reference.endsWith(`@${selected.digest}`) || !/^sha256:[a-f0-9]{64}$/u.test(selected.digest)) throw new Error(`The ${id} runtime image is not pinned.`);
-	return { repository: selected.reference.slice(0, selected.reference.indexOf('@')).replace(/:[^/:]+$/u, ''), digest: selected.digest };
-}
-
 function baseCompose(componentId: 'ai-inference' | 'ai-training') {
 	const family = componentId === 'ai-inference' ? 'inference' : 'training';
 	let source = readFileSync(resolve('deploy/component/compose.template.yml'), 'utf8')
 		.replaceAll('/etc/treeseed/components/ai/environment', `/etc/treeseed/components/${componentId}/environment`)
 		.replaceAll('/ai/data/', `/${componentId}/data/`);
-	const postgres = runtimeImage('postgres');
-	source = source.replaceAll('@POSTGRES_IMAGE@', `${postgres.repository}@${postgres.digest}`);
 	for (const role of definitions[componentId].roles) source = source.replaceAll(`@${role.replaceAll('-', '_').toUpperCase()}_IMAGE@`, exactImage(role));
 	const parsed = YAML.parse(source) as Record<string, any>;
 	parsed.name = `treeseed-${componentId}`;
 	parsed.services = Object.fromEntries(definitions[componentId].services.map((name) => [name, parsed.services[name]]));
 	parsed.networks = Object.fromEntries(Object.entries(parsed.networks).filter(([name]) => name === `${family}-private` || name === `${family}-model-egress` || name === 'platform' || name === 'treeseed-edge'));
+	parsed.networks.database = { external: true, name: 'treeseed-postgres-private' };
+	for (const name of [`${family}-migrations`, `${family}-api`, `${family}-manager`]) {
+		const service = parsed.services[name], phase = name.endsWith('-migrations') ? 'migration' : 'runtime';
+		service.volumes = [...(service.volumes ?? []), { type: 'bind',
+			source: `/run/treeseed/postgres-clients/${componentId}/${componentId}/${phase}`,
+			target: `/run/treeseed/postgres/${componentId}`, read_only: true }];
+		service.networks = [...new Set([...(service.networks ?? []), 'database'])];
+		// Deployment completes migrations before exposing runtime credentials.
+		if (service.depends_on) delete service.depends_on[`${family}-migrations`];
+	}
 	if (componentId === 'ai-training') parsed.services['training-api'].volumes = [
 		...(parsed.services['training-api'].volumes ?? []),
 		{ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-training/data/training', target: '/artifacts' },
@@ -242,7 +238,6 @@ function labCompose() {
 function serviceContracts(componentId: keyof typeof definitions) {
 	if (componentId === 'ai-inference') return [
 		{ id: 'inference-gpu-state-init', composeService: 'inference-gpu-state-init', endpoints: [] },
-		{ id: 'inference-postgres', composeService: 'inference-postgres', endpoints: [] },
 		{ id: 'inference-migrations', composeService: 'inference-migrations', endpoints: [] }, { id: 'inference-vllm', composeService: 'inference-vllm', endpoints: [] },
 		{ id: 'inference-evaluator', composeService: 'inference-evaluator', endpoints: [] }, { id: 'inference-manager', composeService: 'inference-manager', endpoints: [] },
 		{ id: 'inference-api', composeService: 'inference-api', endpoints: [
@@ -252,7 +247,6 @@ function serviceContracts(componentId: keyof typeof definitions) {
 	];
 	if (componentId === 'ai-training') return [
 		{ id: 'training-gpu-state-init', composeService: 'training-gpu-state-init', endpoints: [] },
-		{ id: 'training-postgres', composeService: 'training-postgres', endpoints: [] },
 		{ id: 'training-migrations', composeService: 'training-migrations', endpoints: [] }, { id: 'training-marker', composeService: 'training-marker', endpoints: [] },
 		{ id: 'training-axolotl', composeService: 'training-axolotl', endpoints: [] }, { id: 'training-artifact', composeService: 'training-artifact', endpoints: [] },
 		{ id: 'training-manager', composeService: 'training-manager', endpoints: [] },
@@ -283,15 +277,18 @@ for (const componentId of Object.keys(definitions) as Array<keyof typeof definit
 		services: serviceContracts(componentId), stateVolumes: definition.states, migrations: definition.migrations,
 		requiredCapabilities: componentId === 'ai-lab' ? ['docker-compose'] : ['docker-compose', 'nvidia-container-runtime'], dependencies: definition.dependencies,
 		modeControl: definition.modeControl,
+		...(componentId === 'ai-lab' ? {} : {
+			postgresRequirements: [{ id: componentId, supportedMajors: [17], extensions: ['pgcrypto'], runtimeConnectionLimit: 20 }],
+			postgresLifecycle: [{ requirementId: componentId, credentialOwner: { uid: componentId === 'ai-inference' ? 1000 : 10001, gid: componentId === 'ai-inference' ? 1000 : 10001 },
+				migration: { composeService: componentId === 'ai-inference' ? 'inference-migrations' : 'training-migrations', completion: 'exit-zero', timeoutSeconds: 600 },
+				runtimeServices: componentId === 'ai-inference' ? ['inference-manager', 'inference-api'] : ['training-manager', 'training-api'] }],
+		}),
 	});
 	const localImages = definition.roles.map((role) => {
 		const image = manifest.images[role]!;
 		return { role, repository: image.repository, digest: image.digest, platforms: ['linux/amd64'], consumers: [componentId] };
 	});
-	const upstream = componentId === 'ai-lab'
-		? []
-		: [{ role: 'postgres', ...runtimeImage('postgres'), platforms: ['linux/amd64'], consumers: [componentId] }];
-	const componentImages = [...localImages, ...upstream];
+	const componentImages = localImages;
 	const tagUrl = ({ repository }: { repository: string }) => {
 		if (repository.startsWith('treeseed/')) return `https://hub.docker.com/r/${repository}/tags?name=${encodeURIComponent(release)}`;
 		if (!repository.includes('/')) return `https://hub.docker.com/_/${repository}/tags`;
