@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { httpHandler,JobWorker,PostgresJobRepository,requiredEnv,type JobHandler } from '@ai-platform/common';
+import { httpHandler,JobWorker,PostgresJobRepository,readAiDatabaseUrl,type JobHandler } from '@ai-platform/common';
 import { readFileSync } from 'node:fs';
 import { Pool } from 'pg';
 import { Agent,fetch as undiciFetch } from 'undici';
@@ -30,5 +30,5 @@ function deploymentHandler(pool:Pool,evaluator:string,action:'promote'|'rollback
   };
 }
 {
-  const pool=new Pool({connectionString:requiredEnv('DATABASE_URL')});const jobs=new PostgresJobRepository(pool);const evaluator=process.env.EVALUATOR_URL??'http://evaluator:8080';const handlers={'adapter.import':artifactImportHandler(evaluator),'evaluation.run':evaluationHandler(evaluator),'ranking.run':rankingHandler(pool,evaluator),'deployment.promote':deploymentHandler(pool,evaluator,'promote'),'deployment.rollback':deploymentHandler(pool,evaluator,'rollback')};const admissionFile=process.env.TREESEED_GPU_ADMISSION_FILE;const enabled=()=>{if(!admissionFile)return Object.keys(handlers);try{const value=JSON.parse(readFileSync(admissionFile!,'utf8')),awake=value.admission==='open';return awake?Object.keys(handlers):['adapter.import','ranking.run'];}catch{return['adapter.import','ranking.run'];}};const worker=new JobWorker({jobs,workerId:`inference-manager-${process.pid}`,handlers,enabledTypes:enabled});process.on('SIGTERM',()=>worker.stop());await worker.run();
+  const pool=new Pool({connectionString:readAiDatabaseUrl('inference')});const jobs=new PostgresJobRepository(pool);const evaluator=process.env.EVALUATOR_URL??'http://evaluator:8080';const handlers={'adapter.import':artifactImportHandler(evaluator),'evaluation.run':evaluationHandler(evaluator),'ranking.run':rankingHandler(pool,evaluator),'deployment.promote':deploymentHandler(pool,evaluator,'promote'),'deployment.rollback':deploymentHandler(pool,evaluator,'rollback')};const admissionFile=process.env.TREESEED_GPU_ADMISSION_FILE;const enabled=()=>{if(!admissionFile)return Object.keys(handlers);try{const value=JSON.parse(readFileSync(admissionFile!,'utf8')),awake=value.admission==='open';return awake?Object.keys(handlers):['adapter.import','ranking.run'];}catch{return['adapter.import','ranking.run'];}};const worker=new JobWorker({jobs,workerId:`inference-manager-${process.pid}`,handlers,enabledTypes:enabled});process.on('SIGTERM',()=>worker.stop());await worker.run();
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { httpHandler, JobWorker, PostgresJobRepository,  redactSensitiveText, requiredEnv } from '@ai-platform/common';
+import { httpHandler, JobWorker, PostgresJobRepository,  redactSensitiveText, readAiDatabaseUrl } from '@ai-platform/common';
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname,join } from 'node:path';
@@ -52,7 +52,7 @@ function datasetHandler(pool:Pool,axolotl:string):JobHandler{return async(job,si
 
 {
 
-  const jobs = new PostgresJobRepository(new Pool({ connectionString: requiredEnv('DATABASE_URL') }));
+  const jobs = new PostgresJobRepository(new Pool({ connectionString: readAiDatabaseUrl('training') }));
   const marker = process.env.MARKER_URL ?? 'http://marker:8080';
   const axolotl = process.env.AXOLOTL_URL ?? 'http://axolotl:8080';
   const artifact = process.env.ARTIFACT_URL ?? 'http://artifact:8080';

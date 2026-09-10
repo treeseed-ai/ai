@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -6,7 +5,7 @@ import { describe, expect, it } from "vitest";
 describe("independent product architecture", () => {
 	it("uses the SDK only for portable deployment and AI mode contracts", () => {
 		const metadata = JSON.parse(readFileSync(resolve("package.json"), "utf8"));
-		expect(metadata.devDependencies["@treeseed/sdk"]).toBe("0.13.0-rc.96");
+		expect(metadata.devDependencies["@treeseed/sdk"]).toBe("0.13.0-rc.108");
 		const sources = ["packages/inference-api", "packages/inference-manager", "packages/training-api", "packages/training-manager"]
 			.map((path) => readFileSync(resolve(path, "package.json"), "utf8"))
 			.join("\n");
@@ -23,15 +22,12 @@ describe("independent product architecture", () => {
 	});
 
 	it("runs every product migration once with checksum history", () => {
-		execFileSync("sh", ["-n", "containers/migrations/run.sh"]);
-		const runner = readFileSync("containers/migrations/run.sh", "utf8");
+		const runner = readFileSync("packages/common/src/database/migrations.ts", "utf8");
 		expect(runner).toContain("treeai_schema_migrations");
-		expect(runner).toContain("sha256sum");
-		expect(runner).toContain("/migrations/*.sql");
-		expect(runner).toContain('psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration"');
-		expect(runner).toContain("ON CONFLICT(product,version) DO NOTHING");
-		expect(runner).toContain("SELECT checksum FROM treeai_schema_migrations WHERE product=:'product'");
-		expect(runner).not.toMatch(/-c ["']SELECT checksum FROM treeai_schema_migrations/u);
+		expect(runner).toContain("createHash('sha256')");
+		expect(runner).toContain("session.query(file.sql)");
+		expect(runner).toContain("SELECT checksum FROM treeai_schema_migrations WHERE product=$1 AND version=$2");
+		expect(runner).toContain("session.query('ROLLBACK')");
 		for (const product of ["inference", "training"]) {
 			const dockerfile = readFileSync(`containers/${product}/migrations.Dockerfile`, "utf8");
 			expect(dockerfile).toContain("treeai-run-migrations");

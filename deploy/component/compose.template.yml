@@ -19,31 +19,11 @@ services:
         source: ${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai/data/inference
         target: /state
     networks: [inference-private]
-  inference-postgres:
-    image: "@POSTGRES_IMAGE@"
-    <<: *security
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: inference
-      POSTGRES_USER: inference
-      POSTGRES_PASSWORD: "${INFERENCE_POSTGRES_PASSWORD:?INFERENCE_POSTGRES_PASSWORD is required}"
-    volumes:
-      - type: bind
-        source: ${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai/data/postgres
-        target: /var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U inference -d inference"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-    networks: [inference-private]
   inference-migrations:
     image: "@INFERENCE_MIGRATIONS_IMAGE@"
     <<: [*product-environment, *security]
     environment:
-      DATABASE_URL: "${INFERENCE_DATABASE_URL:?INFERENCE_DATABASE_URL is required}"
-    depends_on:
-      inference-postgres: { condition: service_healthy }
+      TREESEED_DATABASE_URL_FILE: /run/treeseed/postgres/ai-inference/url
     restart: "no"
     networks: [inference-private]
   inference-vllm:
@@ -101,7 +81,7 @@ services:
       inference-migrations: { condition: service_completed_successfully }
       inference-evaluator: { condition: service_healthy }
     environment:
-      DATABASE_URL: "${INFERENCE_DATABASE_URL:?INFERENCE_DATABASE_URL is required}"
+      TREESEED_DATABASE_URL_FILE: /run/treeseed/postgres/ai-inference/url
       EVALUATOR_URL: http://inference-evaluator:8080
       TREESEED_GPU_ADMISSION_FILE: /run/treeseed-ai/gate.json
       TREESEED_GPU_DEFAULT_ADMISSION: closed
@@ -120,7 +100,7 @@ services:
       inference-migrations: { condition: service_completed_successfully }
       inference-gpu-state-init: { condition: service_completed_successfully }
     environment:
-      DATABASE_URL: "${INFERENCE_DATABASE_URL:?INFERENCE_DATABASE_URL is required}"
+      TREESEED_DATABASE_URL_FILE: /run/treeseed/postgres/ai-inference/url
       CONTROL_HOST: 0.0.0.0
       INFERENCE_HOST: 0.0.0.0
       VLLM_URL: http://inference-vllm:8000
@@ -158,28 +138,8 @@ services:
     image: "@TRAINING_MIGRATIONS_IMAGE@"
     <<: [*product-environment, *security]
     environment:
-      DATABASE_URL: "${TRAINING_DATABASE_URL:?TRAINING_DATABASE_URL is required}"
-    depends_on:
-      training-postgres: { condition: service_healthy }
+      TREESEED_DATABASE_URL_FILE: /run/treeseed/postgres/ai-training/url
     restart: "no"
-    networks: [training-private]
-  training-postgres:
-    image: "@POSTGRES_IMAGE@"
-    <<: *security
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: training
-      POSTGRES_USER: training
-      POSTGRES_PASSWORD: "${TRAINING_POSTGRES_PASSWORD:?TRAINING_POSTGRES_PASSWORD is required}"
-    volumes:
-      - type: bind
-        source: ${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai/data/postgres
-        target: /var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U training -d training"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
     networks: [training-private]
   training-marker:
     image: "@MARKER_WORKER_IMAGE@"
@@ -258,7 +218,7 @@ services:
       training-artifact: { condition: service_healthy }
     group_add: ["10001"]
     environment:
-      DATABASE_URL: "${TRAINING_DATABASE_URL:?TRAINING_DATABASE_URL is required}"
+      TREESEED_DATABASE_URL_FILE: /run/treeseed/postgres/ai-training/url
       MARKER_URL: http://training-marker:8080
       AXOLOTL_URL: http://training-axolotl:8080
       ARTIFACT_URL: http://training-artifact:8080
@@ -280,7 +240,7 @@ services:
       training-migrations: { condition: service_completed_successfully }
       training-gpu-state-init: { condition: service_completed_successfully }
     environment:
-      DATABASE_URL: "${TRAINING_DATABASE_URL:?TRAINING_DATABASE_URL is required}"
+      TREESEED_DATABASE_URL_FILE: /run/treeseed/postgres/ai-training/url
       CONTROL_HOST: 0.0.0.0
       TREESEED_GPU_ADMISSION_FILE: /run/treeseed-ai/gate.json
       TREESEED_GPU_ACTIVITY_FILE: /run/treeseed-ai/status.json
