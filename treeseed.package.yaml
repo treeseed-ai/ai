@@ -38,70 +38,69 @@ development:
   targets:
     - id: ai-inference
       kind: rebuild-restart
+      executionCustody: manager
       platforms: [linux-amd64]
-      runtimeRequirements: [docker-compose, nvidia-container-runtime]
+      runtimeRequirements: [treeseed-manager, nvidia-container-runtime]
       sourceRoots: [packages/common, packages/inference-api, packages/inference-manager, containers/inference, containers/migrations]
       ignoredPaths: [dist, node_modules]
       operations:
-        plan: { command: node, args: [--import, tsx, scripts/development/component.ts, ai-inference, plan], environment: {}, timeoutSeconds: 120 }
-        build: { command: node, args: [--import, tsx, scripts/development/component.ts, ai-inference, build], environment: {}, timeoutSeconds: 7200 }
-        verify: { command: node, args: [--import, tsx, scripts/development/component.ts, ai-inference, verify], environment: {}, timeoutSeconds: 300 }
-        cleanup: { command: node, args: [--import, tsx, scripts/development/component.ts, ai-inference, cleanup], environment: {}, timeoutSeconds: 300 }
-      ready: { kind: marker, path: .treeseed/development/ai-inference.json, timeoutSeconds: 7200 }
-      outputs: [{ path: .treeseed/development/ai-inference.json, mediaType: application/vnd.treeai.development-build+json, digestAlgorithm: sha256 }]
+        verify: { command: pnpm, args: [exec, vitest, run, tests/inference, tests/contract], environment: {}, timeoutSeconds: 1800 }
+      ready: { kind: process, graceSeconds: 10 }
+      outputs: []
       endpoints: []
       dependencies: []
-      statePolicy: preserved
-      migrationPolicy: deployment-owned
+      statePolicy: shared-compatible
+      migrationPolicy: explicit-review
       secretRefs: {}
       shutdown: { graceSeconds: 120, activeWorkPolicy: block }
-      resources: { exclusive: [ai-gpu] }
+      resources: {}
       logs: [.treeseed/development/ai-inference.log]
       forbiddenOperations: [publish, production-tag]
+      promotion: { liveAdmissible: false, candidateRequiresVerification: true }
     - id: ai-training
       kind: rebuild-restart
+      executionCustody: manager
       platforms: [linux-amd64]
-      runtimeRequirements: [docker-compose, nvidia-container-runtime]
+      runtimeRequirements: [treeseed-manager, nvidia-container-runtime]
       sourceRoots: [packages/common, packages/training-api, packages/training-manager, containers/training, containers/migrations]
       ignoredPaths: [dist, node_modules]
       operations:
-        plan: { command: node, args: [--import, tsx, scripts/development/component.ts, ai-training, plan], environment: {}, timeoutSeconds: 120 }
-        build: { command: node, args: [--import, tsx, scripts/development/component.ts, ai-training, build], environment: {}, timeoutSeconds: 7200 }
-        verify: { command: node, args: [--import, tsx, scripts/development/component.ts, ai-training, verify], environment: {}, timeoutSeconds: 300 }
-        cleanup: { command: node, args: [--import, tsx, scripts/development/component.ts, ai-training, cleanup], environment: {}, timeoutSeconds: 300 }
-      ready: { kind: marker, path: .treeseed/development/ai-training.json, timeoutSeconds: 7200 }
-      outputs: [{ path: .treeseed/development/ai-training.json, mediaType: application/vnd.treeai.development-build+json, digestAlgorithm: sha256 }]
+        verify: { command: pnpm, args: [exec, vitest, run, tests/training, tests/contract], environment: {}, timeoutSeconds: 1800 }
+      ready: { kind: process, graceSeconds: 10 }
+      outputs: []
       endpoints: []
       dependencies: []
-      statePolicy: preserved
-      migrationPolicy: deployment-owned
+      statePolicy: shared-compatible
+      migrationPolicy: explicit-review
       secretRefs: {}
       shutdown: { graceSeconds: 300, activeWorkPolicy: block }
-      resources: { exclusive: [ai-gpu] }
+      resources: {}
       logs: [.treeseed/development/ai-training.log]
       forbiddenOperations: [publish, production-tag]
+      promotion: { liveAdmissible: false, candidateRequiresVerification: true }
     - id: ai-lab
       kind: rebuild-restart
+      executionCustody: manager
       platforms: [linux-amd64]
-      runtimeRequirements: [docker-compose]
+      runtimeRequirements: [treeseed-manager]
       sourceRoots: [packages/common, packages/lab, containers/lab]
       ignoredPaths: [dist, node_modules]
       operations:
-        plan: { command: node, args: [--import, tsx, scripts/development/component.ts, ai-lab, plan], environment: {}, timeoutSeconds: 120 }
-        build: { command: node, args: [--import, tsx, scripts/development/component.ts, ai-lab, build], environment: {}, timeoutSeconds: 7200 }
-        verify: { command: node, args: [--import, tsx, scripts/development/component.ts, ai-lab, verify], environment: {}, timeoutSeconds: 300 }
-        cleanup: { command: node, args: [--import, tsx, scripts/development/component.ts, ai-lab, cleanup], environment: {}, timeoutSeconds: 300 }
-      ready: { kind: marker, path: .treeseed/development/ai-lab.json, timeoutSeconds: 7200 }
-      outputs: [{ path: .treeseed/development/ai-lab.json, mediaType: application/vnd.treeai.development-build+json, digestAlgorithm: sha256 }]
+        verify: { command: pnpm, args: [exec, vitest, run, tests/lab, tests/contract], environment: {}, timeoutSeconds: 1800 }
+      ready: { kind: process, graceSeconds: 10 }
+      outputs: []
       endpoints: []
-      dependencies: [ai-inference, ai-training]
-      statePolicy: preserved
-      migrationPolicy: deployment-owned
+      dependencies:
+        - { id: ai, target: ai-inference, locality: local, reaction: restart }
+        - { id: ai, target: ai-training, locality: local, reaction: restart }
+      statePolicy: shared-compatible
+      migrationPolicy: explicit-review
       secretRefs: {}
       shutdown: { graceSeconds: 120, activeWorkPolicy: block }
       resources: {}
       logs: [.treeseed/development/ai-lab.log]
       forbiddenOperations: [publish, production-tag]
+      promotion: { liveAdmissible: false, candidateRequiresVerification: true }
 standards:
   schemaVersion: 1
   produced:
