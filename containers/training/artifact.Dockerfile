@@ -5,6 +5,6 @@ RUN pip install --no-cache-dir --require-hashes -r /tmp/requirements.lock
 WORKDIR /app
 COPY workers/common ./common
 COPY workers/artifact ./artifact
-RUN useradd --system --uid 10001 worker && mkdir -p /artifacts /archive && chown -R worker /artifacts /archive
+RUN chmod -R a+rX /app && useradd --system --uid 10001 worker && mkdir -p /artifacts /archive && chown -R worker /artifacts /archive
 USER worker
 CMD ["python","artifact/worker.py"]
