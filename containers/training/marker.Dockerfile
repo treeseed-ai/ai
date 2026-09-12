@@ -11,6 +11,6 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteract
 WORKDIR /app
 COPY workers/common ./common
 COPY workers/marker ./marker
-RUN useradd --system --uid 10001 worker && mkdir -p /inputs /artifacts/documents /models/huggingface /models/cache /models/torch && chown -R worker /inputs /artifacts /models
+RUN chmod -R a+rX /app && useradd --system --uid 10001 worker && mkdir -p /inputs /artifacts/documents /models/huggingface /models/cache /models/torch && chown -R worker /inputs /artifacts /models
 USER worker
 CMD ["python3","marker/worker.py"]

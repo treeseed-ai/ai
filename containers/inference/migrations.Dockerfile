@@ -11,6 +11,7 @@ LABEL org.opencontainers.image.base.name="node:24.19.0-bookworm-slim" org.openco
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 COPY --from=build /out/run.mjs /usr/local/lib/treeai-run-migrations.mjs
 COPY migrations/inference /migrations
+RUN chmod -R a+rX /migrations
 ENV TREEAI_MIGRATION_PRODUCT=inference
 USER 1000:1000
 ENTRYPOINT ["node", "/usr/local/lib/treeai-run-migrations.mjs"]

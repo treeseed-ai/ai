@@ -4,7 +4,8 @@ WORKDIR /app
 RUN corepack enable && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages ./packages
-RUN pnpm install --frozen-lockfile && pnpm --filter @ai-platform/common build && pnpm --filter @ai-platform/inference-api build && rm -rf /root/.cache/node/corepack /usr/local/bin/pnpm /usr/local/bin/pnpx
+RUN pnpm install --frozen-lockfile && pnpm --filter @ai-platform/common build && pnpm --filter @ai-platform/inference-api build && chmod -R a+rX packages/common packages/inference-api && rm -rf /root/.cache/node/corepack /usr/local/bin/pnpm /usr/local/bin/pnpx
+RUN test -r packages/inference-api/dist/main.js && test -r packages/common/dist/index.js
 COPY --chmod=0755 containers/common/gpu-gate.mjs /usr/local/bin/treeseed-ai-gpu-gate
 USER node
 CMD ["node","packages/inference-api/dist/main.js"]
