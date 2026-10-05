@@ -25,8 +25,8 @@ importers:
         version: 2.9.0
     devDependencies:
       '@treeseed/sdk':
-        specifier: 0.13.0-rc.32
-        version: 0.13.0-rc.32
+        specifier: 0.13.0-rc.108
+        version: 0.13.0-rc.108
       '@types/node':
         specifier: ^24.6.0
         version: 24.13.3
@@ -46,28 +46,20 @@ importers:
         specifier: ^4.1.2
         version: 4.1.11(@types/node@24.13.3)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(tsx@4.23.12)(yaml@2.9.0))
 
-  packages/cli: {}
-
   packages/common:
     dependencies:
       '@aws-sdk/client-s3':
         specifier: ^3.879.0
         version: 3.1115.0
+      '@treeseed/sdk':
+        specifier: 0.13.0-rc.108
+        version: 0.13.0-rc.108
       hono:
         specifier: ^4.11.4
         version: 4.13.3
       pg:
         specifier: ^8.16.3
         version: 8.23.0
-
-  packages/host-runtime:
-    dependencies:
-      '@hono/node-server':
-        specifier: ^1.19.9
-        version: 1.19.17(hono@4.13.3)
-      hono:
-        specifier: ^4.11.4
-        version: 4.13.3
 
   packages/inference-api:
     dependencies:
@@ -107,18 +99,9 @@ importers:
       '@hono/node-server':
         specifier: ^1.19.9
         version: 1.19.17(hono@4.13.3)
-      hono:
-        specifier: ^4.11.4
-        version: 4.13.3
-
-  packages/manager:
-    dependencies:
-      '@ai-platform/common':
-        specifier: workspace:*
-        version: link:../common
-      '@hono/node-server':
-        specifier: ^1.19.9
-        version: 1.19.17(hono@4.13.3)
+      '@treeseed/sdk':
+        specifier: 0.13.0-rc.108
+        version: 0.13.0-rc.108
       hono:
         specifier: ^4.11.4
         version: 4.13.3
@@ -149,6 +132,8 @@ importers:
       undici:
         specifier: 8.10.0
         version: 8.10.0
+
+  packages/treeai-sdk: {}
 
 packages:
 
@@ -433,36 +418,42 @@ packages:
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [arm64]
     os: [linux]
+    libc: [glibc]
 
   '@rolldown/binding-linux-arm64-musl@1.2.5':
     resolution: {integrity: sha512-xMvZgnbZg4YVnR/AX2b3oOPDTFYJvUVaJg5FedA/LuvexAtXibZQej4cnTkw3rjsJ/ggUROB64TdtETiim+FYA==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [arm64]
     os: [linux]
+    libc: [musl]
 
   '@rolldown/binding-linux-ppc64-gnu@1.2.5':
     resolution: {integrity: sha512-GRjeqTUDHTo5GwntsLaAMcBahG3nlpjftXWZLN73HiYQlhwEowvarFgQnRnQZtIp4keXX7quXFbG38uPZBa2EA==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [ppc64]
     os: [linux]
+    libc: [glibc]
 
   '@rolldown/binding-linux-s390x-gnu@1.2.5':
     resolution: {integrity: sha512-vLNTR45F2Uwc8AufkNXPmB4VliaXs+FvcheEogIzOXzO4l+LzieXF5A/TWxLy5HtqpsRCHUfd0lPVrrdgXdLHQ==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [s390x]
     os: [linux]
+    libc: [glibc]
 
   '@rolldown/binding-linux-x64-gnu@1.2.5':
     resolution: {integrity: sha512-Mgj59/HTuYeK9Gz2MA+mBWKnHsAgkBSec15ZMb1st3oIfFbX7gCjOae7GydHhzcyQi9Z/7M1QuN9bR3oFqF0jQ==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [x64]
     os: [linux]
+    libc: [glibc]
 
   '@rolldown/binding-linux-x64-musl@1.2.5':
     resolution: {integrity: sha512-mY8AP0/ichsbhAxGnLa3d3+MwV0EfgrPND2bplI3Ym8T6R2pJ0N87bvrKVwNXmdy3jnr6eQBecdqx/HMknBmpA==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [x64]
     os: [linux]
+    libc: [musl]
 
   '@rolldown/binding-openharmony-arm64@1.2.5':
     resolution: {integrity: sha512-8SLssA2oweAxyRgDp789ACfRb/3P+zNRJpzZxSizxF9m8NUDQ4+3xjo8ttjhVGGw6Qxb70oZiEtIjaKikCO7Yw==}
@@ -512,12 +503,12 @@ packages:
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
-  '@treeseed/sdk@0.13.0-rc.32':
-    resolution: {integrity: sha512-ilZ5fp+1/fqzal5FDwNbZECqze/+Oe0Teg1udiJf2pVDqu0omsFM6rl0vbtr8LHEhq87295VtDksCLA0DXdJgQ==}
+  '@treeseed/sdk@0.13.0-rc.108':
+    resolution: {integrity: sha512-A5X7YKDwwcMM9QXFcozVBYjOXF1YuqtlhmQ6hTqAE+FwJRYXvVoX4LpE9C0Q2AyiRn63IiBJhs+IaQajWVIKyw==}
     engines: {node: '>=22'}
 
-  '@treeseed/treedx@0.3.0-rc.4':
-    resolution: {integrity: sha512-ZBmY/C30kge84Ns/qzpa/h4XfLXtZMDiyfCJM8WTLHQBU2I5QYrhx2aI32mHk90jQib+SyWfwYMknIip8RHF8A==}
+  '@treeseed/treedx@0.3.0-rc.17':
+    resolution: {integrity: sha512-L1DCxkOZGS2of2IvbSC70baIpGlEuFBpHUhV4oKq53xXARN8dw4st2SFUz7IaxOIRzR9gD/vH12hIPnTFLJ7tA==}
     engines: {node: '>=22'}
 
   '@types/chai@5.2.3':
@@ -615,6 +606,12 @@ packages:
     resolution: {integrity: sha512-r8AO2mYHoLxSHkgafNeC/BXyb2vWRxD3jem4Ts+ptav8oTG5FIRifAjuJEmZI4bSvvc2ns0GxmIYiZnHqN3mMw==}
     engines: {node: '>=16.9.0'}
 
+  libsodium-sumo@0.8.4:
+    resolution: {integrity: sha512-TMtHShQfVVsaxDygyapvUC3o7YsPgXa/hRWeIgzyFz6w5k/1hirGptCxp1U7XwW3rCskaTTYKgV10v86UiGgNw==}
+
+  libsodium-wrappers-sumo@0.8.4:
+    resolution: {integrity: sha512-ql7hcgulKZ3ekfa2DGAogcCKsWU0diA/0nArz1CFzh93WQdb46/Kj18ka/Hifq6uA3Ush34Pc6vU/6HXeRwUkg==}
+
   lightningcss-android-arm64@1.33.0:
     resolution: {integrity: sha512-gEpRTalKdosp4Bb8qWtc2iOgE5SeIHlpS1up9bFq2wAyYhl1UdTObYiHe98zEM9SQvSoqQZ1IQD0JNpg3Ml5pg==}
     engines: {node: '>= 12.0.0'}
@@ -650,24 +647,28 @@ packages:
     engines: {node: '>= 12.0.0'}
     cpu: [arm64]
     os: [linux]
+    libc: [glibc]
 
   lightningcss-linux-arm64-musl@1.33.0:
     resolution: {integrity: sha512-yiO5ROMuYQgXbC60yjZU5CYSFZGKXL0HFATXt9mHJn1+zW55oCtMI9NfcVhYLMFDL7gV7oBPon/EmMMGg2OvtQ==}
     engines: {node: '>= 12.0.0'}
     cpu: [arm64]
     os: [linux]
+    libc: [musl]
 
   lightningcss-linux-x64-gnu@1.33.0:
     resolution: {integrity: sha512-ar+Ju7LmcN0Jo4FpL4hpFybwNG9/3A/Br5KW2n2jyODg3MEZXaDYADdemoNS+BDNfMgKvylJLj4S5tyRActuAg==}
     engines: {node: '>= 12.0.0'}
     cpu: [x64]
     os: [linux]
+    libc: [glibc]
 
   lightningcss-linux-x64-musl@1.33.0:
     resolution: {integrity: sha512-RYiYbkokw0trfKqqzfF55lginwEPrD3OJDfTuJzFs1MK6iFnDenaz1fqLLtX4ITG3OktJQXOeTaw1awrBAlZPw==}
     engines: {node: '>= 12.0.0'}
     cpu: [x64]
     os: [linux]
+    libc: [musl]
 
   lightningcss-win32-arm64-msvc@1.33.0:
     resolution: {integrity: sha512-1K+MPfLSFVpphzpdbfkhlWk6wBrTObBzS2T6db10PNOZgR9GoVsAWzwNyuhUYYbTp23j+4RrncfujZ4uAzXvwA==}
@@ -1254,15 +1255,16 @@ snapshots:
 
   '@standard-schema/spec@1.1.0': {}
 
-  '@treeseed/sdk@0.13.0-rc.32':
+  '@treeseed/sdk@0.13.0-rc.108':
     dependencies:
-      '@treeseed/treedx': 0.3.0-rc.4
+      '@treeseed/treedx': 0.3.0-rc.17
       esbuild: 0.28.2
+      libsodium-wrappers-sumo: 0.8.4
       typescript: 5.9.3
       yaml: 2.9.0
       zod: 3.25.76
 
-  '@treeseed/treedx@0.3.0-rc.4': {}
+  '@treeseed/treedx@0.3.0-rc.17': {}
 
   '@types/chai@5.2.3':
     dependencies:
@@ -1379,6 +1381,12 @@ snapshots:
     optional: true
 
   hono@4.13.3: {}
+
+  libsodium-sumo@0.8.4: {}
+
+  libsodium-wrappers-sumo@0.8.4:
+    dependencies:
+      libsodium-sumo: 0.8.4
 
   lightningcss-android-arm64@1.33.0:
     optional: true

@@ -4,6 +4,7 @@ coverage/
 .treeseed/
 .artifacts/
 .cache/
+projects/
 *.log
 __pycache__/
 *.pyc

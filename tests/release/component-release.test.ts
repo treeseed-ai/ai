@@ -4,25 +4,130 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { componentReleaseSchema } from '@treeseed/sdk/deployment';
+import { componentReleaseSchema, deploymentDigest } from '@treeseed/sdk/deployment';
+import YAML from 'yaml';
 
-const roles = ['inference-api', 'inference-manager', 'inference-vllm', 'inference-evaluator', 'inference-migrations', 'training-api', 'training-manager', 'axolotl-worker', 'marker-worker', 'artifact-worker', 'training-migrations'];
+const roles = [
+	'inference-api', 'inference-manager', 'inference-vllm', 'inference-evaluator', 'inference-migrations',
+	'training-api', 'training-manager', 'axolotl-worker', 'marker-worker', 'artifact-worker', 'training-migrations',
+	'lab-controller', 'lab-experience-proxy', 'lab-library-bridge', 'lab-open-webui', 'hermes-agent', 'lab-web-tool-proxy',
+];
 
-describe('managed AI component release', () => {
-	it('materializes an immutable Compose bundle independently of the host manager', () => {
-		const root = mkdtempSync(resolve(tmpdir(), 'treeai-component-'));
+describe('managed AI component releases', () => {
+	it('materializes three immutable bundles without the legacy host manager', () => {
+		const root = mkdtempSync(resolve(tmpdir(), 'treeai-components-'));
 		const manifest = resolve(root, 'images.json'), output = resolve(root, 'output');
-		writeFileSync(manifest, JSON.stringify({ images: Object.fromEntries(roles.map((role) => [role, { repository: `treeseed/${role}`, digest: `sha256:${createHash('sha256').update(role).digest('hex')}` }])) }));
+		writeFileSync(manifest, JSON.stringify({ images: Object.fromEntries(roles.map((role) => [role, {
+			repository: `treeseed/${role}`, digest: `sha256:${createHash('sha256').update(role).digest('hex')}`,
+			tag: '0.11.0-rc1', buildIdentity: `sha256:${'b'.repeat(64)}`, disposition: 'built', firstBuiltVersion: '0.11.0-rc1',
+		}])) }));
 		execFileSync(process.execPath, ['--import', 'tsx', 'scripts/release/create-component-release.ts'], {
-			cwd: process.cwd(),
-			env: { ...process.env, TREEAI_COMPONENT_RELEASE: '0.10.0-rc3', TREEAI_COMPONENT_REVISION: '2', TREEAI_SOURCE_COMMIT: 'a'.repeat(40), TREEAI_IMAGE_MANIFEST: manifest, TREEAI_COMPONENT_OUTPUT: output },
+			cwd: process.cwd(), env: { ...process.env, TREEAI_COMPONENT_RELEASE: '0.11.0-rc1', TREEAI_COMPONENT_REVISION: '2', TREEAI_SOURCE_COMMIT: 'a'.repeat(40), TREEAI_IMAGE_MANIFEST: manifest, TREEAI_COMPONENT_OUTPUT: output },
 		});
-		const release = componentReleaseSchema.parse(JSON.parse(readFileSync(resolve(output, 'component-release.json'), 'utf8')));
-		const compose = readFileSync(resolve(output, 'compose.yml'), 'utf8');
-		expect(release.release).toBe('0.10.0~rc3-2');
-		expect(release.runtime.compose.files[0]?.digest).toBe(`sha256:${createHash('sha256').update(compose).digest('hex')}`);
-		expect(compose).not.toMatch(/\bbuild\s*:/u);
-		expect(compose).not.toMatch(/^\s*ports\s*:/mu);
-		expect(compose).not.toMatch(/@[A-Z_]+_IMAGE@/u);
+		const expected = new Map([
+			['ai-inference', ['inference-api', 'inference-manager', 'inference-vllm', 'inference-evaluator', 'inference-migrations']],
+			['ai-training', ['training-api', 'training-manager', 'axolotl-worker', 'marker-worker', 'artifact-worker', 'training-migrations']],
+			['ai-lab', ['lab-controller', 'lab-experience-proxy', 'lab-library-bridge', 'lab-open-webui', 'hermes-agent', 'lab-web-tool-proxy']],
+		]);
+		for (const [componentId, componentRoles] of expected) {
+			const emitted = JSON.parse(readFileSync(resolve(output, `${componentId}-component-release.json`), 'utf8'));
+			const release = componentReleaseSchema.parse(emitted);
+			expect(emitted.runtimeDigest, `${componentId} raw JSON custody`).toBe(deploymentDigest(emitted.runtime));
+			expect(release.runtimeDigest, `${componentId} emitted runtime custody`).toBe(deploymentDigest(release.runtime));
+			const compose = readFileSync(resolve(output, `${componentId}-compose.yml`), 'utf8');
+			const document = YAML.parse(compose) as { services: Record<string, { image: string; ports?: unknown; networks?: string[]; restart?: string; healthcheck?: unknown; env_file?: unknown; entrypoint?: string[]; group_add?: string[]; volumes?: Array<string | { source?: string; target?: string }> }>; secrets?: Record<string, { file: string }>; networks?: Record<string, { internal?: boolean }> };
+			const acceptedImages = new Set(release.images.map(({ repository, digest }) => `${repository}@${digest}`));
+			expect(release.componentId).toBe(componentId);
+			expect(release.release).toBe('0.11.0~rc1-2');
+			expect(release.images.map(({ role }) => role).sort()).toEqual([...componentRoles].sort());
+			expect(release.runtime.compose.files[0]?.digest).toBe(`sha256:${createHash('sha256').update(compose).digest('hex')}`);
+			expect(compose).not.toMatch(/\bbuild\s*:/u);
+			expect(compose).not.toMatch(/^\s*ports\s*:/mu);
+			expect(compose).not.toMatch(/@[A-Z_]+_IMAGE@/u);
+			const requiredEnvironment = [...compose.matchAll(/\$\{([A-Z][A-Z0-9_]*):\?[^}]+\}/gu)].map((match) => match[1]);
+			const declaredEnvironment = new Set([...release.runtime.configuration.environment, ...release.runtime.configuration.secretEnvironment].map(({ name }) => name));
+			expect(requiredEnvironment.filter((name) => !declaredEnvironment.has(name!))).toEqual([]);
+			const declaredSecretFiles = new Set(release.runtime.configuration.secretFiles.map(({ path }) => path));
+			expect(Object.values(document.secrets ?? {}).map(({ file }) => file).filter((path) => !declaredSecretFiles.has(path))).toEqual([]);
+			for (const service of Object.values(document.services)) {
+				expect(acceptedImages.has(service.image), service.image).toBe(true);
+				expect(service.ports).toBeUndefined();
+				expect(Boolean(service.healthcheck) || service.restart === 'no', `${componentId} service ${service.image} must declare health or one-shot completion`).toBe(true);
+			}
+			if (componentId === 'ai-lab') {
+				expect(document.services['lab-state-init']?.restart).toBe('no');
+				expect(document.services['lab-state-init']?.entrypoint?.at(-1)).toContain('chown 1000:1000 /state');
+				expect(document.services['lab-state-init']?.entrypoint?.at(-1)).toContain('chown 10001:10001 /home/hermes/.hermes /workspace');
+				expect(document.services['library-bridge']?.depends_on?.['open-webui-action-init']).toEqual({ condition: 'service_completed_successfully' });
+				expect(release.runtime.services.map(({ id }) => id)).not.toContain('open-webui-action-init');
+				expect(release.runtime.modeControl?.services.base).not.toContain('open-webui-action-init');
+				expect(compose).not.toContain('ai-shared');
+				expect(compose).not.toMatch(/^volumes:/mu);
+				expect(compose).toContain('/ai-lab/data/open-webui:/app/backend/data');
+				expect(compose).not.toContain('/usr/lib/treeseed-ai');
+				expect(release.runtime.stateVolumes).toContainEqual({ id: 'workspace', volume: '/var/lib/treeseed/components/ai-lab/data/workspace', backup: 'required' });
+				expect(release.runtime.configuration.secretFiles).toHaveLength(10);
+				expect(compose).not.toContain('training-source');
+				expect(compose).toContain('AI_DELEGATION_PUBLIC_KEYS');
+				expect(release.runtime.modeControl).toMatchObject({ role: 'controller', internalControl: { transport: 'mtls', path: '/v1/ai/mode' } });
+				expect(compose).not.toContain('factory-control-key');
+				expect(compose).not.toContain('FACTORY_URL');
+				expect(compose).toContain('WEBUI_AUTH: ${OPEN_WEBUI_AUTH:-false}');
+				expect(compose).toContain('ENABLE_LOGIN_FORM: ${OPEN_WEBUI_ENABLE_LOGIN_FORM:-false}');
+				expect(compose).toContain('BYPASS_MODEL_ACCESS_CONTROL: ${OPEN_WEBUI_BYPASS_MODEL_ACCESS_CONTROL:-true}');
+				expect(compose).toContain('https://chat.ai.treeseed.localhost');
+				expect(release.runtime.configuration.environment).toContainEqual({ name: 'OPEN_WEBUI_AUTH', required: false, source: 'configuration', default: 'false' });
+			} else {
+				expect(compose).not.toContain('postgres@sha256:');
+				expect(compose).not.toContain('_POSTGRES_PASSWORD');
+				expect(compose).not.toMatch(/\sDATABASE_URL:/u);
+				expect(document.networks?.database).toEqual({ external: true, name: 'treeseed-postgres-private' });
+				expect(release.runtime.postgresRequirements).toEqual([{ id: componentId, supportedMajors: [17], extensions: ['pgcrypto'], runtimeConnectionLimit: 20 }]);
+				const family = componentId === 'ai-inference' ? 'inference' : 'training';
+				expect(document.services[`${family}-postgres`]).toBeUndefined();
+				for (const suffix of ['migrations','api','manager']) {
+					const phase = suffix === 'migrations' ? 'migration' : 'runtime';
+					expect(document.services[`${family}-${suffix}`]?.volumes).toContainEqual({ type: 'bind',
+						source: `/run/treeseed/postgres-clients/${componentId}/${componentId}/${phase}`, target: `/run/treeseed/postgres/${componentId}`, read_only: true });
+				}
+				expect(release.runtime.stateVolumes).toContainEqual({ id: 'postgres', volume: `/var/lib/treeseed/components/${componentId}/data/postgres`, backup: 'required' });
+				if (componentId === 'ai-training') expect(document.services['training-api']?.volumes).toContainEqual({ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-training/data/training', target: '/artifacts' });
+				if (componentId === 'ai-inference') {
+					expect(document.services['inference-gpu-state-init']?.entrypoint?.at(-1)).toContain('chown 1000:1000 /artifacts');
+					expect(document.services['inference-gpu-state-init']?.entrypoint?.at(-1)).toContain('chown 10001:10001 /state');
+					expect(release.runtime.configuration.environment).toContainEqual({ name: 'RUNTIME_GID', required: true, source: 'manager' });
+					expect(document.services['inference-api']?.group_add).toEqual(['${RUNTIME_GID:?RUNTIME_GID is required}', '10001']);
+					expect(release.runtime.configuration.environment).toContainEqual({ name: 'MAX_NUM_SEQS', required: false, source: 'configuration', default: '2' });
+					expect(release.runtime.configuration.environment).toContainEqual({ name: 'GPU_MEMORY_UTILIZATION', required: false, source: 'configuration', default: '0.85' });
+					expect(release.runtime.services.flatMap(({ endpoints }) => endpoints).filter(({ healthGate }) => healthGate).every(({ healthGate }) => healthGate?.timeoutSeconds === 1_200)).toBe(true);
+					expect(document.services['inference-vllm']?.env_file).toBeUndefined();
+					expect(document.services['inference-vllm']?.networks).toEqual(['inference-private', 'inference-model-egress']);
+					expect(document.networks?.['inference-model-egress']?.internal).not.toBe(true);
+					expect(document.services['inference-api']?.volumes).toContainEqual({ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-inference/data/artifacts', target: '/artifacts' });
+					expect(document.services['inference-api']?.volumes).toContainEqual({ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-training/data/training', target: '/training-artifacts', read_only: true });
+					expect(release.runtime.stateVolumes).toContainEqual({ id: 'artifacts', volume: '/var/lib/treeseed/components/ai-inference/data/artifacts', backup: 'required' });
+					expect(release.runtime.configuration.secretFiles.map(({ id }) => id)).toEqual(['ai-inference-storage-identity', 'ai-storage-ca', 'artifact-source-registry', 'artifact-destination-registry']);
+					expect(document.services['inference-api']?.secrets).toContain('ai-inference-storage-identity');
+					expect(document.services['inference-evaluator']?.secrets).toContain('ai-inference-storage-identity');
+					expect(document.services['inference-evaluator']?.volumes).toContainEqual({type:'bind',source:'${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-inference/data/artifacts',target:'/artifacts',read_only:true});
+				}
+				if (componentId === 'ai-training') {
+					expect(document.services['training-gpu-state-init']?.entrypoint?.at(-1)).toContain('chown 10001:10001 /artifacts /archive /models');
+					expect(document.services['training-api']?.volumes).toContain('gpu-admission:/run/treeseed-ai');
+					expect(document.services['training-api']?.volumes).toContainEqual({ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-training/data/training', target: '/artifacts' });
+					expect(release.runtime.configuration.environment).toContainEqual({ name: 'RUNTIME_GID', required: true, source: 'manager' });
+					expect(document.services['training-artifact']?.group_add).toEqual(['${RUNTIME_GID:?RUNTIME_GID is required}']);
+					for (const worker of ['training-marker', 'training-axolotl']) {
+						expect(document.services[worker]?.env_file).toBeUndefined();
+						expect(document.services[worker]?.networks).toEqual(['training-private', 'training-model-egress']);
+					}
+					expect(document.networks?.['training-model-egress']?.internal).not.toBe(true);
+				}
+				expect(release.runtime.modeControl).toMatchObject({ resource: 'ai-gpu', role: componentId === 'ai-inference' ? 'inference' : 'training', gate: { executable: '/usr/local/bin/treeseed-ai-gpu-gate' } });
+				const gateService = release.runtime.modeControl?.gate?.service;
+				expect(gateService && document.services[gateService]?.volumes, `${componentId} lifecycle gate must mount its admission state`).toContain('gpu-admission:/run/treeseed-ai');
+				expect(release.runtime.modeControl?.services.base).toContain(componentId === 'ai-inference' ? 'inference-gpu-state-init' : 'training-gpu-state-init');
+			}
+		}
 	});
 });

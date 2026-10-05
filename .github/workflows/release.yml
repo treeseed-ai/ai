@@ -66,8 +66,11 @@ jobs:
           printf '%s' '${{ inputs.candidate }}' | grep -Eq '^${{ inputs.version }}-rc[1-9][0-9]*$'
           gh release download '${{ inputs.candidate }}' --dir candidate-download
           (cd candidate-download && sha256sum -c SHA256SUMS)
-          candidate_commit=$(jq -r .source.commit candidate-download/component-release.json)
+          candidate_commit=$(jq -r .source.commit candidate-download/ai-inference-component-release.json)
           printf '%s' "$candidate_commit" | grep -Eq '^[a-f0-9]{40}$'
+          for asset in ai-training-component-release.json ai-lab-component-release.json treeai-contract-release.json; do
+            test "$(jq -r .source.commit "candidate-download/$asset")" = "$candidate_commit"
+          done
           git cat-file -e "$candidate_commit^{commit}"
           test "$(git rev-parse "$candidate_commit^{tree}")" = "$(git rev-parse HEAD^{tree})"
           previous=$(gh release list --limit 100 --json tagName,isDraft,isPrerelease --jq '.[]|select(.isDraft==false and .isPrerelease==false)|.tagName' | grep -vFx "${{ inputs.version }}" | head -1 || true)
@@ -211,7 +214,10 @@ jobs:
           TREEAI_COMPONENT_REVISION: "1"
           TREEAI_SOURCE_COMMIT: "${{ needs.validate.outputs.sha }}"
           TREEAI_IMAGE_MANIFEST: "${{ github.workspace }}/release-assets/image-manifest.json"
-        run: pnpm build:component-release
+        run: |
+          pnpm build:component-release
+          pnpm contracts:generate
+          TREEAI_CONTRACT_RELEASE='${{ inputs.version }}' TREEAI_SOURCE_COMMIT='${{ needs.validate.outputs.sha }}' pnpm contracts:stage-release
       - uses: actions/attest-build-provenance@v3
         with: { subject-path: "release-assets/component/*" }
       - uses: actions/upload-artifact@v4

@@ -4,7 +4,7 @@ variable "AI_BUILD_DATE" { default = "unknown" }
 variable "AI_VERSION" { default = "0.10.0" }
 
 group "default" {
-  targets = ["lab-controller", "lab-experience-proxy", "lab-library-bridge", "hermes-agent", "lab-web-tool-proxy"]
+  targets = ["lab-controller", "lab-experience-proxy", "lab-library-bridge", "lab-open-webui", "hermes-agent", "lab-web-tool-proxy"]
 }
 
 target "defaults" {
@@ -40,6 +40,13 @@ target "lab-library-bridge" {
   args = { LAB_ENTRY = "library-bridge" }
   tags = ["local/lab-library-bridge:${AI_VERSION}"]
   labels = { "org.treeseed-ai.role" = "lab-library-bridge" }
+}
+
+target "lab-open-webui" {
+  inherits = ["defaults"]
+  dockerfile = "containers/lab/open-webui.Dockerfile"
+  tags = ["local/lab-open-webui:${AI_VERSION}"]
+  labels = { "org.treeseed-ai.role" = "lab-open-webui" }
 }
 
 target "hermes-agent" {

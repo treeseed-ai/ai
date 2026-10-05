@@ -1,0 +1,1052 @@
+{
+  "openapi": "3.1.1",
+  "info": {
+    "title": "AI Experience Lab API",
+    "version": "0.11.0"
+  },
+  "paths": {
+    "/healthz": {
+      "get": {
+        "operationId": "lab.get.healthz",
+        "summary": "Liveness",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "lab.get.readyz",
+        "summary": "Readiness",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/status": {
+      "get": {
+        "operationId": "lab.get.status",
+        "summary": "Lab state",
+        "security": [
+          {
+            "apiKey": [
+              "lab:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/provider/models": {
+      "get": {
+        "operationId": "lab.get.provider.models",
+        "summary": "Sanitized provider model discovery",
+        "security": [
+          {
+            "apiKey": [
+              "lab:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/agents": {
+      "get": {
+        "operationId": "lab.get.agents",
+        "summary": "Agent profiles",
+        "security": [
+          {
+            "apiKey": [
+              "lab:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      },
+      "post": {
+        "operationId": "lab.post.agents",
+        "summary": "Create agent profile",
+        "security": [
+          {
+            "apiKey": [
+              "lab:write"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}": {
+      "get": {
+        "operationId": "lab.get.agents.by-id",
+        "summary": "Agent profile",
+        "security": [
+          {
+            "apiKey": [
+              "lab:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "lab.patch.agents.by-id",
+        "summary": "Edit agent profile",
+        "security": [
+          {
+            "apiKey": [
+              "lab:write"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/enable": {
+      "post": {
+        "operationId": "lab.post.agents.by-id.enable",
+        "summary": "Enable agent profile",
+        "security": [
+          {
+            "apiKey": [
+              "lab:write"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/disable": {
+      "post": {
+        "operationId": "lab.post.agents.by-id.disable",
+        "summary": "Disable agent profile",
+        "security": [
+          {
+            "apiKey": [
+              "lab:write"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/evaluations": {
+      "get": {
+        "operationId": "lab.get.agents.by-id.evaluations",
+        "summary": "Agent evaluation evidence",
+        "security": [
+          {
+            "apiKey": [
+              "lab:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/routing-decisions": {
+      "get": {
+        "operationId": "lab.get.routing-decisions",
+        "summary": "Agent routing decisions",
+        "security": [
+          {
+            "apiKey": [
+              "lab:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/hermes/status": {
+      "get": {
+        "operationId": "lab.get.hermes.status",
+        "summary": "Hermes status",
+        "security": [
+          {
+            "apiKey": [
+              "lab:hermes:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/hermes/capabilities": {
+      "get": {
+        "operationId": "lab.get.hermes.capabilities",
+        "summary": "Hermes capabilities",
+        "security": [
+          {
+            "apiKey": [
+              "lab:hermes:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/hermes/tools": {
+      "get": {
+        "operationId": "lab.get.hermes.tools",
+        "summary": "Hermes tools",
+        "security": [
+          {
+            "apiKey": [
+              "lab:hermes:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/hermes/sessions": {
+      "get": {
+        "operationId": "lab.get.hermes.sessions",
+        "summary": "Hermes sessions",
+        "security": [
+          {
+            "apiKey": [
+              "lab:hermes:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/hermes/sessions/{id}": {
+      "get": {
+        "operationId": "lab.get.hermes.sessions.by-id",
+        "summary": "Hermes session",
+        "security": [
+          {
+            "apiKey": [
+              "lab:hermes:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/hermes/sessions/{id}/finalize": {
+      "post": {
+        "operationId": "lab.post.hermes.sessions.by-id.finalize",
+        "summary": "Finalize Hermes evidence",
+        "security": [
+          {
+            "apiKey": [
+              "lab:experience:write"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/hermes/verify": {
+      "post": {
+        "operationId": "lab.post.hermes.verify",
+        "summary": "Run bounded Hermes verification",
+        "security": [
+          {
+            "apiKey": [
+              "lab:experience:write"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/trajectories": {
+      "get": {
+        "operationId": "lab.get.trajectories",
+        "summary": "Agent trajectories",
+        "security": [
+          {
+            "apiKey": [
+              "lab:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/trajectories/{id}": {
+      "get": {
+        "operationId": "lab.get.trajectories.by-id",
+        "summary": "Agent trajectory",
+        "security": [
+          {
+            "apiKey": [
+              "lab:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/artifacts": {
+      "get": {
+        "operationId": "lab.get.artifacts",
+        "summary": "Artifact observations",
+        "security": [
+          {
+            "apiKey": [
+              "lab:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/libraries": {
+      "get": {
+        "operationId": "lab.get.libraries",
+        "summary": "Training libraries",
+        "security": [
+          {
+            "apiKey": [
+              "lab:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/libraries/{id}": {
+      "get": {
+        "operationId": "lab.get.libraries.by-id",
+        "summary": "Training library",
+        "security": [
+          {
+            "apiKey": [
+              "lab:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/libraries/{id}/train": {
+      "post": {
+        "operationId": "lab.post.libraries.by-id.train",
+        "summary": "Start a bounded library cycle",
+        "security": [
+          {
+            "apiKey": [
+              "lab:write"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/library-cycles": {
+      "get": {
+        "operationId": "lab.get.library-cycles",
+        "summary": "Library cycles",
+        "security": [
+          {
+            "apiKey": [
+              "lab:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/library-cycles/{id}": {
+      "get": {
+        "operationId": "lab.get.library-cycles.by-id",
+        "summary": "Library cycle",
+        "security": [
+          {
+            "apiKey": [
+              "lab:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/cycles": {
+      "get": {
+        "operationId": "lab.get.cycles",
+        "summary": "Disabled training cycles",
+        "security": [
+          {
+            "apiKey": [
+              "lab:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/experience": {
+      "get": {
+        "operationId": "lab.get.experience",
+        "summary": "Captured trajectories",
+        "security": [
+          {
+            "apiKey": [
+              "lab:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/events/stream": {
+      "get": {
+        "operationId": "lab.get.events.stream",
+        "summary": "Events",
+        "security": [
+          {
+            "apiKey": [
+              "lab:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/metrics": {
+      "get": {
+        "operationId": "lab.get.metrics",
+        "summary": "Metrics",
+        "security": [
+          {
+            "apiKey": [
+              "metrics:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/loop/enable": {
+      "post": {
+        "operationId": "lab.post.loop.enable",
+        "summary": "Enable loop",
+        "security": [
+          {
+            "apiKey": [
+              "lab:write"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/loop/cycle-now": {
+      "post": {
+        "operationId": "lab.post.loop.cycle-now",
+        "summary": "Start cycle",
+        "security": [
+          {
+            "apiKey": [
+              "lab:write"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/loop/pause": {
+      "post": {
+        "operationId": "lab.post.loop.pause",
+        "summary": "Pause loop",
+        "security": [
+          {
+            "apiKey": [
+              "lab:write"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/loop/resume": {
+      "post": {
+        "operationId": "lab.post.loop.resume",
+        "summary": "Resume loop",
+        "security": [
+          {
+            "apiKey": [
+              "lab:write"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "apiKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "ak_<id>_<secret>"
+      }
+    }
+  }
+}

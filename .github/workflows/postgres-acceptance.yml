@@ -1,0 +1,29 @@
+name: AI shared PostgreSQL
+on:
+  pull_request:
+    paths: ['packages/common/src/database/**', 'containers/**/migrations.Dockerfile', 'containers/migrations/**', 'tests/database/**', '.github/workflows/postgres-acceptance.yml']
+  push:
+    branches: [staging, main]
+    paths: ['packages/common/src/database/**', 'containers/**/migrations.Dockerfile', 'containers/migrations/**', 'tests/database/**', '.github/workflows/postgres-acceptance.yml']
+permissions: { contents: read }
+jobs:
+  postgres:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: { node-version: 24 }
+      - run: corepack enable && corepack pnpm install --frozen-lockfile
+      - name: Typecheck migration and disposable fixtures
+        run: corepack pnpm exec tsc --noEmit --strict --skipLibCheck --target ES2022 --module NodeNext --moduleResolution NodeNext containers/migrations/run.ts tests/database/acceptance.ts tests/database/runtime-probe.ts
+      - name: Compile disposable runtime probe
+        run: corepack pnpm exec esbuild tests/database/runtime-probe.ts --bundle --platform=node --format=esm --external:pg-native --outfile=tests/database/runtime-probe.mjs --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);"
+      - name: Verify real TLS migration and runtime isolation
+        run: sudo --preserve-env=GITHUB_ACTIONS "$(command -v node)" --import tsx tests/database/acceptance.ts > postgres-acceptance.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: ai-postgres-${{ github.sha }}
+          path: postgres-acceptance.json
+          retention-days: 14

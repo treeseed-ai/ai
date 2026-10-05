@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 
 const submitSchema = { type: 'object', required: ['idempotencyKey'], properties: { idempotencyKey: { type: 'string', minLength: 1 }, input: jsonObjectSchema } };
 function jobStateCounts(jobs: Array<{state:string}>) { return jobs.reduce<Record<string,number>>((counts,job)=>{counts[job.state]=(counts[job.state]??0)+1;return counts;},{}); }
-function runtimeMetrics(){let mode='unknown',active=0;try{mode=JSON.parse(readFileSync(process.env.AI_FACTORY_MODE_FILE!,'utf8')).mode;}catch{}try{active=Number(JSON.parse(readFileSync(process.env.AI_RUNTIME_STATUS!,'utf8')).active??0);}catch{}return[`ai_factory_mode{product="inference",mode="${mode}"} 1`,`ai_inference_active_requests ${active}`];}
+function runtimeMetrics(){let mode='unknown',active=0;try{const value=JSON.parse(readFileSync(process.env.TREESEED_GPU_ADMISSION_FILE!,'utf8'));mode=value.admission==='open'?'awake':value.admission==='closed'?'sleep':'unknown';}catch{}try{active=Number(JSON.parse(readFileSync(process.env.TREESEED_GPU_ACTIVITY_FILE!,'utf8')).active??0);}catch{}return[`ai_gpu_mode{product="inference",mode="${mode}"} 1`,`ai_inference_active_requests ${active}`];}
 function internalImportToken(){try{return readFileSync(process.env.ARTIFACT_IMPORT_TOKEN_FILE!,'utf8').trim();}catch{return process.env.ARTIFACT_IMPORT_TOKEN??'';}}
 export const inferenceRoutes: RouteSpec[] = [
 	{ method:'GET',path:'/healthz',summary:'Liveness' },{ method:'GET',path:'/readyz',summary:'Readiness' },{ method:'GET',path:'/v1/version',summary:'Version',scope:'inference:read' },
@@ -17,8 +17,10 @@ export const inferenceRoutes: RouteSpec[] = [
 	{ method:'GET',path:'/v1/library-deployments',summary:'List library deployment aliases',scope:'inference:read' },{ method:'GET',path:'/v1/library-deployments/:libraryId',summary:'Get library deployment alias',scope:'inference:read' },{ method:'POST',path:'/v1/library-deployments/:libraryId/rollback',summary:'Rollback one library alias',scope:'deployments:write',requestSchema:submitSchema },
 ];
 
+export const inferenceOpenApi = (version = '0.11.0') => openApiDocument({ title:'AI Inference Control API',version,routes:inferenceRoutes,operationNamespace:'inference' });
+
 export function createInferenceControlApp(input: { jobs: JobRepository; resolveKey: ApiKeyResolver; version?: string; ready?: () => Promise<boolean>; importArtifact?:(job:Job)=>Promise<string>; currentDeployment?:()=>Promise<unknown>; libraryDeployments?:(libraryId?:string)=>Promise<unknown[]>; candidate?:(id:string)=>Promise<unknown|null> }) {
-	const app = new Hono(); const version=input.version??'0.10.0'; const document=openApiDocument({ title:'AI Inference Control API',version,routes:inferenceRoutes });
+	const app = new Hono(); const version=input.version??'0.11.0'; const document=inferenceOpenApi(version);
 	app.get('/healthz',(context)=>context.json({ok:true,service:'inference-control'})); app.get('/readyz',async(context)=>{const ok=await(input.ready?.()??true);return context.json({ok},ok?200:503);});
 	app.get('/openapi.json',(context)=>context.json(document)); app.get('/docs',(context)=>context.html('<!doctype html><title>AI Inference API</title><script id="api-reference" data-url="/openapi.json"></script><script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>'));
 	app.post('/internal/artifacts/import',async context=>{if(!input.importArtifact||context.req.header('authorization')!==`Bearer ${internalImportToken()}`)return context.json({error:{code:'not_found',message:'Route not found.'}},404);const job=await context.req.json()as Job;return context.json({resultManifest:await input.importArtifact(job)});});

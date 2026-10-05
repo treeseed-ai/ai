@@ -3,7 +3,7 @@ import { extname, join, relative } from 'node:path';
 
 const root = process.cwd();
 const executableExtensions = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
-const ignored = new Set(['.artifacts', '.git', '__pycache__', 'coverage', 'dist', 'node_modules']);
+const ignored = new Set(['.artifacts', '.git', '__pycache__', 'coverage', 'dist', 'node_modules', 'projects']);
 
 function filesBelow(directory: string): string[] {
 	return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -14,7 +14,7 @@ function filesBelow(directory: string): string[] {
 }
 
 const files = filesBelow(root);
-const handwritten = files.filter((path) => executableExtensions.has(extname(path)));
+const handwritten = files.filter((path) => executableExtensions.has(extname(path)) && !path.includes('/src/generated/'));
 const oversized = handwritten.filter((path) => readFileSync(path, 'utf8').split(/\r?\n/u).length > 500);
 if (oversized.length) throw new Error(`Handwritten files exceed 500 lines: ${oversized.map((path) => relative(root, path)).join(', ')}`);
 

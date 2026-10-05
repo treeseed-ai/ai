@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { componentReleaseSchema, deploymentDigest } from '@treeseed/sdk/deployment';
+import { componentReleaseSchema, deploymentDigest, packageRuntimeSchema } from '@treeseed/sdk/deployment';
+import YAML from 'yaml';
 
 interface Image { repository: string; digest: string }
 interface ImageManifest { images: Record<string, Image> }
@@ -16,57 +17,298 @@ if (!Number.isInteger(revision) || revision < 1) throw new Error('Component revi
 const track = release.includes('-rc') ? 'development' : 'stable';
 const debianRelease = `${release.replace(/-rc\.?([0-9]+)$/u, '~rc$1')}-${revision}`;
 const manifest = JSON.parse(readFileSync(resolve(manifestPath), 'utf8')) as ImageManifest;
-const roles = ['inference-api', 'inference-manager', 'inference-vllm', 'inference-evaluator', 'inference-migrations', 'training-api', 'training-manager', 'axolotl-worker', 'marker-worker', 'artifact-worker', 'training-migrations'] as const;
-let compose = readFileSync(resolve('deploy/component/compose.template.yml'), 'utf8');
-for (const role of roles) {
-	const image = manifest.images[role];
-	if (!image || !/^treeseed\/[a-z0-9-]+$/u.test(image.repository) || !/^sha256:[a-f0-9]{64}$/u.test(image.digest)) throw new Error(`Missing immutable image ${role}.`);
-	compose = compose.replaceAll(`@${role.replaceAll('-', '_').toUpperCase()}_IMAGE@`, `${image.repository}@${image.digest}`);
-}
-if (/\bbuild\s*:/u.test(compose) || /@[A-Z_]+_IMAGE@/u.test(compose) || /^\s*ports\s*:/mu.test(compose)) throw new Error('Production Compose is not fully immutable and manager-owned.');
-const composeDigest = `sha256:${createHash('sha256').update(compose).digest('hex')}`;
-const services = [
-	{ id: 'inference-migrations', composeService: 'inference-migrations', endpoints: [] },
-	{ id: 'inference-vllm', composeService: 'inference-vllm', endpoints: [] },
-	{ id: 'inference-evaluator', composeService: 'inference-evaluator', endpoints: [] },
-	{ id: 'inference-manager', composeService: 'inference-manager', endpoints: [] },
-	{ id: 'inference-api', composeService: 'inference-api', endpoints: [
-		{ id: 'control', protocol: 'http', port: 4770, visibility: 'host', defaultAlias: 'inference.ai.treeseed.localhost', aliasOverride: true, tls: 'edge', authentication: 'application', healthGate: { protocol: 'http', path: '/readyz', timeoutSeconds: 600 } },
-		{ id: 'inference', protocol: 'http', port: 4771, visibility: 'private', aliasOverride: false, tls: 'none', authentication: 'application', healthGate: { protocol: 'http', path: '/healthz', timeoutSeconds: 600 } },
-	] },
-	{ id: 'training-migrations', composeService: 'training-migrations', endpoints: [] },
-	{ id: 'training-marker', composeService: 'training-marker', endpoints: [] },
-	{ id: 'training-axolotl', composeService: 'training-axolotl', endpoints: [] },
-	{ id: 'training-artifact', composeService: 'training-artifact', endpoints: [] },
-	{ id: 'training-manager', composeService: 'training-manager', endpoints: [] },
-	{ id: 'training-api', composeService: 'training-api', endpoints: [{ id: 'control', protocol: 'http', port: 4780, visibility: 'host', defaultAlias: 'training.ai.treeseed.localhost', aliasOverride: true, tls: 'edge', authentication: 'application', healthGate: { protocol: 'http', path: '/readyz', timeoutSeconds: 600 } }] },
-];
-const runtime = {
-	schemaVersion: 'treeseed.package-runtime/v1' as const,
-	componentId: 'ai', version: debianRelease,
-	compose: { projectName: 'treeseed-ai', files: [{ path: 'compose.yml', digest: composeDigest }] },
-	services,
-	stateVolumes: [
-		{ id: 'inference', volume: '/var/lib/treeseed/components/ai/inference', backup: 'required' as const },
-		{ id: 'training', volume: '/var/lib/treeseed/components/ai/training', backup: 'required' as const },
-		{ id: 'archive', volume: '/var/lib/treeseed/components/ai/archive', backup: 'required' as const },
-		{ id: 'models', volume: '/var/lib/treeseed/components/ai/models', backup: 'optional' as const },
-	],
-	migrations: [{ id: 'inference-database', order: 0, backupRequired: true }, { id: 'training-database', order: 1, backupRequired: true }],
-	requiredCapabilities: ['docker-compose', 'nvidia-container-runtime'], dependencies: [],
-};
-const tagUrl = (repository: string) => `https://hub.docker.com/r/${repository}/tags?name=${encodeURIComponent(release)}`;
-const bundle = componentReleaseSchema.parse({
-	schemaVersion: 'treeseed.component-release/v1', componentId: 'ai', release: debianRelease, applicationVersion: release, revision, track,
-	source: { repository: 'treeseed-ai/ai', commit: sourceCommit },
-	stableBase: track === 'development' ? { releaseRange: '>=0.1.0 <0.2.0', compatibilityId: 'treeseed-linux-amd64-v1', catalogDigest: null } : null,
-	packages: [{ name: 'treeseed-component-ai', version: debianRelease, architecture: 'all', origin: 'TreeSeed Deployment', order: 50 }],
-	images: roles.map((role) => ({ role, repository: manifest.images[role]!.repository, digest: manifest.images[role]!.digest, platforms: ['linux/amd64'], consumers: ['ai'] })),
-	runtime, runtimeDigest: deploymentDigest(runtime), rollback: { compatible: true, requiresBackup: true },
-	evidence: { provenance: roles.map((role) => tagUrl(manifest.images[role]!.repository)), sboms: roles.map((role) => tagUrl(manifest.images[role]!.repository)), vulnerabilities: [] },
-});
 const output = resolve(process.env.TREEAI_COMPONENT_OUTPUT ?? 'release-assets/component');
 mkdirSync(output, { recursive: true });
-writeFileSync(resolve(output, 'compose.yml'), compose);
-writeFileSync(resolve(output, 'component-release.json'), `${JSON.stringify(bundle, null, 2)}\n`);
-console.log(JSON.stringify({ ok: true, release, debianRelease, runtimeDigest: bundle.runtimeDigest, composeDigest }));
+const delegationEnvironment = ['AI_DELEGATION_ISSUER', 'AI_DELEGATION_AUDIENCE', 'AI_TEAM_ID', 'AI_NODE_ID', 'AI_DELEGATION_PUBLIC_KEYS']
+	.map(name => ({ name, required: true, source: 'configuration' as const }));
+const storageEnvironment = ['AI_PROJECT_ID', 'AI_STORAGE_SERVICE', 'AI_STORAGE_URL', 'AI_STORAGE_HOST']
+	.map(name => ({ name, required: true, source: 'configuration' as const }));
+const storageFiles = (role: string) => [
+	{ id: `ai-${role}-storage-identity`, path: `/etc/treeseed/credentials/ai-${role}-storage-identity`, required: true },
+	{ id: 'ai-storage-ca', path: '/etc/treeseed/credentials/ai-storage-ca', required: true },
+];
+
+const definitions = {
+	'ai-inference': {
+		roles: ['inference-api', 'inference-manager', 'inference-vllm', 'inference-evaluator', 'inference-migrations'],
+		services: ['inference-gpu-state-init', 'inference-migrations', 'inference-vllm', 'inference-evaluator', 'inference-manager', 'inference-api'],
+		states: [
+			{ id: 'postgres', volume: '/var/lib/treeseed/components/ai-inference/data/postgres', backup: 'required' },
+			{ id: 'inference', volume: '/var/lib/treeseed/components/ai-inference/data/inference', backup: 'required' },
+			{ id: 'artifacts', volume: '/var/lib/treeseed/components/ai-inference/data/artifacts', backup: 'required' },
+			{ id: 'models', volume: '/var/lib/treeseed/components/ai-inference/data/models', backup: 'optional' },
+		],
+		configuration: {
+			environment: [
+				...delegationEnvironment,
+				...storageEnvironment,
+				{ name: 'RUNTIME_GID', required: true, source: 'manager' },
+				{ name: 'SOURCE_MODEL', required: false, default: 'Qwen/Qwen3.5-4B' },
+				{ name: 'SOURCE_MODEL_REVISION', required: false, default: '851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a' },
+				{ name: 'PUBLIC_MODEL', required: false, default: 'local-model' },
+				{ name: 'MAX_MODEL_LENGTH', required: false, default: '16384' },
+				{ name: 'MAX_NUM_SEQS', required: false, default: '2' },
+				{ name: 'GPU_MEMORY_UTILIZATION', required: false, default: '0.85' },
+			],
+			secretEnvironment: [
+				{ name: 'AI_API_KEYS', required: true },
+			],
+			secretFiles: [
+				...storageFiles('inference'),
+				{ id: 'artifact-source-registry', path: '/etc/treeseed/credentials/ai-inference-artifact-source', required: true },
+				{ id: 'artifact-destination-registry', path: '/etc/treeseed/credentials/ai-inference-artifact-destination', required: true },
+			], files: [],
+		},
+		migrations: [{ id: 'inference-database', order: 0, backupRequired: true }], dependencies: [], order: 50,
+		modeControl: { resource: 'ai-gpu', role: 'inference', gate: { service: 'inference-api', executable: '/usr/local/bin/treeseed-ai-gpu-gate' }, services: { base: ['inference-gpu-state-init', 'inference-evaluator', 'inference-manager', 'inference-api'], gpu: ['inference-vllm'], warm: 'inference-vllm' } },
+	},
+	'ai-training': {
+		roles: ['training-api', 'training-manager', 'axolotl-worker', 'marker-worker', 'artifact-worker', 'training-migrations'],
+		services: ['training-gpu-state-init', 'training-migrations', 'training-marker', 'training-axolotl', 'training-artifact', 'training-manager', 'training-api'],
+		states: [
+			{ id: 'postgres', volume: '/var/lib/treeseed/components/ai-training/data/postgres', backup: 'required' },
+			{ id: 'training', volume: '/var/lib/treeseed/components/ai-training/data/training', backup: 'required' },
+			{ id: 'archive', volume: '/var/lib/treeseed/components/ai-training/data/archive', backup: 'required' },
+			{ id: 'models', volume: '/var/lib/treeseed/components/ai-training/data/models', backup: 'optional' },
+		],
+		configuration: {
+			environment: [
+				...delegationEnvironment,
+				...storageEnvironment,
+				{ name: 'RUNTIME_GID', required: true, source: 'manager' },
+				{ name: 'ARTIFACT_BACKEND', required: false, default: 'filesystem' },
+				{ name: 'ARTIFACT_ROOT', required: false, default: '/artifacts' },
+			],
+			secretEnvironment: [
+				{ name: 'AI_API_KEYS', required: true },
+			],
+			secretFiles: [...storageFiles('training'), { id: 'artifact-signing-key', path: '/etc/treeseed/credentials/ai-artifact-signing-key', required: true }], files: [],
+		},
+		migrations: [{ id: 'training-database', order: 0, backupRequired: true }], dependencies: [], order: 51,
+		modeControl: { resource: 'ai-gpu', role: 'training', gate: { service: 'training-api', executable: '/usr/local/bin/treeseed-ai-gpu-gate' }, services: { base: ['training-gpu-state-init', 'training-artifact', 'training-manager', 'training-api'], gpu: ['training-marker', 'training-axolotl'] } },
+	},
+	'ai-lab': {
+		roles: ['lab-controller', 'lab-experience-proxy', 'lab-library-bridge', 'lab-open-webui', 'hermes-agent', 'lab-web-tool-proxy'],
+		services: ['lab-state-init', 'experience-proxy', 'controller', 'library-bridge', 'open-webui', 'open-webui-action-init', 'web-tool-proxy', 'hermes-agent', 'hermes-dashboard'],
+		states: [
+			{ id: 'state', volume: '/var/lib/treeseed/components/ai-lab/data/state', backup: 'required' },
+			{ id: 'hermes', volume: '/var/lib/treeseed/components/ai-lab/data/hermes', backup: 'required' },
+			{ id: 'workspace', volume: '/var/lib/treeseed/components/ai-lab/data/workspace', backup: 'required' },
+			{ id: 'webui', volume: '/var/lib/treeseed/components/ai-lab/data/open-webui', backup: 'required' },
+		],
+		configuration: {
+				environment: [
+				...delegationEnvironment,
+				{ name: 'BASE_MODEL_REVISION', required: true, default: '851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a' },
+				{ name: 'OPEN_WEBUI_AUTH', required: false, default: 'false' },
+				{ name: 'OPEN_WEBUI_ENABLE_SIGNUP', required: false, default: 'false' },
+				{ name: 'OPEN_WEBUI_ENABLE_LOGIN_FORM', required: false, default: 'false' },
+				{ name: 'OPEN_WEBUI_BYPASS_MODEL_ACCESS_CONTROL', required: false, default: 'true' },
+				{ name: 'OPEN_WEBUI_URL', required: false, default: 'https://chat.ai.treeseed.localhost' },
+				{ name: 'OPEN_WEBUI_CORS_ALLOW_ORIGIN', required: false, default: 'https://chat.ai.treeseed.localhost' },
+				{ name: 'RUNTIME_GID', required: true, source: 'manager' },
+				{ name: 'TREESEED_AI_MODE_URL', required: true, source: 'manager' },
+			],
+			secretEnvironment: [{ name: 'AI_LAB_API_KEYS', required: true }],
+			secretFiles: [
+				{ id: 'factory-inference-key', path: '/etc/treeseed/credentials/ai-lab-factory-inference-key', required: true },
+				{ id: 'factory-training-key', path: '/etc/treeseed/credentials/ai-lab-factory-training-key', required: true },
+				{ id: 'hermes-api-key', path: '/etc/treeseed/credentials/ai-lab-hermes-api-key', required: true },
+				{ id: 'hermes-password-hash', path: '/etc/treeseed/credentials/ai-lab-hermes-password-hash', required: true },
+				{ id: 'hermes-session-secret', path: '/etc/treeseed/credentials/ai-lab-hermes-session-secret', required: true },
+				{ id: 'training-ingest-key', path: '/etc/treeseed/credentials/ai-lab-training-ingest-key', required: true },
+				{ id: 'lab-library-action-key', path: '/etc/treeseed/credentials/ai-lab-lab-library-action-key', required: true },
+				{ id: 'ai-mode-ca', path: '/etc/treeseed/credentials/ai-mode-ca.crt', required: true },
+				{ id: 'ai-mode-client-cert', path: '/etc/treeseed/credentials/ai-mode-client.crt', required: true },
+				{ id: 'ai-mode-client-key', path: '/etc/treeseed/credentials/ai-mode-client.key', required: true },
+			],
+			files: [],
+		},
+		migrations: [],
+		dependencies: [
+			{ id: 'inference', capability: 'treeai-inference-api', locality: 'local', optional: false },
+			{ id: 'training', capability: 'treeai-training-api', locality: 'local', optional: false },
+		], order: 52,
+		modeControl: { resource: 'ai-gpu', role: 'controller', services: { base: ['experience-proxy', 'controller', 'library-bridge', 'open-webui', 'web-tool-proxy', 'hermes-agent', 'hermes-dashboard'], gpu: [] }, internalControl: { transport: 'mtls', clientCommonName: 'client-ai-lab-mode', path: '/v1/ai/mode' } },
+	},
+} as const;
+
+function exactImage(role: string) {
+	const image = manifest.images[role];
+	if (!image || !/^(?:[a-z0-9.-]+\/)?[a-z0-9-]+\/[a-z0-9-]+$/u.test(image.repository) || !/^sha256:[a-f0-9]{64}$/u.test(image.digest)) throw new Error(`Missing immutable image ${role}.`);
+	return `${image.repository}@${image.digest}`;
+}
+
+function baseCompose(componentId: 'ai-inference' | 'ai-training') {
+	const family = componentId === 'ai-inference' ? 'inference' : 'training';
+	let source = readFileSync(resolve('deploy/component/compose.template.yml'), 'utf8')
+		.replaceAll('/etc/treeseed/components/ai/environment', `/etc/treeseed/components/${componentId}/environment`)
+		.replaceAll('/ai/data/', `/${componentId}/data/`);
+	for (const role of definitions[componentId].roles) source = source.replaceAll(`@${role.replaceAll('-', '_').toUpperCase()}_IMAGE@`, exactImage(role));
+	const parsed = YAML.parse(source) as Record<string, any>;
+	parsed.name = `treeseed-${componentId}`;
+	parsed.services = Object.fromEntries(definitions[componentId].services.map((name) => [name, parsed.services[name]]));
+	parsed.networks = Object.fromEntries(Object.entries(parsed.networks).filter(([name]) => name === `${family}-private` || name === `${family}-model-egress` || name === 'platform' || name === 'treeseed-edge'));
+	parsed.networks.database = { external: true, name: 'treeseed-postgres-private' };
+	for (const name of [`${family}-migrations`, `${family}-api`, `${family}-manager`]) {
+		const service = parsed.services[name], phase = name.endsWith('-migrations') ? 'migration' : 'runtime';
+		service.volumes = [...(service.volumes ?? []), { type: 'bind',
+			source: `/run/treeseed/postgres-clients/${componentId}/${componentId}/${phase}`,
+			target: `/run/treeseed/postgres/${componentId}`, read_only: true }];
+		service.networks = [...new Set([...(service.networks ?? []), 'database'])];
+		// Deployment completes migrations before exposing runtime credentials.
+		if (service.depends_on) delete service.depends_on[`${family}-migrations`];
+	}
+	if (componentId === 'ai-training') parsed.services['training-api'].volumes = [
+		...(parsed.services['training-api'].volumes ?? []),
+		{ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-training/data/training', target: '/artifacts' },
+	];
+	if (componentId === 'ai-inference') {
+		const api = parsed.services['inference-api'];
+		api.group_add = ['${RUNTIME_GID:?RUNTIME_GID is required}', '10001'];
+		api.environment.ARTIFACT_SOURCE_REGISTRY = '/run/secrets/artifact-source-registry';
+		api.environment.ARTIFACT_DESTINATION_REGISTRY = '/run/secrets/artifact-destination-registry';
+		api.secrets = ['artifact-source-registry', 'artifact-destination-registry'];
+		api.volumes = [
+			...(api.volumes ?? []),
+			{ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-inference/data/artifacts', target: '/artifacts' },
+			{ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-training/data/training', target: '/training-artifacts', read_only: true },
+		];
+		parsed.secrets = {
+			'artifact-source-registry': { file: '/etc/treeseed/credentials/ai-inference-artifact-source' },
+			'artifact-destination-registry': { file: '/etc/treeseed/credentials/ai-inference-artifact-destination' },
+		};
+	}
+	if (componentId === 'ai-training') parsed.services['training-artifact'].group_add = ['${RUNTIME_GID:?RUNTIME_GID is required}'];
+	const consumers = family === 'inference' ? ['inference-api', 'inference-evaluator'] : ['training-api', 'training-marker', 'training-axolotl', 'training-artifact'];
+	for (const name of consumers) {
+		const service = parsed.services[name];
+		service.environment ??= {};
+		for (const variable of [...storageEnvironment, ...delegationEnvironment.filter(item => ['AI_TEAM_ID', 'AI_NODE_ID'].includes(item.name))])
+			service.environment[variable.name] = `\${${variable.name}:?${variable.name} is required}`;
+		service.environment.ARTIFACT_STORE_ID = `managed-${family}`;
+		service.environment.ARTIFACT_BACKEND = '${ARTIFACT_BACKEND:-filesystem}';
+		service.environment.NODE_EXTRA_CA_CERTS = '/run/secrets/ai-storage-ca';
+		service.secrets = [...(service.secrets ?? []), `ai-${family}-storage-identity`, 'ai-storage-ca'];
+		service.group_add = [...new Set([...(service.group_add ?? []), '${RUNTIME_GID:?RUNTIME_GID is required}'])];
+		service.extra_hosts = ['${AI_STORAGE_HOST:?AI_STORAGE_HOST is required}:host-gateway'];
+		service.networks = [...new Set([...(service.networks ?? []), `${family}-model-egress`])];
+	}
+	for (const file of storageFiles(family)) (parsed.secrets ??= {})[file.id] = { file: file.path };
+	if (family === 'inference') {
+		parsed.services['inference-evaluator'].volumes.push({ type: 'bind', source: '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-inference/data/artifacts', target: '/artifacts', read_only: true });
+		parsed.services['inference-evaluator'].group_add.push('1000');
+	}
+	return parsed;
+}
+
+function labCompose() {
+	const parsed = YAML.parse(readFileSync(resolve('deploy/lab/compose.yml'), 'utf8')) as Record<string, any>;
+	const roleByService: Record<string, string> = {
+		'lab-state-init': 'lab-controller',
+		'experience-proxy': 'lab-experience-proxy', controller: 'lab-controller', 'library-bridge': 'lab-library-bridge',
+		'open-webui': 'lab-open-webui', 'open-webui-action-init': 'lab-open-webui',
+		'web-tool-proxy': 'lab-web-tool-proxy', 'hermes-agent': 'hermes-agent', 'hermes-dashboard': 'hermes-agent',
+	};
+	parsed.name = 'treeseed-ai-lab';
+	for (const { name } of delegationEnvironment) parsed.services.controller.environment[name] = `\${${name}:?${name} is required}`;
+	for (const [service, role] of Object.entries(roleByService)) parsed.services[service].image = exactImage(role);
+	const dataRoot = '${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/ai-lab/data';
+	const replaceVolume = (service: string, target: string, source: string, suffix = '') => {
+		parsed.services[service].volumes = (parsed.services[service].volumes ?? []).map((volume: string) =>
+			volume.split(':')[1] === target ? `${dataRoot}/${source}:${target}${suffix}` : volume);
+	};
+	for (const service of ['lab-state-init', 'experience-proxy', 'controller']) replaceVolume(service, '/state', 'state');
+	replaceVolume('lab-state-init', '/home/hermes/.hermes', 'hermes');
+	replaceVolume('lab-state-init', '/workspace', 'workspace');
+	replaceVolume('controller', '/workspace', 'workspace', ':ro');
+	replaceVolume('open-webui', '/app/backend/data', 'open-webui');
+	for (const service of ['hermes-agent', 'hermes-dashboard']) {
+		replaceVolume(service, '/home/hermes/.hermes', 'hermes');
+		replaceVolume(service, '/workspace', 'workspace');
+	}
+	for (const service of ['experience-proxy', 'controller', 'library-bridge']) parsed.services[service].networks = ['lab-private', 'platform'];
+	for (const service of ['open-webui', 'hermes-dashboard', 'controller']) parsed.services[service].networks = [...new Set([...parsed.services[service].networks, 'treeseed-edge'])];
+	parsed.networks.platform = { name: 'treeseed-platform', external: true };
+	parsed.networks['treeseed-edge'] = { name: 'treeseed-edge', external: true };
+	delete parsed.volumes;
+	return parsed;
+}
+
+function serviceContracts(componentId: keyof typeof definitions) {
+	if (componentId === 'ai-inference') return [
+		{ id: 'inference-gpu-state-init', composeService: 'inference-gpu-state-init', endpoints: [] },
+		{ id: 'inference-migrations', composeService: 'inference-migrations', endpoints: [] }, { id: 'inference-vllm', composeService: 'inference-vllm', endpoints: [] },
+		{ id: 'inference-evaluator', composeService: 'inference-evaluator', endpoints: [] }, { id: 'inference-manager', composeService: 'inference-manager', endpoints: [] },
+		{ id: 'inference-api', composeService: 'inference-api', endpoints: [
+			{ id: 'control', protocol: 'http', port: 4770, visibility: 'host', defaultAlias: 'inference.ai.treeseed.localhost', aliasOverride: true, tls: 'edge', authentication: 'application', healthGate: { protocol: 'http', path: '/readyz', timeoutSeconds: 1_200 } },
+			{ id: 'inference', protocol: 'http', port: 4771, visibility: 'private', aliasOverride: false, tls: 'none', authentication: 'application', healthGate: { protocol: 'http', path: '/healthz', timeoutSeconds: 1_200 } },
+		] },
+	];
+	if (componentId === 'ai-training') return [
+		{ id: 'training-gpu-state-init', composeService: 'training-gpu-state-init', endpoints: [] },
+		{ id: 'training-migrations', composeService: 'training-migrations', endpoints: [] }, { id: 'training-marker', composeService: 'training-marker', endpoints: [] },
+		{ id: 'training-axolotl', composeService: 'training-axolotl', endpoints: [] }, { id: 'training-artifact', composeService: 'training-artifact', endpoints: [] },
+		{ id: 'training-manager', composeService: 'training-manager', endpoints: [] },
+		{ id: 'training-api', composeService: 'training-api', endpoints: [{ id: 'control', protocol: 'http', port: 4780, visibility: 'host', defaultAlias: 'training.ai.treeseed.localhost', aliasOverride: true, tls: 'edge', authentication: 'application', healthGate: { protocol: 'http', path: '/readyz', timeoutSeconds: 600 } }] },
+	];
+	return [
+		{ id: 'lab-state-init', composeService: 'lab-state-init', endpoints: [] },
+		{ id: 'experience-proxy', composeService: 'experience-proxy', endpoints: [] },
+		{ id: 'controller', composeService: 'controller', endpoints: [{ id: 'control', protocol: 'http', port: 8081, visibility: 'host', defaultAlias: 'lab.ai.treeseed.localhost', aliasOverride: true, tls: 'edge', authentication: 'application', healthGate: { protocol: 'http', path: '/readyz', timeoutSeconds: 120 } }] },
+		{ id: 'library-bridge', composeService: 'library-bridge', endpoints: [] },
+		{ id: 'open-webui', composeService: 'open-webui', endpoints: [{ id: 'web', protocol: 'http', port: 8080, visibility: 'host', defaultAlias: 'chat.ai.treeseed.localhost', aliasOverride: true, tls: 'edge', authentication: 'none', healthGate: { protocol: 'http', path: '/health', timeoutSeconds: 120 } }] },
+		{ id: 'web-tool-proxy', composeService: 'web-tool-proxy', endpoints: [] }, { id: 'hermes-agent', composeService: 'hermes-agent', endpoints: [] },
+		{ id: 'hermes-dashboard', composeService: 'hermes-dashboard', endpoints: [{ id: 'web', protocol: 'http', port: 9119, visibility: 'host', defaultAlias: 'hermes.ai.treeseed.localhost', aliasOverride: true, tls: 'edge', authentication: 'application', healthGate: { protocol: 'http', path: '/', timeoutSeconds: 120 } }] },
+	];
+}
+
+const results = [];
+for (const componentId of Object.keys(definitions) as Array<keyof typeof definitions>) {
+	const definition = definitions[componentId];
+	const composeName = `${componentId}-compose.yml`, manifestName = `${componentId}-component-release.json`;
+	const compose = YAML.stringify(componentId === 'ai-lab' ? labCompose() : baseCompose(componentId));
+	if (/\bbuild\s*:/u.test(compose) || /@[A-Z_]+_IMAGE@/u.test(compose) || /^\s*ports\s*:/mu.test(compose)) throw new Error(`${componentId} Compose is not immutable and manager-owned.`);
+	const composeDigest = `sha256:${createHash('sha256').update(compose).digest('hex')}`;
+	const runtime = packageRuntimeSchema.parse({
+		schemaVersion: 'treeseed.package-runtime/v1' as const, componentId, version: debianRelease,
+		compose: { projectName: `treeseed-${componentId}`, files: [{ path: composeName, digest: composeDigest }] },
+		configuration: definition.configuration,
+		services: serviceContracts(componentId), stateVolumes: definition.states, migrations: definition.migrations,
+		requiredCapabilities: componentId === 'ai-lab' ? ['docker-compose'] : ['docker-compose', 'nvidia-container-runtime'], dependencies: definition.dependencies,
+		modeControl: definition.modeControl,
+		...(componentId === 'ai-lab' ? {} : {
+			postgresRequirements: [{ id: componentId, supportedMajors: [17], extensions: ['pgcrypto'], runtimeConnectionLimit: 20 }],
+			postgresLifecycle: [{ requirementId: componentId, credentialOwner: { uid: componentId === 'ai-inference' ? 1000 : 10001, gid: componentId === 'ai-inference' ? 1000 : 10001 },
+				migration: { composeService: componentId === 'ai-inference' ? 'inference-migrations' : 'training-migrations', completion: 'exit-zero', timeoutSeconds: 600 },
+				runtimeServices: componentId === 'ai-inference' ? ['inference-manager', 'inference-api'] : ['training-manager', 'training-api'] }],
+		}),
+	});
+	const localImages = definition.roles.map((role) => {
+		const image = manifest.images[role]!;
+		return { role, repository: image.repository, digest: image.digest, platforms: ['linux/amd64'], consumers: [componentId] };
+	});
+	const componentImages = localImages;
+	const tagUrl = ({ repository }: { repository: string }) => {
+		if (repository.startsWith('treeseed/')) return `https://hub.docker.com/r/${repository}/tags?name=${encodeURIComponent(release)}`;
+		if (!repository.includes('/')) return `https://hub.docker.com/_/${repository}/tags`;
+		if (repository.startsWith('ghcr.io/')) {
+			const path = repository.slice('ghcr.io/'.length), segments = path.split('/');
+			return `https://github.com/${segments.slice(0, -1).join('/')}/pkgs/container/${segments.at(-1)}`;
+		}
+		return `https://${repository}`;
+	};
+	const bundle = componentReleaseSchema.parse({
+		schemaVersion: 'treeseed.component-release/v1', componentId, release: debianRelease, applicationVersion: release, revision, track,
+		source: { repository: 'treeseed-ai/ai', commit: sourceCommit },
+		stableBase: track === 'development' ? { releaseRange: '>=0.1.0 <0.2.0', compatibilityId: 'treeseed-linux-amd64-v1', catalogDigest: null } : null,
+		packages: [{ name: `treeseed-component-${componentId}`, version: debianRelease, architecture: 'all', origin: 'TreeSeed Deployment', order: definition.order }],
+		images: componentImages, runtime, runtimeDigest: deploymentDigest(runtime), rollback: { compatible: true, requiresBackup: true },
+		evidence: { provenance: componentImages.map(tagUrl), sboms: componentImages.map(tagUrl), vulnerabilities: [] },
+	});
+	if (bundle.runtimeDigest !== deploymentDigest(bundle.runtime)) throw new Error(`${componentId} emitted runtime digest differs from its normalized contract.`);
+	writeFileSync(resolve(output, composeName), compose);
+	writeFileSync(resolve(output, manifestName), `${JSON.stringify(bundle, null, 2)}\n`);
+	results.push({ componentId, manifestName, composeName, runtimeDigest: bundle.runtimeDigest, composeDigest });
+}
+console.log(JSON.stringify({ ok: true, release, debianRelease, components: results }));

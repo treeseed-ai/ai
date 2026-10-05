@@ -57,7 +57,7 @@ jobs:
             expected_recovery="$(node -p "require('./release/manifest.json').version")-rc$((${{ inputs.rc }} - 1))"
             test "$recovery_tag" = "$expected_recovery"
             gh run view "$recovery_run" --json conclusion,event,headBranch,headSha,jobs > prior/recovery-run.json
-            jq -e '.conclusion == "failure" and .event == "workflow_dispatch" and .headBranch == "staging" and ([.jobs[].steps[] | select(.name == "Publish every exact RC image and verify Docker Hub read-back" and .conclusion == "success")] | length) == 1 and ([.jobs[].steps[] | select(.name == "Publish immutable prerelease" and .conclusion == "failure")] | length) == 1' prior/recovery-run.json >/dev/null
+            jq -e '.conclusion == "failure" and .event == "workflow_dispatch" and .headBranch == "staging" and ([.jobs[].steps[] | select(.name == "Publish every exact RC image and verify Docker Hub read-back" and .conclusion == "success")] | length) == 1 and ([.jobs[].steps[] | select((.name == "Create exact managed component bundle" or .name == "Publish immutable prerelease") and .conclusion == "failure")] | length) == 1' prior/recovery-run.json >/dev/null
             recovery_sha=$(jq -r .headSha prior/recovery-run.json)
             printf '%s' "$recovery_sha" | grep -Eq '^[a-f0-9]{40}$'
             git cat-file -e "$recovery_sha^{commit}"
@@ -68,13 +68,15 @@ jobs:
               repository=$(jq -r --arg role "$role" '.images[$role].repository' plan/image-plan.json)
               identity=$(jq -r --arg role "$role" '.images[$role].buildIdentity' plan/image-plan.json)
               action=$(jq -r --arg role "$role" '.images[$role].action' plan/image-plan.json)
-              digest=$(docker buildx imagetools inspect "$repository:$recovery_tag" | awk '/^Digest:/{print $2;exit}')
-              printf '%s' "$digest" | grep -Eq '^sha256:[a-f0-9]{64}$'
-              cosign verify "$repository@$digest" --certificate-identity-regexp '^https://github.com/treeseed-ai/ai/' --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' >/dev/null
               if test "$action" = built; then
-                jq --arg role "$role" --arg digest "$digest" --arg tag "$recovery_tag" --arg identity "$identity" '.images[$role].digest=$digest | .images[$role].tag=$tag | .images[$role].buildIdentity=$identity | .images[$role].disposition="built" | .images[$role].firstBuiltVersion=$tag' prior/recovered-image-manifest.json > prior/recovered-image-manifest.json.new
+                digest=$(docker buildx imagetools inspect "$repository:$recovery_tag" | awk '/^Digest:/{print $2;exit}')
+                printf '%s' "$digest" | grep -Eq '^sha256:[a-f0-9]{64}$'
+                cosign verify "$repository@$digest" --certificate-identity-regexp '^https://github.com/treeseed-ai/ai/' --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' >/dev/null
+                jq --arg role "$role" --arg repository "$repository" --arg digest "$digest" --arg tag "$recovery_tag" --arg identity "$identity" '.images[$role].repository=$repository | .images[$role].digest=$digest | .images[$role].tag=$tag | .images[$role].buildIdentity=$identity | .images[$role].disposition="built" | .images[$role].firstBuiltVersion=$tag' prior/recovered-image-manifest.json > prior/recovered-image-manifest.json.new
               else
-                test "$digest" = "$(jq -r --arg role "$role" '.images[$role].digest' prior/recovered-image-manifest.json)"
+                digest=$(jq -r --arg role "$role" '.images[$role].digest' prior/recovered-image-manifest.json)
+                printf '%s' "$digest" | grep -Eq '^sha256:[a-f0-9]{64}$'
+                cosign verify "$repository@$digest" --certificate-identity-regexp '^https://github.com/treeseed-ai/ai/' --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' >/dev/null
                 jq --arg role "$role" --arg identity "$identity" '.images[$role].buildIdentity=$identity | .images[$role].disposition="reused"' prior/recovered-image-manifest.json > prior/recovered-image-manifest.json.new
               fi
               mv prior/recovered-image-manifest.json.new prior/recovered-image-manifest.json
@@ -101,7 +103,7 @@ jobs:
               cosign sign --yes "$repository@$digest"
               readback=$(docker buildx imagetools inspect "$repository:$TREEAI_RC_TAG" | awk '/^Digest:/{print $2;exit}')
               test "$readback" = "$digest"
-              jq --arg role "$role" --arg digest "$digest" --arg tag "$TREEAI_RC_TAG" --arg identity "$build_identity" '.version=$tag | .images[$role].digest=$digest | .images[$role].tag=$tag | .images[$role].buildIdentity=$identity | .images[$role].disposition="built" | .images[$role].firstBuiltVersion=$tag' assets/image-manifest.json > assets/image-manifest.json.new
+              jq --arg role "$role" --arg repository "$repository" --arg digest "$digest" --arg tag "$TREEAI_RC_TAG" --arg identity "$build_identity" '.version=$tag | .images[$role].repository=$repository | .images[$role].digest=$digest | .images[$role].tag=$tag | .images[$role].buildIdentity=$identity | .images[$role].disposition="built" | .images[$role].firstBuiltVersion=$tag' assets/image-manifest.json > assets/image-manifest.json.new
             else
               digest=$(jq -r --arg role "$role" '.images[$role].digest' plan/image-plan.json)
               docker buildx imagetools inspect "$repository@$digest" >/dev/null
@@ -118,6 +120,8 @@ jobs:
           TREEAI_IMAGE_MANIFEST: "${{ github.workspace }}/assets/image-manifest.json"
         run: |
           pnpm build:component-release
+          pnpm contracts:generate
+          TREEAI_CONTRACT_RELEASE="$TREEAI_RC_TAG" TREEAI_SOURCE_COMMIT='${{ github.sha }}' pnpm contracts:stage-release
           cp release-assets/component/* assets/
       - uses: actions/attest-build-provenance@v3
         with: { subject-path: "release-assets/component/*" }

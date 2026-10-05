@@ -1,6 +1,0 @@
-[Unit]
-Description=Complete TreeAI manager self-update
-
-[Service]
-Type=oneshot
-ExecStart=/usr/lib/treeseed-ai/manager/update-helper

@@ -47,32 +47,6 @@ component bundle and publishes the exact component package and catalog through
 its protected release workflow. Do not add a transitional TreeAI APT bridge or
 use a component repository to reconstruct Deployment-owned package indexes.
 
-After GitHub Pages publication, clients can install the archive with a
-dedicated keyring and deb822 source:
-
-```bash
-curl -fsSLo /tmp/treeseed-ai-archive-keyring.asc \
-  https://treeseed-ai.github.io/ai/apt/treeseed-ai-archive-keyring.asc
-sudo install -m 0644 /tmp/treeseed-ai-archive-keyring.asc \
-  /etc/apt/keyrings/treeseed-ai-archive-keyring.asc
-sudo tee /etc/apt/sources.list.d/treeseed-ai.sources >/dev/null <<'SOURCES'
-Types: deb
-URIs: https://treeseed-ai.github.io/ai/apt
-Suites: stable
-Components: main
-Architectures: amd64
-Signed-By: /etc/apt/keyrings/treeseed-ai-archive-keyring.asc
-SOURCES
-sudo apt update
-sudo apt install treeseed-ai
-```
-
-If only Pages publication fails after a GitHub Release exists, dispatch
-**Repair TreeAI APT repository** with the existing stable version. It reconstructs
-the stable suite from immutable GitHub Release packages, preserves the currently
-signed development suite, and republishes both beneath `/apt` without rebuilding
-images or packages.
-
 If checksum publication alone is malformed, dispatch **Repair TreeSeed AI
 release checksums**. It verifies the existing signature and payloads, then
 replaces only the signed checksum pair through the protected environment.

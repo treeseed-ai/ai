@@ -6,7 +6,7 @@ import {describe,expect,it} from 'vitest';
 describe('library adapter ranking',()=>{
 	it('requires two percent lower held-out NLL and no general regression',()=>{
 		const modulePath=JSON.stringify(join(process.cwd(),'workers/evaluator/worker.py'));
-		const result=JSON.parse(execFileSync('python3',['-c',`import importlib.util,json,os,pathlib,sys,tempfile,types\nsys.modules['boto3']=types.SimpleNamespace(client=lambda *a,**k:None)\nserver=types.ModuleType('common.server');server.serve=lambda routes:None\nsys.modules['common']=types.ModuleType('common');sys.modules['common.server']=server\nwith tempfile.TemporaryDirectory() as d:\n os.environ['STATE_DIR']=d;s=importlib.util.spec_from_file_location('evaluator',${modulePath});m=importlib.util.module_from_spec(s);s.loader.exec_module(m)\n general={'results':[{'candidate':'base','categories':{'quality':0.8},'criticalChecksPassed':True},{'candidate':'candidate','categories':{'quality':0.8},'criticalChecksPassed':True}]}\n pathlib.Path(d,'general.json').write_text(json.dumps(general))\n evidence={'schemaVersion':'ai.library-likelihood-evaluation/v1','metric':'completion-negative-log-likelihood','baseValue':2.0,'candidateValue':1.9,'evaluationObject':{'sha256':'a'*64,'size':100}}\n output=m.rank_library({'jobId':'rank','input':{'candidateId':'candidate','generalManifest':f'file://{d}/general.json','likelihoodEvidence':evidence}})\n print(pathlib.Path(output['resultManifest'][7:]).read_text())`],{cwd:process.cwd(),encoding:'utf8'}));
+		const result=JSON.parse(execFileSync('python3',['-c',`import importlib.util,json,os,pathlib,sys,tempfile,types\nsys.modules['boto3']=types.SimpleNamespace(client=lambda *a,**k:None)\nserver=types.ModuleType('common.server');server.serve=lambda routes:None\nsys.path.insert(0,os.path.join(os.getcwd(),'workers'));sys.modules['common.server']=server\nwith tempfile.TemporaryDirectory() as d:\n os.environ['STATE_DIR']=d;s=importlib.util.spec_from_file_location('evaluator',${modulePath});m=importlib.util.module_from_spec(s);s.loader.exec_module(m)\n general={'results':[{'candidate':'base','categories':{'quality':0.8},'criticalChecksPassed':True},{'candidate':'candidate','categories':{'quality':0.8},'criticalChecksPassed':True}]}\n pathlib.Path(d,'general.json').write_text(json.dumps(general))\n evidence={'schemaVersion':'ai.library-likelihood-evaluation/v1','metric':'completion-negative-log-likelihood','baseValue':2.0,'candidateValue':1.9,'evaluationObject':{'sha256':'a'*64,'size':100}}\n output=m.rank_library({'jobId':'rank','input':{'candidateId':'candidate','generalManifest':f'file://{d}/general.json','likelihoodEvidence':evidence}})\n print(pathlib.Path(output['resultManifest'][7:]).read_text())`],{cwd:process.cwd(),encoding:'utf8'}));
 		expect(result).toMatchObject({policy:'library-strict-improvement-v1',promotable:true,candidateId:'candidate'});expect(result.improvement).toBeCloseTo(0.05);
 	});
 	it('requires visual grounding improvement when multimodal evidence is supplied',()=>{
@@ -24,7 +24,7 @@ describe('library adapter ranking',()=>{
 	});
 	it('distinguishes private object-store failures from private inference failures',()=>{
 		const source=readFileSync('workers/evaluator/worker.py','utf8');
-		expect(source).toContain('inference object store read failed:');
+		expect(source).toContain('ArtifactRepository.from_env().bytes(uri)');
 		expect(source).toContain('private vLLM request failed:');
 		expect(source.indexOf('except urllib.error.HTTPError')).toBeLessThan(source.indexOf('except urllib.error.URLError'));
 		expect(source).toContain('private vLLM HTTP {status}');
@@ -41,7 +41,7 @@ describe('library adapter ranking',()=>{
 	});
 	it('scores nullable visual message content as zero instead of crashing',()=>{
 		const modulePath=JSON.stringify(join(process.cwd(),'workers/evaluator/worker.py'));
-		const result=JSON.parse(execFileSync('python3',['-c',`import importlib.util,json,os,sys,tempfile,types\nsys.modules['boto3']=types.SimpleNamespace(client=lambda *a,**k:None)\nserver=types.ModuleType('common.server');server.serve=lambda routes:None\nsys.modules['common']=types.ModuleType('common');sys.modules['common.server']=server\nwith tempfile.TemporaryDirectory() as d:\n os.environ['STATE_DIR']=d;s=importlib.util.spec_from_file_location('evaluator',${modulePath});m=importlib.util.module_from_spec(s);s.loader.exec_module(m)\n print(json.dumps({'null':m.token_recall('authored context',None),'match':m.token_recall('authored context','The authored context is present')}))`],{cwd:process.cwd(),encoding:'utf8'}));
+		const result=JSON.parse(execFileSync('python3',['-c',`import importlib.util,json,os,sys,tempfile,types\nsys.modules['boto3']=types.SimpleNamespace(client=lambda *a,**k:None)\nserver=types.ModuleType('common.server');server.serve=lambda routes:None\nsys.path.insert(0,os.path.join(os.getcwd(),'workers'));sys.modules['common.server']=server\nwith tempfile.TemporaryDirectory() as d:\n os.environ['STATE_DIR']=d;s=importlib.util.spec_from_file_location('evaluator',${modulePath});m=importlib.util.module_from_spec(s);s.loader.exec_module(m)\n print(json.dumps({'null':m.token_recall('authored context',None),'match':m.token_recall('authored context','The authored context is present')}))`],{cwd:process.cwd(),encoding:'utf8'}));
 		expect(result).toEqual({null:0,match:1});
 	});
 	it('uses deterministic non-thinking Qwen requests only inside evaluation',()=>{
@@ -51,12 +51,11 @@ describe('library adapter ranking',()=>{
 		expect(source.match(/nonthinking\(/gu)?.length).toBeGreaterThanOrEqual(5);
 	});
 	it('uses canonical Compose discovery and probes the no-proxy HTTP path',()=>{
-		const override=readFileSync('deploy/inference/factory.override.yml','utf8'),compose=readFileSync('deploy/inference/compose.yml','utf8');
-		expect(override).not.toContain('network_mode: "service:vllm"');
-		expect(override).toContain('VLLM_URL: http://vllm:8000');
-		expect(override).toContain('EVALUATOR_URL: "http://evaluator:8080"');
-		expect(override).not.toContain('aliases: [inference-vllm]');
-		expect(compose).toContain("open('http://127.0.0.1:8080/healthz',timeout=3)");
+		const compose=readFileSync('deploy/component/compose.template.yml','utf8');
+        expect(compose).not.toContain('network_mode:');
+        expect(compose).toContain('VLLM_URL: http://inference-vllm:8000');
+        expect(compose).toContain('EVALUATOR_URL: http://inference-evaluator:8080');
+        expect(compose).toContain("http://127.0.0.1:8080/healthz");
 	});
 	it('keeps long evaluator calls cancellable without transport timeouts',()=>{
 		const source=readFileSync('packages/inference-manager/src/main.ts','utf8'),manifest=readFileSync('packages/inference-manager/package.json','utf8');

@@ -60,7 +60,7 @@ print(json.dumps(module.composition_evaluations(manifests,{'promotionEligible':T
 	});
 
 	it('keeps multimodal vLLM disabled until a qualified profile enables it',()=>{
-		const entrypoint=readFileSync('containers/inference/vllm-entrypoint.sh','utf8'),compose=readFileSync('deploy/inference/compose.yml','utf8');
+		const entrypoint=readFileSync('containers/inference/vllm-entrypoint.sh','utf8'),compose=readFileSync('deploy/component/compose.template.yml','utf8');
 		expect(entrypoint).toContain('TREEAI_MULTIMODAL_LORA_ENABLED:-false');
 		expect(entrypoint).toContain('--enable-tower-connector-lora');
 		expect(entrypoint).toContain('--language-model-only');
@@ -68,7 +68,7 @@ print(json.dumps(module.composition_evaluations(manifests,{'promotionEligible':T
 	});
 
 	it('authorizes runtime LoRA updates only on the private vLLM service',()=>{
-		for(const path of ['deploy/inference/compose.yml','deploy/inference/factory.override.yml','deploy/component/compose.template.yml'])expect(readFileSync(path,'utf8')).toContain('VLLM_ALLOW_RUNTIME_LORA_UPDATING');
-		for(const path of ['deploy/inference/compose.yml','deploy/inference/factory.override.yml'])expect(readFileSync(path,'utf8')).not.toMatch(/8000:8000/u);
+		for(const path of ['deploy/component/compose.template.yml'])expect(readFileSync(path,'utf8')).toContain('VLLM_ALLOW_RUNTIME_LORA_UPDATING');
+		for(const path of ['deploy/component/compose.template.yml'])expect(readFileSync(path,'utf8')).not.toMatch(/8000:8000/u);
 	});
 });

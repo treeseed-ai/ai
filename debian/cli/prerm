@@ -1,4 +1,0 @@
-#!/bin/sh
-set -eu
-# Operator configuration and credentials are conffile-like durable state.
-exit 0

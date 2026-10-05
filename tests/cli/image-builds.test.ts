@@ -24,8 +24,11 @@ describe('selective image build identities',()=>{
     expect(workflow).toContain('.images[$role].disposition="reused"');
     expect(workflow).toContain('recover_run_id');
     expect(workflow).toContain('git diff --quiet "$recovery_sha" HEAD');
+    expect(workflow.indexOf('imagetools inspect "$repository:$recovery_tag"')).toBeGreaterThan(workflow.indexOf('if test "$action" = built'));
+    expect(workflow).toContain("digest=$(jq -r --arg role \"$role\" '.images[$role].digest' prior/recovered-image-manifest.json)");
+    expect(workflow.match(/\.images\[\$role\]\.repository=\$repository/gu)).toHaveLength(2);
     expect(workflow).toContain('.name == "Publish every exact RC image and verify Docker Hub read-back" and .conclusion == "success"');
-    expect(workflow).toContain('.name == "Publish immutable prerelease" and .conclusion == "failure"');
+    expect(workflow).toContain('(.name == "Create exact managed component bundle" or .name == "Publish immutable prerelease") and .conclusion == "failure"');
     expect(workflow).toContain('checksum=$(mktemp)');
     expect(workflow).toContain('find . -maxdepth 1 -type f ! -name SHA256SUMS');
     expect(workflow).not.toContain('xargs sha256sum > SHA256SUMS');
@@ -53,7 +56,7 @@ describe('selective image build identities',()=>{
     expect(builds.platform).toBe('linux/amd64');
     for(const [role,build]of Object.entries(builds.images)){expect(build.inputs.length,role).toBeGreaterThan(0);expect(build.inputs).toContain(build.dockerfile);}
 		for(const role of['inference-api','inference-manager','training-api','training-manager','lab-controller','lab-experience-proxy'])expect(builds.images[role]?.inputs).not.toContain('packages');
-		for(const role of['inference-migrations','training-migrations'])expect(builds.images[role]?.inputs).toContain('containers/migrations/run.sh');
+		for(const role of['inference-migrations','training-migrations'])expect(builds.images[role]?.inputs).toContain('containers/migrations/run.ts');
 		for(const role of['lab-controller','lab-experience-proxy','lab-library-bridge']){expect(builds.images[role]?.inputs).not.toContain('packages/lab');expect(builds.images[role]?.inputs).not.toContain('packages/lab/src/cli.ts');expect(builds.images[role]?.inputs).not.toContain('packages/lab/src/corpus.ts');}
 		expect(builds.images['lab-controller']?.inputs).toContain('packages/lab/src/controller.ts');expect(builds.images['lab-experience-proxy']?.inputs).toContain('packages/lab/src/proxy.ts');expect(builds.images['lab-library-bridge']?.inputs).toContain('packages/lab/src/library-bridge.ts');
   });
